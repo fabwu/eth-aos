@@ -15,6 +15,8 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
                      slot_refill_t slot_refill_func,
                      void *slot_alloc_inst)
 {
+    // In need to allocate struct mmnode, therefore I need slabs of size
+    // sizeof(struct mmnode)
     slab_init(&mm->slabs, sizeof(struct mmnode), slab_refill_func);
 
     mm->objtype = objtype;
@@ -32,7 +34,24 @@ void mm_destroy(struct mm *mm)
 
 errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    // Slabs are sizeof(struct mmnode), cast is resonable
+    struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
+
+    new->type = NodeType_Free;
+    new->cap.cap = cap;
+    new->cap.base = base;
+    new->cap.size = size;
+    new->base = base;
+    new->size = size;
+
+    if (mm->head != NULL) {
+        new->next = mm->head;
+        mm->head->prev = new;
+    } 
+
+    mm->head = new;
+    
+    return SYS_ERR_OK;
 }
 
 
