@@ -35,6 +35,7 @@ void mm_destroy(struct mm *mm)
 errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 {
     // Slabs are sizeof(struct mmnode), cast is resonable
+    // TODO: handle slab allocator empty
     struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
 
     new->type = NodeType_Free;
@@ -78,16 +79,18 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
 
     if (size == curr->size) {
         curr->type = NodeType_Allocated;
-        retcap = &curr->cap.cap;
+        *retcap = curr->cap.cap;
 
         return SYS_ERR_OK;
     } else {
+        // TODO: handle slab allocator empty
         struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
         new->type = NodeType_Allocated;
         // Split current
         // Always split off at offeset 0?
 
         // Alloc capability
+        // TODO: handle slot allocator empty
         err = mm->slot_alloc(mm->slot_alloc_inst, 1, &new->cap.cap);
         assert(err_is_ok(err));
 
@@ -121,7 +124,7 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         err = cap_retype(new->cap.cap, curr->cap.cap, 0, ObjType_RAM, size, 1);
         assert(err_is_ok(err));
 
-        retcap = &new->cap.cap;
+        *retcap = new->cap.cap;
 
         return SYS_ERR_OK;
     }
@@ -135,6 +138,7 @@ errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 
 errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t size)
 {
+    // TODO: implement free
     return LIB_ERR_NOT_IMPLEMENTED;
 
 }
