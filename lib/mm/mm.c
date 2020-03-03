@@ -15,7 +15,14 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
                      slot_refill_t slot_refill_func,
                      void *slot_alloc_inst)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    slab_init(&mm->slabs, sizeof(struct mmnode), slab_refill_func);
+
+    mm->objtype = objtype;
+    mm->slot_alloc = slot_alloc_func;
+    mm->slot_refill = slot_refill_func;
+    mm->slot_alloc_inst = slot_alloc_inst;
+
+    return SYS_ERR_OK;
 }
 
 void mm_destroy(struct mm *mm)
