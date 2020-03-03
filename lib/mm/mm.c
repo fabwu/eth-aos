@@ -47,8 +47,11 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
     if (mm->head != NULL) {
         new->next = mm->head;
         mm->head->prev = new;
-    } 
+    } else {
+        new->next = NULL;
+    }
 
+    new->prev = NULL;
     mm->head = new;
     
     return SYS_ERR_OK;
@@ -57,7 +60,71 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 
 errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct capref *retcap)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    errval_t err;
+    struct mmnode *curr = mm->head;
+    while (curr != NULL) {
+        if (curr->type == NodeType_Free && curr->size >= size)
+            break;
+
+        curr = curr->next;
+    }
+
+    if (curr == NULL) {
+        return LIB_ERR_RAM_ALLOC;
+    }
+
+    // TODO: handle alignment
+    assert(curr->base % alignment == 0);
+
+    if (size == curr->size) {
+        curr->type = NodeType_Allocated;
+        retcap = &curr->cap.cap;
+
+        return SYS_ERR_OK;
+    } else {
+        struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
+        new->type = NodeType_Allocated;
+        // Split current
+        // Always split off at offeset 0?
+
+        // Alloc capability
+        err = mm->slot_alloc(mm->slot_alloc_inst, 1, &new->cap.cap);
+        assert(err_is_ok(err));
+
+        // Split off at the start
+        new->cap.base = curr->base;
+        new->base = curr->base;
+        new->size = size;
+
+        // Reduce size
+        curr->base += size;
+        curr->size -= size;
+        // Maybe we shouldn't do that, as we might need this to fuse when
+        // freeing?
+        curr->cap.base = curr->base;
+        curr->cap.size = curr->size;
+
+        if (curr->prev == NULL) {
+            mm->head = new;
+            new->prev = NULL;
+        } else {
+            curr->prev->next = new;
+            new->prev = curr->prev;
+        }
+
+        curr->prev = new;
+        new->next = curr;
+
+        // Assumption: offset is offset into object pointed to by capability,
+        // size is size of the part of the object pointed to by capability from
+        // the offset onward, that should be propagated
+        err = cap_retype(new->cap.cap, curr->cap.cap, 0, ObjType_RAM, size, 1);
+        assert(err_is_ok(err));
+
+        retcap = &new->cap.cap;
+
+        return SYS_ERR_OK;
+    }
 }
 
 errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
