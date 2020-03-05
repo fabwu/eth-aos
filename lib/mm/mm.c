@@ -102,10 +102,13 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         // Reduce size
         curr->base += size;
         curr->size -= size;
+
+        assert(curr->size > 0);
+
         // Maybe we shouldn't do that, as we might need this to fuse when
         // freeing?
-        curr->cap.base = curr->base;
-        curr->cap.size = curr->size;
+        // curr->cap.base = curr->base;
+        // curr->cap.size = curr->size;
 
         if (curr->prev == NULL) {
             mm->head = new;
@@ -138,7 +141,22 @@ errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 
 errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t size)
 {
-    // TODO: implement free
-    return LIB_ERR_NOT_IMPLEMENTED;
+    struct mmnode *curr = mm->head;
+    while (curr != NULL) {
+        // TODO: Maybe check via cap if really allowed to free, can't spoof me
+        // into freeing stuff he doesn't own?
+        if (curr->type == NodeType_Allocated && curr->base == base)
+            break;
 
+        curr = curr->next;
+    }
+
+    // TODO: Give back nice error message
+    assert(curr != NULL);
+
+    // TODO: Maybe fuse back together if left or right is free and came from the
+    // same original block
+    curr->type = NodeType_Free;
+
+    return SYS_ERR_OK;
 }
