@@ -23,6 +23,12 @@ static errval_t ram_alloc_remote(struct capref *ret, size_t size, size_t alignme
     return LIB_ERR_NOT_IMPLEMENTED;
 }
 
+static errval_t ram_free_remote(struct capref cap, size_t size)
+{
+    //TODO(M3): Implement me!
+    return LIB_ERR_NOT_IMPLEMENTED;
+}
+
 
 void ram_set_affinity(uint64_t minbase, uint64_t maxlimit)
 {
@@ -97,6 +103,13 @@ errval_t ram_alloc(struct capref *ret, size_t size)
     return ram_alloc_aligned(ret, size, BASE_PAGE_SIZE);
 }
 
+errval_t ram_free(struct capref cap, size_t size)
+{
+    struct ram_alloc_state *ram_alloc_state = get_ram_alloc_state();
+    assert(ram_alloc_state->ram_free_func != NULL);
+    return ram_alloc_state->ram_free_func(cap, size);
+}
+
 errval_t ram_available(genpaddr_t *available, genpaddr_t *total)
 {
     // TODO: Implement protocol to check amount of ram available with memserv
@@ -136,5 +149,19 @@ errval_t ram_alloc_set(ram_alloc_func_t local_allocator)
     }
 
     ram_alloc_state->ram_alloc_func = ram_alloc_remote;
+    return SYS_ERR_OK;
+}
+
+errval_t ram_free_set(ram_free_func_t local_free)
+{
+    struct ram_alloc_state *ram_alloc_state = get_ram_alloc_state();
+
+    /* Special case */
+    if (local_free != NULL) {
+        ram_alloc_state->ram_free_func = local_free;
+        return SYS_ERR_OK;
+    }
+
+    ram_alloc_state->ram_free_func = ram_free_remote;
     return SYS_ERR_OK;
 }

@@ -95,6 +95,11 @@ errval_t initialize_ram_alloc(void)
         return err_push(err, LIB_ERR_RAM_ALLOC_SET);
     }
 
+    err = ram_free_set(aos_ram_free);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_RAM_ALLOC_SET);
+    }
+
     return SYS_ERR_OK;
 }
 

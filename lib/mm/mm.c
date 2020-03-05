@@ -85,9 +85,9 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
     } else {
         // TODO: handle slab allocator empty
         struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
+        assert(new != NULL);
+
         new->type = NodeType_Allocated;
-        // Split current
-        // Always split off at offeset 0?
 
         // Alloc capability
         // TODO: handle slot allocator empty
@@ -124,8 +124,13 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         // Assumption: offset is offset into object pointed to by capability,
         // size is size of the part of the object pointed to by capability from
         // the offset onward, that should be propagated
-        err = cap_retype(new->cap.cap, curr->cap.cap, 0, ObjType_RAM, size, 1);
-        assert(err_is_ok(err));
+        // offset needs to account for already split rams
+        err = cap_retype(new->cap.cap, curr->cap.cap,
+                // TODO: Is this correct?
+                curr->base - curr->cap.base, ObjType_RAM, size, 1);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_RAM_ALLOC);
+        }
 
         *retcap = new->cap.cap;
 
@@ -141,6 +146,8 @@ errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 
 errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t size)
 {
+    // TODO: Can I delete/recreate capref, so that we can ensure caller does not
+    // inadvertently use capability?
     struct mmnode *curr = mm->head;
     while (curr != NULL) {
         // TODO: Maybe check via cap if really allowed to free, can't spoof me

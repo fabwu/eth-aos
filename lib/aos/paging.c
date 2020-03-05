@@ -291,6 +291,66 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
      * TODO(M1): Map a frame assuming all mappings will fit into one last level pt
      * TODO(M2): General case
      */
+    errval_t err;
+    struct capref l1_pt_cpr = {
+        .cnode = cnode_page,
+        .slot = 0
+    };
+    struct capability l1_pt_cp;
+    // Only one page at the time, 2^12 = 4KiB, granule size
+    assert(bytes <= (1 << 12));
+    err = cap_direct_identify(l1_pt_cpr, &l1_pt_cp);
+    assert(err_is_ok(err));
+    uint64_t *l1_base = (uint64_t *)get_address(&l1_pt_cp);
+    struct capref l2_pt_cpr;
+    struct capref l1_l2_map;
+    uint64_t mask = 0xFF;  
+    uint64_t l1_slot = (vaddr >> 30) & mask;
+    // Assuming no superpage, if lower two bits not 1, then not valid
+    // Can I even read this memory??
+    if (!(*(l1_base + l1_slot) & 0x3)) {
+        err = pt_alloc_l2(st, &l2_pt_cpr);
+        assert(err_is_ok(err));
+        err = st->slot_alloc->alloc(st->slot_alloc, &l1_l2_map);
+        assert(err_is_ok(err));
+        // Does Read/Write make sense for a page table?
+        err = vnode_map(l1_pt_cpr, l2_pt_cpr, l1_slot, VREGION_FLAGS_READ_WRITE,
+                0, 1, l1_l2_map);
+        assert(err_is_ok(err));
+    }
+
+    struct capability l2_pt_cp;
+    err = cap_direct_identify(l2_pt_cpr, &l2_pt_cp);
+    uint64_t *l2_base = (uint64_t *)get_address(&l2_pt_cp);
+    uint64_t l2_slot = (vaddr >> 21) & mask;
+
+    struct capref l3_pt_cpr;
+    struct capref l2_l3_map;
+    if (!(*(l2_base + l2_slot) & 0x3)) {
+        err = pt_alloc_l3(st, &l3_pt_cpr);
+        assert(err_is_ok(err));
+        err = st->slot_alloc->alloc(st->slot_alloc, &l2_l3_map);
+        assert(err_is_ok(err));
+        // Does Read/Write make sense for a page table?
+        err = vnode_map(l2_pt_cpr, l3_pt_cpr, l2_slot, VREGION_FLAGS_READ_WRITE,
+                0, 1, l2_l3_map);
+        assert(err_is_ok(err));
+    }
+
+    struct capability l3_pt_cp;
+    err = cap_direct_identify(l3_pt_cpr, &l3_pt_cp);
+    uint64_t *l3_base = (uint64_t *)get_address(&l3_pt_cp);
+    uint64_t l3_slot = (vaddr >> 11) & mask;
+
+    struct capref l3_frame_map;
+    if (!(*(l3_base + l3_slot) & 0x3)) {
+        err = st->slot_alloc->alloc(st->slot_alloc, &l3_frame_map);
+        assert(err_is_ok(err));
+        err = vnode_map(l3_pt_cpr, frame, l3_slot, VREGION_FLAGS_READ_WRITE,
+                0, 1, l3_frame_map);
+        assert(err_is_ok(err));
+    }
+
     return SYS_ERR_OK;
 }
 
