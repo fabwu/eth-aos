@@ -23,7 +23,7 @@
 
 static struct paging_state current;
 
-
+static char paging_node_buf[sizeof(struct paging_node) * 64];
 
 /**
  * \brief Helper function that allocates a slot and
@@ -33,7 +33,7 @@ static errval_t pt_alloc(struct paging_state * st, enum objtype type,
                          struct capref *ret) 
 {
     errval_t err;
-    err = st->slot_alloc->alloc(st->slot_alloc, ret);
+    err = slot_alloc(ret);
     if (err_is_fail(err)) {
         debug_printf("slot_alloc failed: %s\n", err_getstring(err));
         return err;
@@ -122,6 +122,14 @@ errval_t paging_init(void)
     // you can handle page faults in any thread of a domain.
     // TIP: it might be a good idea to call paging_init_state() from here to
     // avoid code duplication.
+    slab_init(&current.slabs, sizeof(struct paging_node), NULL);
+    // Paging_node_buf should be zero initialized?
+    slab_grow(&current.slabs, paging_node_buf, sizeof(paging_node_buf));
+
+    // TODO: How to get existing mapping capabilities??
+    current.l0_pt.cnode = cnode_page;
+    current.l0_pt.slot = 0;
+
     set_current_paging_state(&current);
     return SYS_ERR_OK;
 }
@@ -283,6 +291,65 @@ errval_t slab_refill_no_pagefault(struct slab_allocator *slabs, struct capref fr
     return SYS_ERR_OK;
 }
 
+static struct paging_node *map_some(struct paging_node **head,
+        struct paging_node *parent, int level, struct capref pt_cpr,
+        int slot, struct paging_state *st, struct capref *frame) {
+    errval_t err = 0;
+    struct paging_node *node = *head;
+    while (node != NULL && node->slot != slot) {
+        ++node;
+    }
+    if (node == NULL) {
+        struct capref lower_pt_cpr;
+        struct capref higher_lower_map;
+
+        switch(level) {
+            case(1):
+                err = pt_alloc_l1(st, &lower_pt_cpr);
+                break;
+            case(2):
+                err = pt_alloc_l2(st, &lower_pt_cpr);
+                break;
+            case(3):
+                err = pt_alloc_l3(st, &lower_pt_cpr);
+                break;
+            case(4):
+                lower_pt_cpr = *frame;
+                break;
+            default:
+                return NULL;
+        }
+        assert(err_is_ok(err));
+        err = slot_alloc(&higher_lower_map);
+        assert(err_is_ok(err));
+        // Does Read/Write make sense for a page table?
+        err = vnode_map(lower_pt_cpr, pt_cpr, slot, VREGION_FLAGS_READ_WRITE,
+                0, 1, higher_lower_map);
+        assert(err_is_ok(err));
+
+        node = slab_alloc(&st->slabs);
+        assert(node != NULL);
+
+        node->mapping = higher_lower_map;
+        node->table = lower_pt_cpr;
+        node->parent = parent;
+        node->child = NULL;
+        if (*head != NULL) {
+           (*head)->previous = node;
+           node->next = *head;
+           *head = node;
+        } else {
+            *head = node;
+            node->next = NULL;
+        }
+        node->previous = NULL;
+        node->level = level;
+        node->slot = slot;
+    }
+
+    return node;
+}
+
 errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
                                struct capref frame, size_t bytes, int flags)
 {
@@ -291,64 +358,39 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
      * TODO(M1): Map a frame assuming all mappings will fit into one last level pt
      * TODO(M2): General case
      */
-    errval_t err;
-    struct capref l1_pt_cpr = {
-        .cnode = cnode_page,
-        .slot = 0
-    };
-    struct capability l1_pt_cp;
-    // Only one page at the time, 2^12 = 4KiB, granule size
-    assert(bytes <= (1 << 12));
-    err = cap_direct_identify(l1_pt_cpr, &l1_pt_cp);
-    assert(err_is_ok(err));
-    uint64_t *l1_base = (uint64_t *)get_address(&l1_pt_cp);
-    struct capref l2_pt_cpr;
-    struct capref l1_l2_map;
-    uint64_t mask = 0xFF;  
+
+    // Only one page at the time
+    // TODO: Allow for larger frames
+    assert(bytes <= BASE_PAGE_SIZE);
+
+    // First 9 bits
+    uint64_t mask = 0xEF;
+
+    uint64_t l0_slot = (vaddr >> 38) & mask;
+
+    struct paging_node *node_l1 = map_some(&st->l0, NULL, 1, st->l0_pt, l0_slot,
+                                            st, NULL);
+    assert(node_l1 != NULL);
+
     uint64_t l1_slot = (vaddr >> 30) & mask;
-    // Assuming no superpage, if lower two bits not 1, then not valid
-    // Can I even read this memory??
-    if (!(*(l1_base + l1_slot) & 0x3)) {
-        err = pt_alloc_l2(st, &l2_pt_cpr);
-        assert(err_is_ok(err));
-        err = st->slot_alloc->alloc(st->slot_alloc, &l1_l2_map);
-        assert(err_is_ok(err));
-        // Does Read/Write make sense for a page table?
-        err = vnode_map(l1_pt_cpr, l2_pt_cpr, l1_slot, VREGION_FLAGS_READ_WRITE,
-                0, 1, l1_l2_map);
-        assert(err_is_ok(err));
-    }
+    struct paging_node *node_l2 = map_some(&node_l1->child, node_l1, 2,
+                                            node_l1->table, l1_slot, st, NULL);
+    assert(node_l2 != NULL);
 
-    struct capability l2_pt_cp;
-    err = cap_direct_identify(l2_pt_cpr, &l2_pt_cp);
-    uint64_t *l2_base = (uint64_t *)get_address(&l2_pt_cp);
     uint64_t l2_slot = (vaddr >> 21) & mask;
+    struct paging_node *node_l3 = map_some(&node_l2->child, node_l2, 3,
+                                            node_l2->table, l2_slot, st, NULL);
+    assert(node_l3 != NULL);
 
-    struct capref l3_pt_cpr;
-    struct capref l2_l3_map;
-    if (!(*(l2_base + l2_slot) & 0x3)) {
-        err = pt_alloc_l3(st, &l3_pt_cpr);
-        assert(err_is_ok(err));
-        err = st->slot_alloc->alloc(st->slot_alloc, &l2_l3_map);
-        assert(err_is_ok(err));
-        // Does Read/Write make sense for a page table?
-        err = vnode_map(l2_pt_cpr, l3_pt_cpr, l2_slot, VREGION_FLAGS_READ_WRITE,
-                0, 1, l2_l3_map);
-        assert(err_is_ok(err));
-    }
-
-    struct capability l3_pt_cp;
-    err = cap_direct_identify(l3_pt_cpr, &l3_pt_cp);
-    uint64_t *l3_base = (uint64_t *)get_address(&l3_pt_cp);
     uint64_t l3_slot = (vaddr >> 11) & mask;
+    struct paging_node *node_l4 = map_some(&node_l3->child, node_l3, 4,
+                                            node_l3->table, l3_slot, st, &frame);
+    assert(node_l4 != NULL);
 
-    struct capref l3_frame_map;
-    if (!(*(l3_base + l3_slot) & 0x3)) {
-        err = st->slot_alloc->alloc(st->slot_alloc, &l3_frame_map);
-        assert(err_is_ok(err));
-        err = vnode_map(l3_pt_cpr, frame, l3_slot, VREGION_FLAGS_READ_WRITE,
-                0, 1, l3_frame_map);
-        assert(err_is_ok(err));
+
+    // TODO: Hope we do not run out of slabs in between
+    if (slab_freecount(&st->slabs) == 32) {
+        slab_default_refill(&st->slabs);
     }
 
     return SYS_ERR_OK;

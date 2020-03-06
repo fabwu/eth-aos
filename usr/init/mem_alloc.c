@@ -78,7 +78,7 @@ errval_t initialize_ram_alloc(void)
     }
 
     err = slot_prealloc_refill(aos_mm.slot_alloc_inst);
-    if (err_is_fail(err) && err_no(err) != MM_ERR_SLOT_MM_ALLOC) {
+    if (err_is_fail(err)) {
         DEBUG_ERR(err, "in slot_prealloc_refill() while initialising"
                 " memory allocator");
         abort();

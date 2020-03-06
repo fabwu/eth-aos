@@ -64,7 +64,7 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, struct capref *retcap)
 {
     // TODO: handle alignment
-    assert(alignemnt < BASE_PAGE_SIZE);
+    assert(alignment <= BASE_PAGE_SIZE);
 
     size_t size = BASE_PAGE_SIZE;
     while (size < wanted_size) {
@@ -92,7 +92,11 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, s
 
         return SYS_ERR_OK;
     } else {
-        // TODO: handle slab allocator empty
+        // Hope 31 is enough to keep it going until refilled
+        if (slab_freecount(slab_alloc(&mm->slabs)) == 32) {
+            slab_default_refill(&mm->slabs);
+        }
+
         struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
         assert(new != NULL);
 

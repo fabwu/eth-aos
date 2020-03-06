@@ -41,7 +41,9 @@ grading_test_early(void) {
     struct capref *refs = (struct capref *)get_address(&ram_cp);
     for (size_t i = 0; i < 1000; ++i) {
         debug_printf("Try: %"PRIu64"\n", i);
-        err = ram_alloc(refs + i, (1 << 12));
+        struct capref ref;
+        // err = ram_alloc(refs + i, (1 << 12));
+        err = ram_alloc(&ref, (1 << 12));
         assert(err_is_ok(err));
         debug_printf("Success: %"PRIu64"\n", i);
     }
