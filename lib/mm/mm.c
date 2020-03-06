@@ -24,6 +24,8 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
     mm->slot_refill = slot_refill_func;
     mm->slot_alloc_inst = slot_alloc_inst;
 
+    mm->head = NULL;
+
     return SYS_ERR_OK;
 }
 
@@ -59,8 +61,16 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size)
 }
 
 
-errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct capref *retcap)
+errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, struct capref *retcap)
 {
+    // TODO: handle alignment
+    assert(alignemnt < BASE_PAGE_SIZE);
+
+    size_t size = BASE_PAGE_SIZE;
+    while (size < wanted_size) {
+        size += (1 << 12);
+    }
+
     errval_t err;
     struct mmnode *curr = mm->head;
     while (curr != NULL) {
@@ -74,8 +84,7 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         return LIB_ERR_RAM_ALLOC;
     }
 
-    // TODO: handle alignment
-    assert(curr->base % alignment == 0);
+    assert(curr->base % BASE_PAGE_SIZE == 0);
 
     if (size == curr->size) {
         curr->type = NodeType_Allocated;
@@ -98,12 +107,6 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         new->cap.base = curr->base;
         new->base = curr->base;
         new->size = size;
-
-        // Reduce size
-        curr->base += size;
-        curr->size -= size;
-
-        assert(curr->size > 0);
 
         // Maybe we shouldn't do that, as we might need this to fuse when
         // freeing?
@@ -131,6 +134,12 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment, struct c
         if (err_is_fail(err)) {
             return err_push(err, LIB_ERR_RAM_ALLOC);
         }
+
+        // Reduce size
+        curr->base += size;
+        curr->size -= size;
+
+        assert(curr->size > 0);
 
         *retcap = new->cap.cap;
 
