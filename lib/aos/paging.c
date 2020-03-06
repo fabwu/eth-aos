@@ -279,8 +279,17 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     // TODO(M2): Implement me
     // - Call paging_alloc to get a free virtual address region of the requested size
     // - Map the user provided frame at the free virtual address
-
-    return LIB_ERR_NOT_IMPLEMENTED;
+    errval_t err;
+    assert(bytes <= BASE_PAGE_SIZE);
+    uint64_t counter = 0;
+    // Set first bit of l0 index
+    uint64_t addr = 1;
+    addr = addr << VMSAv8_64_L0_BITS;
+    addr = addr + (counter << VMSAv8_64_BASE_PAGE_BITS);
+    err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
+    *buf = (void *) addr;
+    ++counter;
+    return err;
 
 }
 
@@ -366,23 +375,23 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
     // First 9 bits
     uint64_t mask = 0xEF;
 
-    uint64_t l0_slot = (vaddr >> 38) & mask;
+    uint64_t l0_slot = (vaddr >> VMSAv8_64_L0_BITS) & mask;
 
     struct paging_node *node_l1 = map_some(&st->l0, NULL, 1, st->l0_pt, l0_slot,
                                             st, NULL);
     assert(node_l1 != NULL);
 
-    uint64_t l1_slot = (vaddr >> 30) & mask;
+    uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     struct paging_node *node_l2 = map_some(&node_l1->child, node_l1, 2,
                                             node_l1->table, l1_slot, st, NULL);
     assert(node_l2 != NULL);
 
-    uint64_t l2_slot = (vaddr >> 21) & mask;
+    uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     struct paging_node *node_l3 = map_some(&node_l2->child, node_l2, 3,
                                             node_l2->table, l2_slot, st, NULL);
     assert(node_l3 != NULL);
 
-    uint64_t l3_slot = (vaddr >> 11) & mask;
+    uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
     struct paging_node *node_l4 = map_some(&node_l3->child, node_l3, 4,
                                             node_l3->table, l3_slot, st, &frame);
     assert(node_l4 != NULL);
