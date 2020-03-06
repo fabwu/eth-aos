@@ -397,9 +397,12 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
     assert(node_l4 != NULL);
 
 
+    static size_t is_refilling = 0;
     // TODO: Hope we do not run out of slabs in between
-    if (slab_freecount(&st->slabs) == 32) {
+    if (slab_freecount(&st->slabs) - is_refilling == 32) {
+        is_refilling = 1;
         slab_default_refill(&st->slabs);
+        is_refilling = 0;
     }
 
     return SYS_ERR_OK;

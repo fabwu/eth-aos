@@ -92,9 +92,13 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, s
 
         return SYS_ERR_OK;
     } else {
+        // FIXME: HACK
+        static int is_refilling = 0;
         // Hope 31 is enough to keep it going until refilled
-        if (slab_freecount(slab_alloc(&mm->slabs)) == 32) {
+        if (slab_freecount(&mm->slabs) - is_refilling == 32) {
+            is_refilling = 1;
             slab_default_refill(&mm->slabs);
+            is_refilling = 0;
         }
 
         struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
