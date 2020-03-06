@@ -27,27 +27,28 @@ grading_test_mm(struct mm * test) {
 void
 grading_test_early(void) {
     debug_printf("Grading test early\n");
-    struct capref ram;
+    struct capref frame_cap;
     errval_t err;
-    err = ram_alloc(&ram, sizeof(struct capref)*1000);
+    size_t got;
+    err = frame_alloc(&frame_cap, BASE_PAGE_SIZE, &got);
+    assert(got == BASE_PAGE_SIZE);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Can't allocate refs array");
 
         abort();
     }
-    struct capability ram_cp;
-    err = cap_direct_identify(ram, &ram_cp);
+    void *buf;
+    err = paging_map_frame(get_current_paging_state(), &buf, BASE_PAGE_SIZE,
+            frame_cap, NULL, NULL);
     assert(err_is_ok(err));
-    struct capref *refs = (struct capref *)get_address(&ram_cp);
-    for (size_t i = 0; i < 1000; ++i) {
+    struct capref *refs = (struct capref *)buf;
+    for (size_t i = 0; i < BASE_PAGE_SIZE/sizeof(struct capref); ++i) {
         debug_printf("Try: %"PRIu64"\n", i);
-        struct capref ref;
-        // err = ram_alloc(refs + i, (1 << 12));
-        err = ram_alloc(&ref, (1 << 12));
+        err = ram_alloc(refs + i, (1 << 12));
         assert(err_is_ok(err));
         debug_printf("Success: %"PRIu64"\n", i);
     }
-    for (size_t i = 0; i < 1000; ++i) {
+    for (size_t i = 0; i < BASE_PAGE_SIZE/sizeof(struct capref); ++i) {
         struct capability ref_cp;
         err = cap_direct_identify(*(refs + i), &ref_cp);
         assert(err_is_ok(err));
