@@ -110,6 +110,14 @@ errval_t slot_alloc_prealloc(void *inst, uint64_t nslots, struct capref *ret)
     return SYS_ERR_OK;
 }
 
+errval_t slot_prealloc_freecount(void *inst, uint64_t *freecount) {
+    struct slot_prealloc *this = inst;
+
+    *freecount = this->meta[this->current].free;
+
+    return SYS_ERR_OK;
+}
+
 /**
  * \brief Initialise preallocating slot allocator instance
  *

@@ -13,6 +13,7 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
                      slab_refill_func_t slab_refill_func,
                      slot_alloc_t slot_alloc_func,
                      slot_refill_t slot_refill_func,
+                     slot_freecount_t slot_freecount_func,
                      void *slot_alloc_inst)
 {
     // In need to allocate struct mmnode, therefore I need slabs of size
@@ -22,6 +23,7 @@ errval_t mm_init(struct mm *mm, enum objtype objtype,
     mm->objtype = objtype;
     mm->slot_alloc = slot_alloc_func;
     mm->slot_refill = slot_refill_func;
+    mm->slot_freecount = slot_freecount_func;
     mm->slot_alloc_inst = slot_alloc_inst;
 
     mm->head = NULL;
@@ -89,18 +91,7 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, s
     if (size == curr->size) {
         curr->type = NodeType_Allocated;
         *retcap = curr->cap.cap;
-
-        return SYS_ERR_OK;
     } else {
-        // FIXME: HACK
-        static int is_refilling = 0;
-        // Hope 31 is enough to keep it going until refilled
-        if (slab_freecount(&mm->slabs) - is_refilling == 32) {
-            is_refilling = 1;
-            slab_default_refill(&mm->slabs);
-            is_refilling = 0;
-        }
-
         struct mmnode *new = (struct mmnode *)slab_alloc(&mm->slabs);
         assert(new != NULL);
 
@@ -150,9 +141,30 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, s
         assert(curr->size > 0);
 
         *retcap = new->cap.cap;
-
-        return SYS_ERR_OK;
     }
+
+    // FIXME: HACK
+    static int is_refilling_slab = 0;
+    // Hope 31 is enough to keep it going until refilled
+    if (slab_freecount(&mm->slabs) < 32 &&  !is_refilling_slab) {
+        is_refilling_slab = 1;
+        slab_default_refill(&mm->slabs);
+        is_refilling_slab = 0;
+    }
+    
+    uint64_t slot_freecount;
+    err = mm->slot_freecount(mm->slot_alloc_inst, &slot_freecount);
+    assert(err_is_ok(err));
+
+    // FIXME: HACK
+    static int is_refilling_slot = 0;
+    if (slot_freecount < 32 && !is_refilling_slot) {
+        is_refilling_slot = 1;
+        mm->slot_refill(mm->slot_alloc_inst);
+        is_refilling_slot = 0;
+    }
+
+    return SYS_ERR_OK;
 }
 
 errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)

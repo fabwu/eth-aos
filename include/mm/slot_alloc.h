@@ -24,12 +24,14 @@ __BEGIN_DECLS
 /// Generic interface to slot allocator function
 typedef errval_t (*slot_alloc_t)(void *inst, uint64_t nslots, struct capref *ret);
 typedef errval_t (*slot_refill_t)(void *inst);
+typedef errval_t (*slot_freecount_t)(void *inst, uint64_t *freecount);
 
 /// Implementations of above interface
 errval_t slot_alloc_prealloc(void *inst, uint64_t nslots, struct capref *ret);
 errval_t slot_alloc_basecn(void *inst, uint64_t nslots, struct capref *ret);
 errval_t slot_alloc_dynamic(void *inst, uint64_t nslots, struct capref *ret);
 errval_t slot_refill_dynamic(void *inst);
+errval_t slot_prealloc_freecount(void *inst, uint64_t *freecount);
 
 struct mm; // forward declaration
 

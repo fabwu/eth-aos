@@ -52,7 +52,7 @@ errval_t initialize_ram_alloc(void)
     // Initialize aos_mm
     err = mm_init(&aos_mm, ObjType_RAM, NULL,
                   slot_alloc_prealloc, slot_prealloc_refill,
-                  &init_slot_alloc);
+                  slot_prealloc_freecount, &init_slot_alloc);
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Can't initalize the memory manager.");
     }

@@ -410,6 +410,9 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
         is_refilling = 0;
     }
 
+    // TODO: Also refill slot_alloc, as slabs might get refilled through
+    // mm_alloc whenallocating more slots
+
     return SYS_ERR_OK;
 }
 
