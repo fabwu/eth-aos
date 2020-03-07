@@ -87,7 +87,9 @@ errval_t slab_refill_no_pagefault(struct slab_allocator *slabs,
  * NOTE: this function is currently here to make libbarrelfish compile. As
  * noted on paging_region_unmap we ignore unmap requests right now.
  */
-errval_t paging_unmap(struct paging_state *st, const void *region);
+// errval_t paging_unmap(struct paging_state *st, const void *region);
+errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
+        frame, size_t bytes);
 
 
 /// Map user provided frame while allocating VA space for it

@@ -301,14 +301,19 @@ errval_t slab_refill_no_pagefault(struct slab_allocator *slabs, struct capref fr
     return SYS_ERR_OK;
 }
 
+static struct paging_node *find_some(struct paging_node *head, int slot) {
+    while (head != NULL && head->slot != slot) {
+        head = head->next;
+    }
+
+    return head;
+}
+
 static struct paging_node *map_some(struct paging_node **head,
         struct paging_node *parent, int level, struct capref pt_cpr,
         int slot, struct paging_state *st, struct capref *frame) {
     errval_t err = 0;
-    struct paging_node *node = *head;
-    while (node != NULL && node->slot != slot) {
-        node = node->next;
-    }
+    struct paging_node *node = find_some(*head, slot);
     if (node == NULL) {
         struct capref lower_pt_cpr;
         struct capref higher_lower_map;
@@ -416,12 +421,98 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
     return SYS_ERR_OK;
 }
 
+
 /**
  * \brief unmap a user provided frame, and return the VA of the mapped
  *        frame in `buf`.
  * NOTE: Implementing this function is optional.
  */
-errval_t paging_unmap(struct paging_state *st, const void *region)
-{
+// errval_t paging_unmap(struct paging_state *st, const void *region)
+// {
+errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
+        frame, size_t bytes) {
+    assert(bytes <= BASE_PAGE_SIZE);
+
+    // First 9 bits
+    uint64_t mask = 0xEF;
+
+    uint64_t l0_slot = (vaddr >> VMSAv8_64_L0_BITS) & mask;
+    struct paging_node *node_l1 = find_some(st->l0, l0_slot);
+    assert(node_l1 != NULL);
+
+    uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
+    struct paging_node *node_l2 = find_some(node_l1->child, l1_slot);
+    assert(node_l2 != NULL);
+
+    uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
+    struct paging_node *node_l3 = find_some(node_l2->child, l2_slot);
+    assert(node_l3 != NULL);
+
+    uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
+    struct paging_node *node_l4 = find_some(node_l3->child, l3_slot);
+    assert(node_l4 != NULL);
+
+    // TODO: Refactor
+    // Delete mapping
+    cap_delete(node_l4->mapping);
+    // Was the only child of L3
+    if (node_l4->previous == NULL && node_l4->next == NULL) {
+        // Delete L3 mapping
+        cap_delete(node_l3->mapping);
+        // Delete L3 pt
+        cap_delete(node_l3->table);
+
+        // Was the only child of L2
+        if (node_l3->previous == NULL && node_l3->next == NULL) {
+            // Delete L2 mapping
+            cap_delete(node_l2->mapping);
+            // Delete L2 pt
+            cap_delete(node_l2->table);
+            
+            if (node_l2->previous == NULL && node_l2->next == NULL) {
+                // Delete L1 mapping
+                cap_delete(node_l1->mapping);
+                // Delete L1 table
+                cap_delete(node_l1->table);
+
+                // Won't ever delete L0, or we are toast
+
+                slab_free(&st->slabs, node_l1);
+            } else {
+                if (node_l2->previous != NULL) {
+                    if (node_l2->next != NULL) {
+                        node_l2->next->previous = node_l2->previous;
+                    }
+                    node_l2->previous->next = node_l2->next;
+                } else {
+                    node_l1->child = node_l2->next;
+                }
+            }
+            slab_free(&st->slabs, node_l2);
+        } else {
+            if (node_l3->previous != NULL) {
+                if (node_l3->next != NULL) {
+                    node_l3->next->previous = node_l3->previous;
+                }
+                node_l3->previous->next = node_l3->next;
+            } else {
+                node_l2->child = node_l3->next;
+            }
+        }
+
+        slab_free(&st->slabs, node_l3);
+    } else {
+        if (node_l4->previous != NULL) {
+            if (node_l4->next != NULL) {
+                node_l4->next->previous = node_l4->previous;
+            }
+            node_l4->previous->next = node_l4->next;
+        } else {
+            node_l3->child = node_l4->next;
+        }
+    }
+
+    slab_free(&st->slabs, node_l4);
+
     return SYS_ERR_OK;
 }
