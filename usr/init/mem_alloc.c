@@ -17,13 +17,20 @@ errval_t aos_ram_alloc_aligned(struct capref *ret, size_t size, size_t alignment
 
 errval_t aos_ram_free(struct capref cap, size_t bytes)
 {
+    // This is ram_free, not frame free
+    // Keeping code for future reference
+    // errval_t err;
+    // struct frame_identity fi;
+    // err = frame_identify(cap, &fi);
+    // if (bytes > fi.bytes) {
+    //     bytes = fi.bytes;
+    // }
+    //  TODO: change back to fi.base
     errval_t err;
-    struct frame_identity fi;
-    err = frame_identify(cap, &fi);
-    if (bytes > fi.bytes) {
-        bytes = fi.bytes;
-    }
-    return mm_free(&aos_mm, cap, fi.base, bytes);
+    struct capability cp;
+    err = cap_direct_identify(cap, &cp);
+    assert(err_is_ok(err));
+    return mm_free(&aos_mm, cap, get_address(&cp), bytes);
 }
 
 /**

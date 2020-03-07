@@ -60,34 +60,42 @@ grading_test_early(void) {
 
     struct capref *refs0 = (struct capref *)buf0;
     for (size_t i = 0; i < BASE_PAGE_SIZE/sizeof(struct capref); ++i) {
-        debug_printf("Try: %"PRIu64"\n", i);
-        err = ram_alloc(refs0 + i, (1 << 12));
+        debug_printf("Trya0: %"PRIu64"\n", i);
+        err = ram_alloc(refs0 + i, BASE_PAGE_SIZE);
         assert(err_is_ok(err));
-        debug_printf("Success: %"PRIu64"\n", i);
+        struct capability ref_cp;
+        err = cap_direct_identify(*(refs0 + i), &ref_cp);
+        assert(get_address(&ref_cp) != 0);
+        debug_printf("Successa0: %"PRIu64"\n", i);
     }
 
     struct capref *refs1 = (struct capref *)buf1;
     for (size_t i = 0; i < BASE_PAGE_SIZE/sizeof(struct capref); ++i) {
-        debug_printf("Try: %"PRIu64"\n", i);
-        err = ram_alloc(refs1 + i, (1 << 12));
+        debug_printf("Trya1: %"PRIu64"\n", i);
+        err = ram_alloc(refs1 + i, BASE_PAGE_SIZE);
         assert(err_is_ok(err));
-        debug_printf("Success: %"PRIu64"\n", i);
+        debug_printf("Successa1: %"PRIu64"\n", i);
     }
 
     for (size_t i = 0; i < BASE_PAGE_SIZE/sizeof(struct capref); ++i) {
+        debug_printf("Tryf0: %"PRIu64"\n", i);
         struct capability ref_cp;
         err = cap_direct_identify(*(refs0 + i), &ref_cp);
         assert(err_is_ok(err));
-        err = ram_free(*(refs0 + i), get_size(&ref_cp));
+        assert(get_address(&ref_cp) != 0);
+        err = ram_free(*(refs0 + i), get_address(&ref_cp));
         assert(err_is_ok(err));
+        debug_printf("Successf0: %"PRIu64"\n", i);
     }
 
     for (size_t i = 0; i < BASE_PAGE_SIZE/sizeof(struct capref); ++i) {
+        debug_printf("Tryf1: %"PRIu64"\n", i);
         struct capability ref_cp;
         err = cap_direct_identify(*(refs1 + i), &ref_cp);
         assert(err_is_ok(err));
-        err = ram_free(*(refs1 + i), get_size(&ref_cp));
+        err = ram_free(*(refs1 + i), get_address(&ref_cp));
         assert(err_is_ok(err));
+        debug_printf("Successf1: %"PRIu64"\n", i);
     }
 }
 
