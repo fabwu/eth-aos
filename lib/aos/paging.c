@@ -417,6 +417,9 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
 
     // TODO: Also refill slot_alloc, as slabs might get refilled through
     // mm_alloc whenallocating more slots
+    // Assumption: looking at two_level_alloc, slot_allocator underlying
+    // slot_alloc seems already designed to not trigger a recursion
+    // Search for two_level_allo, or generally look under lib/aos/slot_alloc
 
     return SYS_ERR_OK;
 }
