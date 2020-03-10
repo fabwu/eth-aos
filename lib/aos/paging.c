@@ -454,26 +454,26 @@ errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
 
     // TODO: Refactor
     // Delete mapping
-    cap_delete(node_l4->mapping);
+    cap_destroy(node_l4->mapping);
     // Was the only child of L3
     if (node_l4->previous == NULL && node_l4->next == NULL) {
         // Delete L3 mapping
-        cap_delete(node_l3->mapping);
+        cap_destroy(node_l3->mapping);
         // Delete L3 pt
-        cap_delete(node_l3->table);
+        cap_destroy(node_l3->table);
 
         // Was the only child of L2
         if (node_l3->previous == NULL && node_l3->next == NULL) {
             // Delete L2 mapping
-            cap_delete(node_l2->mapping);
+            cap_destroy(node_l2->mapping);
             // Delete L2 pt
-            cap_delete(node_l2->table);
+            cap_destroy(node_l2->table);
             
             if (node_l2->previous == NULL && node_l2->next == NULL) {
                 // Delete L1 mapping
-                cap_delete(node_l1->mapping);
+                cap_destroy(node_l1->mapping);
                 // Delete L1 table
-                cap_delete(node_l1->table);
+                cap_destroy(node_l1->table);
 
                 // Won't ever delete L0, or we are toast
 

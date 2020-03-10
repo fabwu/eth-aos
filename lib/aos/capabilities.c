@@ -794,6 +794,24 @@ errval_t frame_alloc(struct capref *dest, size_t bytes, size_t *retbytes)
     return frame_create(*dest, bytes, retbytes);
 }
 
+// \brief Free a frame
+// Atm, only freeing of the whole frame is supported
+errval_t frame_free(struct capref cap, size_t bytes) {
+    errval_t err;
+
+    err = ram_free(cap, bytes);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_RAM_FREE);
+    }
+
+    err = cap_destroy(cap);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_DESTROY);
+    }
+
+    return SYS_ERR_OK;
+}
+
 /**
  * \brief Create a DevFrame cap by retyping out of given source PhysAddr cap
  *
