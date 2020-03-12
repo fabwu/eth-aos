@@ -93,7 +93,20 @@ errval_t two_level_alloc(struct slot_allocator *ca, struct capref *ret)
                                              // slot_alloc
             void *slab_buf;
             size_t size;
-            err = paging_region_map(&mca->region, mca->slab.blocksize, &slab_buf, &size);
+            // FIXME: Original
+            // err = paging_region_map(&mca->region, mca->slab.blocksize, &slab_buf, &size);
+            // if (err_is_fail(err)) {
+            //     return err_push(err, LIB_ERR_VSPACE_MMU_AWARE_MAP);
+            // }
+
+            // FIXME: Hack???
+            struct capref frame_cap;
+            err = frame_alloc(&frame_cap, mca->slab.blocksize, &size);
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_VSPACE_MMU_AWARE_MAP);
+            }
+            err = paging_map_frame(get_current_paging_state(), &slab_buf, size,
+                                    frame_cap, NULL, NULL);
             if (err_is_fail(err)) {
                 return err_push(err, LIB_ERR_VSPACE_MMU_AWARE_MAP);
             }

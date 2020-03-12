@@ -347,7 +347,6 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
             default:
                 return LIB_ERR_PAGING_LEVEL;
         }
-        assert(err_is_ok(err));
         err = slot_alloc(&higher_lower_map);
         if (err_is_fail(err)) {
             return err;
@@ -406,9 +405,11 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
+#ifdef DEBUG_PAGING
     debug_printf("map l0: %"PRIu64" l1: %"PRIu64" l2: %"PRIu64" l3: %"PRIu64""
                  " addr: 0x%"PRIx64"\n", l0_slot, l1_slot, l2_slot, l3_slot,
                  vaddr);
+#endif
 
     struct paging_node *node_l1;
     err = map_some(&node_l1, &st->l0, NULL, 1, st->l0_pt, l0_slot,
@@ -499,9 +500,11 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
     uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
+#ifdef DEBUG_PAGING
     debug_printf("unmap l0: %"PRIu64" l1: %"PRIu64" l2: %"PRIu64" l3: "
                  "%"PRIu64" addr: 0x%"PRIx64"\n", l0_slot, l1_slot, l2_slot,
                  l3_slot);
+#endif
 
     struct paging_node *node_l1 = find_some(st->l0, l0_slot);
     assert(node_l1 != NULL);
