@@ -27,7 +27,7 @@
 #define PMAP_META_SIZE ROUND_UP(SLAB_STATIC_SIZE(2048, sizeof(struct ptable)), BASE_PAGE_SIZE)
 
 
-#define VADDR_OFFSET ((lvaddr_t)512UL*1024*1024*1024) // 1GB
+#define VADDR_OFFSET ((lvaddr_t)2<<VMSAv8_64_L0_BITS) // 1GB
 
 #define PAGING_SLAB_BUFSIZE 32
 
