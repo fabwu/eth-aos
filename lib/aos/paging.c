@@ -280,18 +280,28 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     // - Call paging_alloc to get a free virtual address region of the requested size
     // - Map the user provided frame at the free virtual address
     errval_t err;
-    assert(bytes <= BASE_PAGE_SIZE);
+
     static uint64_t counter = 0;
     // Set first bit of l0 index
     uint64_t addr = 1;
+
     addr = addr << VMSAv8_64_L0_BITS;
     addr = addr + (counter << VMSAv8_64_BASE_PAGE_BITS);
-    debug_printf("real l3_slot: %"PRIu64"\n", counter);
-    err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
-    *buf = (void *) addr;
-    ++counter;
-    return err;
 
+    err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    *buf = (void *) addr;
+
+    // How many frames had to be mapped
+    counter += bytes / BASE_PAGE_SIZE;
+    if (bytes % BASE_PAGE_SIZE) {
+        ++counter;
+    }
+
+    return SYS_ERR_OK;
 }
 
 errval_t slab_refill_no_pagefault(struct slab_allocator *slabs, struct capref frame,
@@ -311,7 +321,7 @@ static struct paging_node *find_some(struct paging_node *head, int slot) {
 
 static struct paging_node *map_some(struct paging_node **head,
         struct paging_node *parent, int level, struct capref pt_cpr,
-        int slot, struct paging_state *st, struct capref *frame) {
+        int slot, struct paging_state *st, struct capref *frame, size_t offset) {
     errval_t err = 0;
     struct paging_node *node = find_some(*head, slot);
     if (node == NULL) {
@@ -338,8 +348,9 @@ static struct paging_node *map_some(struct paging_node **head,
         err = slot_alloc(&higher_lower_map);
         assert(err_is_ok(err));
         // Does Read/Write make sense for a page table?
+        // TODO: Add frame offset to support mulit page size maps
         err = vnode_map(pt_cpr, lower_pt_cpr, slot, VREGION_FLAGS_READ_WRITE,
-                0, 1, higher_lower_map);
+                offset, 1, higher_lower_map);
         assert(err_is_ok(err));
 
         node = slab_alloc(&st->slabs);
@@ -364,8 +375,8 @@ static struct paging_node *map_some(struct paging_node **head,
     return node;
 }
 
-errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
-                               struct capref frame, size_t bytes, int flags)
+static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vaddr,
+                               struct capref frame, size_t bytes, size_t offset, int flags)
 {
     /**
      * \brief map a user provided frame at user provided VA.
@@ -378,31 +389,30 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
     assert(bytes <= BASE_PAGE_SIZE);
 
     // First 9 bits
-    uint64_t mask = 0xEF;
+    uint64_t mask = 0x1FF;
 
     uint64_t l0_slot = (vaddr >> VMSAv8_64_L0_BITS) & mask;
 
     struct paging_node *node_l1 = map_some(&st->l0, NULL, 1, st->l0_pt, l0_slot,
-                                            st, NULL);
+                                            st, NULL, 0);
     assert(node_l1 != NULL);
     assert(st->l0 == node_l1);
 
     uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     struct paging_node *node_l2 = map_some(&node_l1->child, node_l1, 2,
-                                            node_l1->table, l1_slot, st, NULL);
+                                            node_l1->table, l1_slot, st, NULL, 0);
     assert(node_l2 != NULL);
     assert(node_l1->child == node_l2);
 
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     struct paging_node *node_l3 = map_some(&node_l2->child, node_l2, 3,
-                                            node_l2->table, l2_slot, st, NULL);
+                                            node_l2->table, l2_slot, st, NULL, 0);
     assert(node_l3 != NULL);
     assert(node_l2->child == node_l3);
 
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
-    debug_printf("l3_slot: %"PRIu64"\n", l3_slot);
     struct paging_node *node_l4 = map_some(&node_l3->child, node_l3, 4,
-                                            node_l3->table, l3_slot, st, &frame);
+                                            node_l3->table, l3_slot, st, &frame, offset);
     assert(node_l4 != NULL);
     assert(node_l3->child == node_l4);
     assert(node_l4->child == NULL);
@@ -424,16 +434,34 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
     return SYS_ERR_OK;
 }
 
+errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
+                               struct capref frame, size_t bytes, int flags)
+{
+    // TODO: Inefficient, but correct
+    errval_t err;
 
-/**
- * \brief unmap a user provided frame, and return the VA of the mapped
- *        frame in `buf`.
- * NOTE: Implementing this function is optional.
- */
-// errval_t paging_unmap(struct paging_state *st, const void *region)
-// {
-errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
-        frame, size_t bytes) {
+    size_t offset = 0;
+    while (bytes >= BASE_PAGE_SIZE) {
+        err = paging_map_fixed_attr_one(st, vaddr, frame, BASE_PAGE_SIZE, offset, flags);
+        if (err_is_fail(err))
+            return err;
+
+        vaddr += BASE_PAGE_SIZE;
+        bytes -= BASE_PAGE_SIZE;
+        offset += BASE_PAGE_SIZE;
+    }
+
+    if (bytes > 0) {
+        err = paging_map_fixed_attr_one(st, vaddr, frame, bytes, offset, flags);
+        if (err_is_fail(err))
+            return err;
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
+        struct capref frame, size_t bytes) {
     assert(bytes <= BASE_PAGE_SIZE);
 
     // First 9 bits
@@ -516,6 +544,36 @@ errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
     }
 
     slab_free(&st->slabs, node_l4);
+
+    return SYS_ERR_OK;
+}
+
+/**
+ * \brief unmap a user provided frame, and return the VA of the mapped
+ *        frame in `buf`.
+ * NOTE: Implementing this function is optional.
+ */
+// errval_t paging_unmap(struct paging_state *st, const void *region)
+// {
+errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
+        frame, size_t bytes) {
+    // TODO: Inefficient, but correct
+    errval_t err;
+
+    while (bytes >= BASE_PAGE_SIZE) {
+        err = paging_unmap_one(st, vaddr, frame, BASE_PAGE_SIZE);
+        if (err_is_fail(err))
+            return err;
+
+        vaddr += BASE_PAGE_SIZE;
+        bytes -= BASE_PAGE_SIZE;
+    }
+
+    if (bytes > 0) {
+        err = paging_unmap_one(st, vaddr, frame, bytes);
+        if (err_is_fail(err))
+            return err;
+    }
 
     return SYS_ERR_OK;
 }
