@@ -282,11 +282,20 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     errval_t err;
 
     static uint64_t counter = 0;
+    uint64_t current_counter = counter;
+
+    // How many frames had to be mapped
+    // Need to be reentrant, calculate new counter before calling anything else
+    counter += bytes / BASE_PAGE_SIZE;
+    if (bytes % BASE_PAGE_SIZE) {
+        ++counter;
+    }
+
     // Set first bit of l0 index
     uint64_t addr = 1;
 
     addr = addr << VMSAv8_64_L0_BITS;
-    addr = addr + (counter << VMSAv8_64_BASE_PAGE_BITS);
+    addr = addr + (current_counter << VMSAv8_64_BASE_PAGE_BITS);
 
     err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
     if (err_is_fail(err)) {
@@ -294,12 +303,6 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     }
 
     *buf = (void *) addr;
-
-    // How many frames had to be mapped
-    counter += bytes / BASE_PAGE_SIZE;
-    if (bytes % BASE_PAGE_SIZE) {
-        ++counter;
-    }
 
     return SYS_ERR_OK;
 }
@@ -319,7 +322,7 @@ static struct paging_node *find_some(struct paging_node *head, int slot) {
     return head;
 }
 
-static struct paging_node *map_some(struct paging_node **head,
+static errval_t map_some(struct paging_node **ret, struct paging_node **head,
         struct paging_node *parent, int level, struct capref pt_cpr,
         int slot, struct paging_state *st, struct capref *frame, size_t offset) {
     errval_t err = 0;
@@ -342,16 +345,20 @@ static struct paging_node *map_some(struct paging_node **head,
                 lower_pt_cpr = *frame;
                 break;
             default:
-                return NULL;
+                return LIB_ERR_PAGING_LEVEL;
         }
         assert(err_is_ok(err));
         err = slot_alloc(&higher_lower_map);
-        assert(err_is_ok(err));
+        if (err_is_fail(err)) {
+            return err;
+        }
+
         // Does Read/Write make sense for a page table?
-        // TODO: Add frame offset to support mulit page size maps
         err = vnode_map(pt_cpr, lower_pt_cpr, slot, VREGION_FLAGS_READ_WRITE,
                 offset, 1, higher_lower_map);
-        assert(err_is_ok(err));
+        if (err_is_fail(err)) {
+            return err;
+        }
 
         node = slab_alloc(&st->slabs);
         assert(node != NULL);
@@ -372,7 +379,9 @@ static struct paging_node *map_some(struct paging_node **head,
         node->slot = slot;
     }
 
-    return node;
+    *ret = node;
+
+    return SYS_ERR_OK;
 }
 
 static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vaddr,
@@ -384,6 +393,8 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
      * TODO(M2): General case
      */
 
+    errval_t err;
+
     // Only one page at the time
     // TODO: Allow for larger frames
     assert(bytes <= BASE_PAGE_SIZE);
@@ -392,34 +403,51 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     uint64_t mask = 0x1FF;
 
     uint64_t l0_slot = (vaddr >> VMSAv8_64_L0_BITS) & mask;
-
-    struct paging_node *node_l1 = map_some(&st->l0, NULL, 1, st->l0_pt, l0_slot,
-                                            st, NULL, 0);
-    assert(node_l1 != NULL);
-    assert(st->l0 == node_l1);
-
     uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
-    struct paging_node *node_l2 = map_some(&node_l1->child, node_l1, 2,
-                                            node_l1->table, l1_slot, st, NULL, 0);
-    assert(node_l2 != NULL);
-    assert(node_l1->child == node_l2);
-
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
-    struct paging_node *node_l3 = map_some(&node_l2->child, node_l2, 3,
-                                            node_l2->table, l2_slot, st, NULL, 0);
-    assert(node_l3 != NULL);
-    assert(node_l2->child == node_l3);
-
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
-    struct paging_node *node_l4 = map_some(&node_l3->child, node_l3, 4,
-                                            node_l3->table, l3_slot, st, &frame, offset);
+    debug_printf("map l0: %"PRIu64" l1: %"PRIu64" l2: %"PRIu64" l3: %"PRIu64""
+                 " addr: 0x%"PRIx64"\n", l0_slot, l1_slot, l2_slot, l3_slot,
+                 vaddr);
+
+    struct paging_node *node_l1;
+    err = map_some(&node_l1, &st->l0, NULL, 1, st->l0_pt, l0_slot,
+                   st, NULL, 0);
+    if(err_is_fail(err)) {
+        return err;
+    }
+    assert(node_l1 != NULL);
+
+    struct paging_node *node_l2;
+    err = map_some(&node_l2, &node_l1->child, node_l1, 2,
+                   node_l1->table, l1_slot, st, NULL, 0);
+    if(err_is_fail(err)) {
+        return err;
+    }
+    assert(node_l2 != NULL);
+
+    struct paging_node *node_l3;
+    err = map_some(&node_l3, &node_l2->child, node_l2, 3,
+                   node_l2->table, l2_slot, st, NULL, 0);
+    if(err_is_fail(err)) {
+        return err;
+    }
+    assert(node_l3 != NULL);
+
+    struct paging_node *node_l4;
+    err = map_some(&node_l4, &node_l3->child, node_l3, 4,
+                   node_l3->table, l3_slot, st, &frame, offset);
+    if(err_is_fail(err)) {
+        return err;
+    }
     assert(node_l4 != NULL);
+    // Virtual address is only allowed to be mapped once!
     assert(node_l3->child == node_l4);
     assert(node_l4->child == NULL);
 
     static size_t is_refilling = 0;
     // TODO: Hope we do not run out of slabs in between
-    if (slab_freecount(&st->slabs) - is_refilling == 32) {
+    if (slab_freecount(&st->slabs) < 32 && !is_refilling) {
         is_refilling = 1;
         slab_default_refill(&st->slabs);
         is_refilling = 0;
@@ -465,21 +493,25 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
     assert(bytes <= BASE_PAGE_SIZE);
 
     // First 9 bits
-    uint64_t mask = 0xEF;
+    uint64_t mask = 0x1FF;
 
     uint64_t l0_slot = (vaddr >> VMSAv8_64_L0_BITS) & mask;
+    uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
+    uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
+    uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
+    debug_printf("unmap l0: %"PRIu64" l1: %"PRIu64" l2: %"PRIu64" l3: "
+                 "%"PRIu64" addr: 0x%"PRIx64"\n", l0_slot, l1_slot, l2_slot,
+                 l3_slot);
+
     struct paging_node *node_l1 = find_some(st->l0, l0_slot);
     assert(node_l1 != NULL);
 
-    uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     struct paging_node *node_l2 = find_some(node_l1->child, l1_slot);
     assert(node_l2 != NULL);
 
-    uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     struct paging_node *node_l3 = find_some(node_l2->child, l2_slot);
     assert(node_l3 != NULL);
 
-    uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
     struct paging_node *node_l4 = find_some(node_l3->child, l3_slot);
     assert(node_l4 != NULL);
 

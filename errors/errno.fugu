@@ -243,6 +243,8 @@ errors libaos LIB_ERR_ {
     failure VNODE_UNMAP         "Failure in vnode_unmap()",
     failure IDC_ENDPOINT_ALLOC  "Failure in idc_endpoint_alloc()",
 
+    failure PAGING_LEVEL  "Failure in map_some()",
+
     // cap operations
     failure REMOTE_REVOKE       "Failure during remote revoke",
     failure REMOTE_RETYPE       "Failure during remote retype",
