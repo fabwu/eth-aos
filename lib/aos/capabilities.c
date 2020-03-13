@@ -796,15 +796,21 @@ errval_t frame_alloc(struct capref *dest, size_t bytes, size_t *retbytes)
 
 // \brief Free a frame
 // Atm, only freeing of the whole frame is supported
-errval_t frame_free(struct capref cap, size_t bytes) {
+errval_t frame_free(struct capref capref, size_t bytes) {
     errval_t err;
 
-    err = ram_free(cap, bytes);
+    struct capability cap;
+    err = cap_direct_identify(capref, &cap);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_IDENTIFY);
+    }
+
+    err = ram_free(get_address(&cap));
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_RAM_FREE);
     }
 
-    err = cap_destroy(cap);
+    err = cap_destroy(capref);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_CAP_DESTROY);
     }

@@ -466,6 +466,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
                                struct capref frame, size_t bytes, int flags)
 {
+    debug_printf("map begin\n");
     // TODO: Inefficient, but correct
     errval_t err;
 
@@ -485,6 +486,8 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
         if (err_is_fail(err))
             return err;
     }
+
+    debug_printf("map end\n");
 
     return SYS_ERR_OK;
 }

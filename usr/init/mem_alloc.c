@@ -15,22 +15,9 @@ errval_t aos_ram_alloc_aligned(struct capref *ret, size_t size, size_t alignment
     return mm_alloc_aligned(&aos_mm, size, alignment, ret);
 }
 
-errval_t aos_ram_free(struct capref cap, size_t bytes)
+errval_t aos_ram_free(genpaddr_t addr)
 {
-    // This is ram_free, not frame free
-    // Keeping code for future reference
-    // errval_t err;
-    // struct frame_identity fi;
-    // err = frame_identify(cap, &fi);
-    // if (bytes > fi.bytes) {
-    //     bytes = fi.bytes;
-    // }
-    //  TODO: change back to fi.base
-    errval_t err;
-    struct capability cp;
-    err = cap_direct_identify(cap, &cp);
-    assert(err_is_ok(err));
-    return mm_free(&aos_mm, cap, get_address(&cp), bytes);
+    return mm_free(&aos_mm, addr);
 }
 
 /**
@@ -48,8 +35,13 @@ errval_t initialize_ram_alloc(void)
     }
 
     // Give aos_mm a bit of memory for the initialization
-    static char nodebuf[sizeof(struct mmnode)*64];
-    slab_grow(&aos_mm.slabs, nodebuf, sizeof(nodebuf));
+    static char capnode_buf[sizeof(struct capnode)*32];
+    slab_grow(&aos_mm.capnode_slab, capnode_buf, sizeof(capnode_buf));
+
+    static char mmnode_buf[sizeof(struct mmnode)*64];
+    slab_grow(&aos_mm.mmnode_slab, mmnode_buf, sizeof(mmnode_buf));
+
+    assert(bi->regions_length <= 32);
 
     // Walk bootinfo and add all RAM caps to allocator handed to us by the kernel
     uint64_t mem_avail = 0;

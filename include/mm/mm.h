@@ -34,12 +34,20 @@ struct capinfo {
     gensize_t size;
 };
 
+struct capnode {
+    struct capinfo cap;
+    struct capnode *prev;
+    struct capnode *next;
+    genpaddr_t base;
+    gensize_t size;
+};
+
 /**
  * \brief Node in Memory manager
  */
 struct mmnode {
     enum nodetype type;    ///< Type of `this` node.
-    struct capinfo cap;    ///< Cap in which this region exists
+    struct capnode *capnode;
     struct mmnode *prev;   ///< Previous node in the list.
     struct mmnode *next;   ///< Next node in the list.
     genpaddr_t base;       ///< Base address of this region
@@ -53,8 +61,10 @@ struct mmnode {
  * them to allocate its memory, we declare it in the public header.
  */
 struct mm {
-    struct slab_allocator slabs; ///< Slab allocator used for allocating nodes
-    struct mmnode *head;         ///< Head of doubly-linked list of nodes in order
+    struct slab_allocator capnode_slab;
+    struct slab_allocator mmnode_slab;
+    struct capnode *capnode_head;
+    struct mmnode *mmnode_head;
 
     /* statistics */
     gensize_t stats_bytes_max;
@@ -66,7 +76,7 @@ errval_t mm_add(struct mm *mm, struct capref cap, genpaddr_t base, size_t size);
 errval_t mm_alloc_aligned(struct mm *mm, size_t size, size_t alignment,
                               struct capref *retcap);
 errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap);
-errval_t mm_free(struct mm *mm, struct capref cap, genpaddr_t base, gensize_t size);
+errval_t mm_free(struct mm *mm, genpaddr_t addr);
 void mm_dump_mmnodes(struct mm *mm);
 void mm_destroy(struct mm *mm);
 
