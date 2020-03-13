@@ -361,7 +361,6 @@
     "mdb/mdb_tree.h",
     "mdb/types.h",
     "mm/mm.h",
-    "mm/slot_alloc.h",
     "multiboot.h",
     "multicast.h",
     "netdb.h",
