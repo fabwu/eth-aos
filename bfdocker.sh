@@ -30,7 +30,7 @@ if [ $# == 0 ]; then
 fi
 
 # run the command in the docker image
-podman run --privileged -i -t \
+podman run --rm --privileged -i -t \
     -v $BF_SOURCE:/source \
     -v $BF_BUILD:/source/build \
     $BF_DOCKER /bin/bash -c "(cd /source/build && $BF_CMD)"
