@@ -56,7 +56,11 @@ bsp_main(int argc, char *argv[]) {
     grading_test_early();
 
     // TODO: Spawn system processes, boot second core etc. here
-    spawn_load_by_name("hello", NULL, NULL);
+    err = spawn_load_by_name("hello", NULL, NULL);
+
+	if(err_is_fail(err)) {
+		DEBUG_ERR(err, "Couldn't spawn module");
+	}
 
     // Grading 
     grading_test_late();

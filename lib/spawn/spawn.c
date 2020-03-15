@@ -96,8 +96,7 @@ static errval_t get_elf_binary(char *binary_name) {
 	struct mem_region *module = multiboot_find_module(bi, binary_name);
 
 	if(module == NULL) {
-		DEBUG_ERR(err, "Couldn't get mem region");
-		return err;
+		return SPAWN_ERR_FIND_MODULE;
 	}
 
 	DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
@@ -113,11 +112,10 @@ static errval_t get_elf_binary(char *binary_name) {
 
 	err = paging_map_frame_attr(get_current_paging_state(),
             (void **)&elf_binary, BASE_PAGE_SIZE, child_frame,
-            VREGION_FLAGS_READ, NULL, NULL);
+            VREGION_FLAGS_READ_WRITE, NULL, NULL);
 
 	if (err_is_fail(err)) {
-		DEBUG_ERR(err, "Couldn't map binary into vspace");
-	    return err;
+	    return err_push(err, SPAWN_ERR_MAP_MODULE);
     }
 
 #if 1
