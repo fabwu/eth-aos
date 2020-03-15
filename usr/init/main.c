@@ -21,6 +21,7 @@
 #include <aos/waitset.h>
 #include <aos/aos_rpc.h>
 #include <mm/mm.h>
+#include <spawn/spawn.h>
 #include <grading.h>
 
 #include "mem_alloc.h"
@@ -55,7 +56,8 @@ bsp_main(int argc, char *argv[]) {
     grading_test_early();
 
     // TODO: Spawn system processes, boot second core etc. here
-    
+    spawn_load_by_name("hello", NULL, NULL);
+
     // Grading 
     grading_test_late();
 
