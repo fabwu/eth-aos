@@ -74,7 +74,7 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
         // addr space starts at zero
         addr = 0;
     }
-    if (addr + size <= st->max_addr) {
+    if ((addr + size - 1) <= st->max_addr) {
         struct addr_mgr_node *new;
         err = addr_mgr_add_node(st, prev, &new);
         if (err_is_fail(err)) {
@@ -115,8 +115,8 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
     struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
 
     if (prev == NULL ||
-            ((prev->base + prev->size) < base &&
-             (prev->next == NULL || (base + size) < prev->next->base))) {
+            ((prev->base + prev->size - 1) < base &&
+             (prev->next == NULL || (base + size - 1) < prev->next->base))) {
         struct addr_mgr_node *new;
         err = addr_mgr_add_node(st, prev, &new);
         if (err_is_fail(err)) {
