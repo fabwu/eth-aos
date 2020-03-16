@@ -38,8 +38,8 @@ void paging_init_onthread(struct thread *t);
 
 errval_t paging_region_init(struct paging_state *st,
                             struct paging_region *pr, size_t size, paging_flags_t flags);
-errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
-                                 lvaddr_t base, size_t size, paging_flags_t flags);
+// errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
+//                                  lvaddr_t base, size_t size, paging_flags_t flags);
 errval_t paging_region_init_aligned(struct paging_state *st,
                                     struct paging_region *pr,
                                     size_t size, size_t alignment, paging_flags_t flags);

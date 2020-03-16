@@ -25,6 +25,138 @@ static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
 
+static errval_t addr_mgr_add_node(struct addr_mgr_state *st,
+                                    struct addr_mgr_node *prev,
+                                    struct addr_mgr_node **new) {
+    *new = (struct addr_mgr_node *)slab_alloc(&st->slabs);
+    if (*new == NULL) {
+        return LIB_ERR_SLAB_ALLOC_FAIL;
+    }
+    if (prev == NULL) {
+        if (st->head != NULL) {
+            (*new)->next = st->head;
+            st->head->prev = *new;
+        } else {
+            st->tail = *new;
+            (*new)->next = NULL;
+        }
+        st->head = *new;
+        (*new)->prev = NULL;
+    } else {
+        (*new)->prev = prev;
+        if (prev->next != NULL) {
+            (*new)->next = prev->next;
+            prev->next->prev = *new;
+        } else {
+            (*new)->next = NULL;
+            st->tail = *new;
+        }
+        prev->next = *new;
+    }
+}
+
+/**
+ * \brief allocs a range of size from the addr mgr at some base addr, returns
+ * the base addr
+ */
+static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
+                                gensize_t size) {
+    // Just go at the end of linked list, we have infinite space (Just check we
+    // did not run out of infinite space)
+    struct addr_mgr_node *prev = NULL;
+    genvaddr_t addr;
+    errval_t err;
+
+    if (st->tail != NULL) {
+        prev = st->tail;
+        addr = st->tail->base + st->tail->size;
+    } else {
+        // addr space starts at zero
+        addr = 0;
+    }
+    if (addr + size <= st->max_addr) {
+        struct addr_mgr_node *new;
+        err = addr_mgr_add_node(st, prev, &new);
+        if (err_is_fail(err)) {
+            return err;
+        }
+        new->base = addr;
+        new->size = size;
+        *ret = addr;
+        return SYS_ERR_OK;
+    } else {
+        return LIB_ERR_ADDR_MGR_FULL;
+    }
+}
+
+static struct addr_mgr_node *addr_mgr_find_prev(struct addr_mgr_state *st,
+                                                genvaddr_t base) {
+    struct addr_mgr_node *prev = st->head;
+    if (prev != NULL) {
+        while (prev->next != NULL && prev->next->base < base) {
+            prev = prev->next;
+        }
+    }
+    assert(prev == NULL  ||
+            (prev->base <= base &&
+             (prev->next == NULL || base <= prev->next->base)));
+
+    return prev;
+}
+
+/**
+ * \brief allocs a range from the addr mgr at given base addr
+ */
+static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
+                                gensize_t size) {
+    // Find first node whose next is inexistent or has a larger or equal base
+    // than the desired base
+    errval_t err;
+    struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
+
+    if (prev == NULL ||
+            ((prev->base + prev->size) < base &&
+             (prev->next == NULL || (base + size) < prev->next->base))) {
+        struct addr_mgr_node *new;
+        err = addr_mgr_add_node(st, prev, &new);
+        if (err_is_fail(err)) {
+            return err;
+        }
+        new->base = base;
+        new->size = size;
+        return SYS_ERR_OK;
+    } else {
+        return LIB_ERR_ADDR_MGR_FULL;
+    }
+}
+
+// TODO: Size really needed?
+static errval_t addr_mgr_free(struct addr_mgr_state *st, genvaddr_t base,
+                                gensize_t size) {
+    struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
+    
+    if (prev == NULL) {
+        return SYS_ERR_OK;
+    } else if (prev->base == base && prev->size == size) {
+        // TODO: Hope this is correct...
+        if (prev->prev == NULL) {
+            st->head = prev->next;
+        } else {
+            prev->prev->next = prev->next;
+        }
+        if (prev->next != NULL) {
+            prev->next->prev = prev->prev;
+        } else {
+            st->tail = prev->prev;
+        }
+        slab_free(&st->slabs, (void *)prev);
+
+        return SYS_ERR_OK;
+    } else {
+        return LIB_ERR_ADDR_MGR_NOT_FOUND;
+    }
+}
+
 /**
  * \brief Helper function that allocates a slot and
  *        creates a aarch64 page table capability for a certain level
@@ -130,6 +262,8 @@ errval_t paging_init(void)
     current.l0_pt.cnode = cnode_page;
     current.l0_pt.slot = 0;
 
+    current.addr_mgr_state.head = NULL;
+
     set_current_paging_state(&current);
     return SYS_ERR_OK;
 }
@@ -147,7 +281,11 @@ void paging_init_onthread(struct thread *t)
  * \brief Initialize a paging region in `pr`, such that it  starts
  * from base and contains size bytes.
  */
-errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
+// FIXME: This function does not make sense, without ram cap we can't map the
+// stuff, why would you reserve a region that is not mapped?
+// Made static, as it would break functions like paging_region_map, of which
+// the caller obviously assumes there is ram backing the paging region.
+static errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
                                   lvaddr_t base, size_t size, paging_flags_t flags)
 {
     pr->base_addr = (lvaddr_t)base;
@@ -200,7 +338,7 @@ errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **ret
 {
     lvaddr_t end_addr = pr->base_addr + pr->region_size;
     ssize_t rem = end_addr - pr->current_addr;
-    if (rem > req_size) {
+    if (rem >= req_size) {
         // ok
         *retbuf = (void *)pr->current_addr;
         *ret_size = req_size;

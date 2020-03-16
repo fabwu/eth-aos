@@ -59,6 +59,20 @@ struct paging_region {
     // TODO: if needed add struct members for tracking state
 };
 
+struct addr_mgr_node {
+    genvaddr_t base;
+    gensize_t size;
+    struct addr_mgr_node* prev;
+    struct addr_mgr_node* next;
+};
+
+struct addr_mgr_state {
+    struct slab_allocator slabs;
+    struct addr_mgr_node *head;
+    struct addr_mgr_node *tail;
+    genvaddr_t max_addr;
+};
+
 // TODO: Replace with a tree of some sort, linked list will be excrutiating slow
 // when many mappings exist
 struct paging_node {
@@ -82,6 +96,7 @@ struct paging_state {
     struct slab_allocator slabs;
     struct capref l0_pt;
     struct paging_node *l0;
+    struct addr_mgr_state addr_mgr_state;
 };
 
 
