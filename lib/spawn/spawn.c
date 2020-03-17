@@ -25,20 +25,105 @@ extern coreid_t my_core_id;
  * \param enabled_area The "resume enabled" register set. Must not be NULL.
  * \param disabled_area The "resume disabled" register set. Must not be NULL.
  */
-__attribute__((__used__))
-static void armv8_set_registers(void *arch_load_info,
-                              dispatcher_handle_t handle,
-                              arch_registers_state_t *enabled_area,
-                              arch_registers_state_t *disabled_area)
+__attribute__((__used__)) static void
+armv8_set_registers(void *arch_load_info, dispatcher_handle_t handle,
+                    arch_registers_state_t *enabled_area,
+                    arch_registers_state_t *disabled_area)
 {
     assert(arch_load_info != NULL);
-    uintptr_t got_base = (uintptr_t) arch_load_info;
+    uintptr_t got_base = (uintptr_t)arch_load_info;
 
-    struct dispatcher_shared_aarch64 * disp_arm = get_dispatcher_shared_aarch64(handle);
+    struct dispatcher_shared_aarch64 *disp_arm = get_dispatcher_shared_aarch64(handle);
     disp_arm->got_base = got_base;
 
     enabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
     disabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
+}
+
+static errval_t create_child_cspace(struct spawninfo *si)
+{
+    struct capref l1_cnode_cap;
+    struct cnoderef l1_cnode_ref;
+    errval_t err;
+    err = cnode_create_l1(&l1_cnode_cap, &l1_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE);
+    }
+
+    struct capref task_cnode_cap;
+    struct cnoderef task_cnode_ref;
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_TASKCN, &task_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
+    }
+    task_cnode_cap.cnode = task_cnode_ref;
+    // TODO: Populate task_cnode_cap
+    // Need dispatcher
+    // SELFEP
+    // DISPATCHER
+    // ROOTCN, give child(more probably dispatcher?) to child l1 cnode
+    task_cnode_cap.slot = TASKCN_SLOT_ROOTCN;
+    // TODO: Is this how it is done??
+    err = cap_copy(task_cnode_cap, l1_cnode_cap);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_COPY);
+    }
+    // DISPFRAME
+    // ARGSPACE
+
+    struct cnoderef alloc_0_cnode_ref;
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_SLOT_ALLOC0,
+                                  &alloc_0_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
+    }
+
+    struct cnoderef alloc_1_cnode_ref;
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_SLOT_ALLOC1,
+                                  &alloc_1_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
+    }
+
+    struct cnoderef alloc_2_cnode_ref;
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_SLOT_ALLOC2,
+                                  &alloc_2_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
+    }
+
+    struct capref base_page_cnode_cap;
+    struct cnoderef base_page_cnode_ref;
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_BASE_PAGE_CN,
+                                  &base_page_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
+    }
+    base_page_cnode_cap.cnode = base_page_cnode_ref;
+    for (int i = 0; i < L2_CNODE_SLOTS; ++i) {
+        struct capref ram_cap;
+        err = ram_alloc(&ram_cap, BASE_PAGE_SIZE);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_RAM_ALLOC);
+        }
+        base_page_cnode_cap.slot = i;
+        err = cap_copy(base_page_cnode_cap, ram_cap);
+    }
+
+    struct capref page_cnode_cap;
+    struct cnoderef page_cnode_ref;
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_TASKCN, &page_cnode_ref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
+    }
+    page_cnode_cap.cnode = page_cnode_ref;
+    // TODO: Populate task_cnode_cap
+    // L0 pagetable goes into slot 0
+    // Lower slots contain lower level page tables
+    // Which begs the question if we could read out our own page table with this
+    // information
+
+    return SYS_ERR_OK;
 }
 
 /**
@@ -58,9 +143,8 @@ static void armv8_set_registers(void *arch_load_info,
  * \return Either SYS_ERR_OK if no error occured or an error
  * indicating what went wrong otherwise.
  */
-errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si,
-                domainid_t *pid) {
-
+errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
+{
     // TODO: Implement me
     // - Initialize the spawn_info struct
     // - Get the module from the multiboot image
@@ -75,87 +159,97 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si,
     return LIB_ERR_NOT_IMPLEMENTED;
 }
 
-static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si) {
-	errval_t err = SYS_ERR_OK;
+static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
+{
+    errval_t err = SYS_ERR_OK;
 
-	assert(bi);
-	assert(binary_name);
-	assert(si);
+    assert(bi);
+    assert(binary_name);
+    assert(si);
 
-	struct mem_region *module = multiboot_find_module(bi, binary_name);
+    struct mem_region *module = multiboot_find_module(bi, binary_name);
 
-	if(module == NULL) {
-		return SPAWN_ERR_FIND_MODULE;
-	}
-
-	DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
-			module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
-
-	// map binary frame into vaddress space
-	struct capref child_frame = {
-		.cnode = cnode_module,
-		.slot = module->mrmod_slot
-	};
-
-	si->binary_size = module->mrmod_size;
-
-	void * elf_binary;
-
-	//XXX What about this frame? Can we remove it if ELF sections are mapped?
-	err = paging_map_frame_attr(get_current_paging_state(),
-            (void **)&elf_binary, si->binary_size, child_frame,
-            VREGION_FLAGS_READ, NULL, NULL);
-
-	if (err_is_fail(err)) {
-	    return err_push(err, SPAWN_ERR_MAP_MODULE);
+    if (module == NULL) {
+        return SPAWN_ERR_FIND_MODULE;
     }
 
-	si->binary_base = (lvaddr_t)elf_binary;
+    DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
+                 module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
 
-	uint8_t magic_number = *(uint8_t *) si->binary_base;
-	if(magic_number != 0x7f) {
-		return ELF_ERR_HEADER;
-	}
+    // map binary frame into vaddress space
+    struct capref child_frame = { .cnode = cnode_module, .slot = module->mrmod_slot };
 
-	return err;
+    si->binary_size = module->mrmod_size;
+
+    void *elf_binary;
+
+    // XXX What about this frame? Can we remove it if ELF sections are mapped?
+    err = paging_map_frame_attr(get_current_paging_state(), (void **)&elf_binary,
+                                si->binary_size, child_frame, VREGION_FLAGS_READ, NULL,
+                                NULL);
+
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_MAP_MODULE);
+    }
+
+    si->binary_base = (lvaddr_t)elf_binary;
+
+    uint8_t magic_number = *(uint8_t *)si->binary_base;
+    if (magic_number != 0x7f) {
+        return ELF_ERR_HEADER;
+    }
+
+    return err;
 }
 
-static errval_t elf_alloc(void *state, genvaddr_t base, size_t size,
-		uint32_t flags, void **ret) {
-	errval_t err = SYS_ERR_OK;
+static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t flags,
+                          void **ret)
+{
+    errval_t err = SYS_ERR_OK;
 
-	//XXX useful command: readelf -l build/armv8/sbin/hello
-	int frame_flags;
+    // XXX useful command: readelf -l build/armv8/sbin/hello
+    int frame_flags;
 
-	switch(flags) {
-		case PF_X: frame_flags = VREGION_FLAGS_EXECUTE; break;
-		case PF_W: frame_flags = VREGION_FLAGS_WRITE; break;
-		case PF_R: frame_flags = VREGION_FLAGS_READ; break;
-		case (PF_R | PF_W): frame_flags = VREGION_FLAGS_READ_WRITE; break;
-		case (PF_R | PF_X): frame_flags = VREGION_FLAGS_READ_EXECUTE; break;
-		default:
-			// unknown flags
-			assert(false);
-	}
+    switch (flags) {
+    case PF_X:
+        frame_flags = VREGION_FLAGS_EXECUTE;
+        break;
+    case PF_W:
+        frame_flags = VREGION_FLAGS_WRITE;
+        break;
+    case PF_R:
+        frame_flags = VREGION_FLAGS_READ;
+        break;
+    case (PF_R | PF_W):
+        frame_flags = VREGION_FLAGS_READ_WRITE;
+        break;
+    case (PF_R | PF_X):
+        frame_flags = VREGION_FLAGS_READ_EXECUTE;
+        break;
+    default:
+        // unknown flags
+        assert(false);
+    }
 
-	DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and frame flags 0x%x\n",
-			base, size, flags, frame_flags);
+    DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
+                 "frame flags 0x%x\n",
+                 base, size, flags, frame_flags);
 
-	struct capref frame_cap;
-	err = frame_alloc(&frame_cap, size, NULL);
-	if(err_is_fail(err)) {
-		return err_push(err, SPAWN_ERR_CREATE_ELF_FRAME);
-	}
+    struct capref frame_cap;
+    err = frame_alloc(&frame_cap, size, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_ELF_FRAME);
+    }
 
-	err = paging_map_frame_attr(get_current_paging_state(), ret, size, frame_cap,
-			frame_flags, NULL, NULL);
-	if(err_is_fail(err)) {
-		return err;
-	}
+    err = paging_map_frame_attr(get_current_paging_state(), ret, size, frame_cap,
+                                frame_flags, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
-	//TODO Map frame into child
+    // TODO Map frame into child
 
-	return err;
+    return err;
 }
 
 /**
@@ -171,31 +265,32 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size,
  * \return Either SYS_ERR_OK if no error occured or an error
  * indicating what went wrong otherwise.
  */
-errval_t spawn_load_by_name(char *binary_name, struct spawninfo * si,
-                            domainid_t *pid) {
-
+errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t *pid)
+{
     // TODO: Implement me
     // - Get the mem_region from the multiboot image
     // - Fill in argc/argv from the multiboot command line
     // - Call spawn_load_argv
-	errval_t err = SYS_ERR_OK;
-	si->binary_name = binary_name;
+    errval_t err = SYS_ERR_OK;
+    si->binary_name = binary_name;
 
-	err = locate_elf_binary(binary_name, si);
-	if(err_is_fail(err)) {
-		return err;
-	}
+    create_child_cspace(si);
 
-	DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
-			si->binary_size);
+    err = locate_elf_binary(binary_name, si);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
-	//TODO init cspace and vspace
-	//TODO Init state which gets passed to each alloc call
-	err = elf_load(EM_AARCH64, elf_alloc, NULL, si->binary_base, si->binary_size,
-			&si->entrypoint);
-	if(err_is_fail(err)) {
-		return err;
-	}
+    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
+                 si->binary_size);
+
+    // TODO init cspace and vspace
+    // TODO Init state which gets passed to each alloc call
+    err = elf_load(EM_AARCH64, elf_alloc, NULL, si->binary_base, si->binary_size,
+                   &si->entrypoint);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
     return err;
 }
