@@ -26,12 +26,14 @@ struct spawninfo {
 
     // Information about the binary
     char * binary_name;     // Name of the binary
+	lvaddr_t binary_base;
+	size_t binary_size;
 
     // TODO(M2): Add fields you need to store state
     //           when spawning a new dispatcher,
     //           e.g. references to the child's
     //           capabilities or paging state
-
+	genvaddr_t entrypoint;
 };
 
 // Start a child process using the multiboot command line. Fills in si.

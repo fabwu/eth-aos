@@ -56,11 +56,14 @@ bsp_main(int argc, char *argv[]) {
     grading_test_early();
 
     // TODO: Spawn system processes, boot second core etc. here
-    err = spawn_load_by_name("hello", NULL, NULL);
+	struct spawninfo *si = (struct spawninfo *) malloc(sizeof(struct spawninfo));
+    err = spawn_load_by_name("hello", si, NULL);
 
 	if(err_is_fail(err)) {
 		DEBUG_ERR(err, "Couldn't spawn module");
 	}
+
+	free(si);
 
     // Grading 
     grading_test_late();

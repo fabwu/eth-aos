@@ -16,10 +16,6 @@
 extern struct bootinfo *bi;
 extern coreid_t my_core_id;
 
-
-
-
-
 /**
  * \brief Set the base address of the .got (Global Offset Table) section of the ELF binary
  *
@@ -44,14 +40,6 @@ static void armv8_set_registers(void *arch_load_info,
     enabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
     disabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
 }
-
-
-
-
-
-
-
-
 
 /**
  * TODO(M2): Implement this function.
@@ -87,11 +75,12 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si,
     return LIB_ERR_NOT_IMPLEMENTED;
 }
 
-static errval_t get_elf_binary(char *binary_name) {
+static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si) {
 	errval_t err = SYS_ERR_OK;
 
 	assert(bi);
 	assert(binary_name);
+	assert(si);
 
 	struct mem_region *module = multiboot_find_module(bi, binary_name);
 
@@ -100,7 +89,7 @@ static errval_t get_elf_binary(char *binary_name) {
 	}
 
 	DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
-			module->mr_type, module->mr_bytes, module->mr_base, module->mrmod_data);
+			module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
 
 	// map binary frame into vaddress space
 	struct capref child_frame = {
@@ -108,22 +97,63 @@ static errval_t get_elf_binary(char *binary_name) {
 		.slot = module->mrmod_slot
 	};
 
+	si->binary_size = module->mrmod_size;
+
 	void * elf_binary;
 
+	//XXX What about this frame? Can we remove it if ELF sections are mapped?
 	err = paging_map_frame_attr(get_current_paging_state(),
-            (void **)&elf_binary, BASE_PAGE_SIZE, child_frame,
-            VREGION_FLAGS_READ_WRITE, NULL, NULL);
+            (void **)&elf_binary, si->binary_size, child_frame,
+            VREGION_FLAGS_READ, NULL, NULL);
 
 	if (err_is_fail(err)) {
 	    return err_push(err, SPAWN_ERR_MAP_MODULE);
     }
 
-#if 1
-	char buf[5];
-	strncpy(buf, elf_binary, sizeof(buf));
-	buf[sizeof(buf) - 1] = '\0';
-	DEBUG_PRINTF("Magic number %s\n", buf);
-#endif
+	si->binary_base = (lvaddr_t)elf_binary;
+
+	uint8_t magic_number = *(uint8_t *) si->binary_base;
+	if(magic_number != 0x7f) {
+		return ELF_ERR_HEADER;
+	}
+
+	return err;
+}
+
+static errval_t elf_alloc(void *state, genvaddr_t base, size_t size,
+		uint32_t flags, void **ret) {
+	errval_t err = SYS_ERR_OK;
+
+	//XXX useful command: readelf -l build/armv8/sbin/hello
+	int frame_flags;
+
+	switch(flags) {
+		case PF_X: frame_flags = VREGION_FLAGS_EXECUTE; break;
+		case PF_W: frame_flags = VREGION_FLAGS_WRITE; break;
+		case PF_R: frame_flags = VREGION_FLAGS_READ; break;
+		case (PF_R | PF_W): frame_flags = VREGION_FLAGS_READ_WRITE; break;
+		case (PF_R | PF_X): frame_flags = VREGION_FLAGS_READ_EXECUTE; break;
+		default:
+			// unknown flags
+			assert(false);
+	}
+
+	DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and frame flags 0x%x\n",
+			base, size, flags, frame_flags);
+
+	struct capref frame_cap;
+	err = frame_alloc(&frame_cap, size, NULL);
+	if(err_is_fail(err)) {
+		return err_push(err, SPAWN_ERR_CREATE_ELF_FRAME);
+	}
+
+	err = paging_map_frame_attr(get_current_paging_state(), ret, size, frame_cap,
+			frame_flags, NULL, NULL);
+	if(err_is_fail(err)) {
+		return err;
+	}
+
+	//TODO Map frame into child
 
 	return err;
 }
@@ -148,6 +178,25 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo * si,
     // - Get the mem_region from the multiboot image
     // - Fill in argc/argv from the multiboot command line
     // - Call spawn_load_argv
-    return get_elf_binary(binary_name);
+	errval_t err = SYS_ERR_OK;
+	si->binary_name = binary_name;
+
+	err = locate_elf_binary(binary_name, si);
+	if(err_is_fail(err)) {
+		return err;
+	}
+
+	DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
+			si->binary_size);
+
+	//TODO init cspace and vspace
+	//TODO Init state which gets passed to each alloc call
+	err = elf_load(EM_AARCH64, elf_alloc, NULL, si->binary_base, si->binary_size,
+			&si->entrypoint);
+	if(err_is_fail(err)) {
+		return err;
+	}
+
+    return err;
 }
 
