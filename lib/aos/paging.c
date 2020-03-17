@@ -57,10 +57,13 @@ static void addr_mgr_add_node(struct addr_mgr_state *st,
  * the base addr
  */
 static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
-                                gensize_t size) {
+                                gensize_t size, gensize_t alignment) {
 #ifdef DEBUG_ADDR_MGR
     debug_printf("addr_mgr_alloc begin\n");
 #endif
+    // TODO: Handle alignment
+    assert(alignment == BASE_PAGE_SIZE);
+    assert(size % BASE_PAGE_SIZE == 0);
     // Just go at the end of linked list, we have infinite space (Just check we
     // did not run out of infinite space)
     struct addr_mgr_node *prev = NULL;
@@ -81,6 +84,8 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
         // addr space starts at zero
         addr = 0;
     }
+    assert(addr %BASE_PAGE_SIZE == 0);
+
     if ((addr + size - 1) <= st->max_addr) {
         addr_mgr_add_node(st, prev, new);
 
@@ -128,6 +133,10 @@ static struct addr_mgr_node *addr_mgr_find_prev(struct addr_mgr_state *st,
  */
 static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
                                 gensize_t size) {
+    // TODO: Handle alignment
+    assert(base % BASE_PAGE_SIZE == 0);
+    assert(size % BASE_PAGE_SIZE == 0);
+    // Just go at the end of linked list, we have infinite space (Just check we
     // Find first node whose next is inexistent or has a larger or equal base
     // than the desired base
     struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
@@ -329,24 +338,36 @@ void paging_init_onthread(struct thread *t)
 }
 
 /**
- * \brief Initialize a paging region in `pr`, such that it  starts
- * from base and contains size bytes.
+ * \brief assumes that base has been reserved by/gotten from the addr_mgr
  */
-// FIXME: This function does not make sense, without ram cap we can't map the
-// stuff, why would you reserve a region that is not mapped?
-// Made static, as it would break functions like paging_region_map, of which
-// the caller obviously assumes there is ram backing the paging region.
-static errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
-                                  lvaddr_t base, size_t size, paging_flags_t flags)
-{
+static errval_t paging_region_init_base(struct paging_state *st,
+                                        struct paging_region *pr,
+                                        lvaddr_t base,
+                                        size_t size,
+                                        paging_flags_t flags) {
     pr->base_addr = (lvaddr_t)base;
     pr->current_addr = pr->base_addr;
     pr->region_size = size;
     pr->flags = flags;
 
-    //TODO(M2): Add the region to a datastructure and ensure paging_alloc
-    //will return non-overlapping regions.
     return SYS_ERR_OK;
+}
+
+/**
+ * \brief Initialize a paging region in `pr`, such that it  starts
+ * from base and contains size bytes.
+ */
+errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
+                                  lvaddr_t base, size_t size, paging_flags_t flags)
+{
+    // TODO: Reserve space at addr_mgr
+    errval_t err;
+    err = addr_mgr_alloc_fixed(&st->addr_mgr_state, base, size);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FIXED_FAIL);
+    }
+
+    return paging_region_init_base(st, pr, base, size, flags);
 }
 
 /**
@@ -356,14 +377,14 @@ static errval_t paging_region_init_fixed(struct paging_state *st, struct paging_
 errval_t paging_region_init_aligned(struct paging_state *st, struct paging_region *pr,
                                     size_t size, size_t alignment, paging_flags_t flags)
 {
-    void *base;
-    errval_t err = paging_alloc(st, &base, size, alignment);
+    errval_t err;
+    genvaddr_t base;
+    err = addr_mgr_alloc(&st->addr_mgr_state, &base, size, alignment);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "paging_region_init: paging_alloc failed\n");
-        return err_push(err, LIB_ERR_VSPACE_MMU_AWARE_INIT);
+        return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FAIL);
     }
 
-    return paging_region_init_fixed(st, pr, (lvaddr_t)base, size, flags);
+    return paging_region_init_base(st, pr, base, size, flags);
 }
 
 /**
@@ -387,6 +408,7 @@ errval_t paging_region_init(struct paging_state *st, struct paging_region *pr,
 errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **retbuf,
                            size_t *ret_size)
 {
+    // TODO: Alloc ram lazyly here
     lvaddr_t end_addr = pr->base_addr + pr->region_size;
     ssize_t rem = end_addr - pr->current_addr;
     if (rem >= req_size) {
@@ -440,7 +462,6 @@ errval_t paging_alloc(struct paging_state *st, void **buf, size_t bytes, size_t 
      * \brief Find a bit of free virtual address space that is large enough to
      *        accomodate a buffer of size `bytes`.
      */
-    // TODO: frame_alloc
     errval_t err;
     struct capref cap;
     size_t retbytes;
@@ -487,7 +508,7 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     errval_t err;
 
     genvaddr_t addr;
-    err = addr_mgr_alloc(&st->addr_mgr_state, &addr, bytes);
+    err = addr_mgr_alloc(&st->addr_mgr_state, &addr, bytes, BASE_PAGE_SIZE);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FAIL);
     }

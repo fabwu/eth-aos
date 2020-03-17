@@ -230,7 +230,7 @@ errval_t slot_alloc_init(void)
                              allocation_unit * SLOT_ALLOC_CNODE_SLOTS * 20,
                              VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_VSPACE_MMU_AWARE_INIT);
+        return err_push(err, LIB_ERR_PAGING_REGION_INIT_FAIL);
     }
 
     /* Root allocator */

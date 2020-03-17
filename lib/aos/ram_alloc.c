@@ -50,6 +50,7 @@ errval_t ram_alloc_fixed(struct capref *ret, size_t size, size_t alignment)
 {
     struct ram_alloc_state *state = get_ram_alloc_state();
 
+    debug_printf("size: 0x%"PRIx64" alignment: 0x%"PRIx64"\n", size, alignment);
     if (size == BASE_PAGE_SIZE && alignment <= BASE_PAGE_SIZE) {
         // XXX: Return error if check to see if out of slots
         assert(state->base_capnum < OBJSPERPAGE_CTE);
