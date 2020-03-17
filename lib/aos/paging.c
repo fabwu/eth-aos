@@ -440,7 +440,23 @@ errval_t paging_alloc(struct paging_state *st, void **buf, size_t bytes, size_t 
      * \brief Find a bit of free virtual address space that is large enough to
      *        accomodate a buffer of size `bytes`.
      */
-    *buf = NULL;
+    // TODO: frame_alloc
+    errval_t err;
+    struct capref cap;
+    size_t retbytes;
+    // TODO: Support alignment
+    assert(alignment <= BASE_PAGE_SIZE);
+    err = frame_alloc(&cap, bytes, &retbytes);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_FRAME_ALLOC);
+    }
+    assert(retbytes == bytes);
+
+    err = paging_map_frame(st, buf, bytes, cap, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
+    }
+
     return SYS_ERR_OK;
 }
 
@@ -540,6 +556,7 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
             return err;
         }
 
+        // FIXME: This is not necessarily reentrant
         node = slab_alloc(&st->slabs);
         assert(node != NULL);
 

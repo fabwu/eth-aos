@@ -298,7 +298,6 @@ static void test_hard(void) {
 
 void
 grading_test_early(void) {
-
 	if(TEST_PAGING) {
 		debug_printf("Grading test early\n");
 		test_hard();

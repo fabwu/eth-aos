@@ -270,6 +270,9 @@ errors libaos LIB_ERR_ {
     failure ADDR_MGR_FREE_FAIL "addr_mgr_free() returned error",
     failure ADDR_MGR_NOT_FOUND "addr_mgr has not found for base",
 
+    // paging
+    failure PAGING_MAP_FRAME "paging_map_frame() returned error",
+
     // vspace
     failure VSPACE_CURRENT_INIT "Failure in vspace_current_init()",
     failure VSPACE_INIT         "Failure in vspace_init()",
