@@ -24,34 +24,31 @@
 static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
+static char addr_mgr_node_buf[sizeof(struct addr_mgr_node) * 64];
 
-static errval_t addr_mgr_add_node(struct addr_mgr_state *st,
+static void addr_mgr_add_node(struct addr_mgr_state *st,
                                     struct addr_mgr_node *prev,
-                                    struct addr_mgr_node **new) {
-    *new = (struct addr_mgr_node *)slab_alloc(&st->slabs);
-    if (*new == NULL) {
-        return LIB_ERR_SLAB_ALLOC_FAIL;
-    }
+                                    struct addr_mgr_node *new) {
     if (prev == NULL) {
         if (st->head != NULL) {
-            (*new)->next = st->head;
-            st->head->prev = *new;
+            new->next = st->head;
+            st->head->prev = new;
         } else {
-            st->tail = *new;
-            (*new)->next = NULL;
+            st->tail = new;
+            new->next = NULL;
         }
-        st->head = *new;
-        (*new)->prev = NULL;
+        st->head = new;
+        new->prev = NULL;
     } else {
-        (*new)->prev = prev;
+        new->prev = prev;
         if (prev->next != NULL) {
-            (*new)->next = prev->next;
-            prev->next->prev = *new;
+            new->next = prev->next;
+            prev->next->prev = new;
         } else {
-            (*new)->next = NULL;
-            st->tail = *new;
+            new->next = NULL;
+            st->tail = new;
         }
-        prev->next = *new;
+        prev->next = new;
     }
 }
 
@@ -65,7 +62,6 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
     // did not run out of infinite space)
     struct addr_mgr_node *prev = NULL;
     genvaddr_t addr;
-    errval_t err;
 
     if (st->tail != NULL) {
         prev = st->tail;
@@ -75,14 +71,28 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
         addr = 0;
     }
     if ((addr + size - 1) <= st->max_addr) {
-        struct addr_mgr_node *new;
-        err = addr_mgr_add_node(st, prev, &new);
-        if (err_is_fail(err)) {
-            return err;
+        // TODO: Call addr_mgr_alloc_fixed, when we have a better datastructure
+        // Make reentrant, only modify linked list when we are sure we can do
+        // that without calling external dependencies
+        struct addr_mgr_node *new = (struct addr_mgr_node *)
+                                        slab_alloc(&st->slabs);
+        if (new == NULL) {
+            return LIB_ERR_SLAB_ALLOC_FAIL;
         }
+        addr_mgr_add_node(st, prev, new);
+
         new->base = addr;
         new->size = size;
+
         *ret = addr;
+
+        // TODO: Hope we do not run out of slabs in between
+        if (slab_freecount(&st->slabs) < 32 && !st->is_slabs_refilling) {
+            st->is_slabs_refilling = 1;
+            slab_default_refill(&st->slabs);
+            st->is_slabs_refilling = 0;
+        }
+
         return SYS_ERR_OK;
     } else {
         return LIB_ERR_ADDR_MGR_FULL;
@@ -111,19 +121,31 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
                                 gensize_t size) {
     // Find first node whose next is inexistent or has a larger or equal base
     // than the desired base
-    errval_t err;
     struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
 
     if (prev == NULL ||
             ((prev->base + prev->size - 1) < base &&
              (prev->next == NULL || (base + size - 1) < prev->next->base))) {
-        struct addr_mgr_node *new;
-        err = addr_mgr_add_node(st, prev, &new);
-        if (err_is_fail(err)) {
-            return err;
+        // Make reentrant, only modify linked list when we are sure we can do
+        // that without calling external dependencies
+        struct addr_mgr_node *new = (struct addr_mgr_node *)
+                                        slab_alloc(&st->slabs);
+        if (new == NULL) {
+            return LIB_ERR_SLAB_ALLOC_FAIL;
         }
+
+        addr_mgr_add_node(st, prev, new);
+
         new->base = base;
         new->size = size;
+
+        // TODO: Hope we do not run out of slabs in between
+        if (slab_freecount(&st->slabs) < 32 && !st->is_slabs_refilling) {
+            st->is_slabs_refilling = 1;
+            slab_default_refill(&st->slabs);
+            st->is_slabs_refilling = 0;
+        }
+
         return SYS_ERR_OK;
     } else {
         return LIB_ERR_ADDR_MGR_FULL;
@@ -262,7 +284,24 @@ errval_t paging_init(void)
     current.l0_pt.cnode = cnode_page;
     current.l0_pt.slot = 0;
 
+    genvaddr_t addr = 1;
+
     current.addr_mgr_state.head = NULL;
+    current.addr_mgr_state.tail = NULL;
+    current.addr_mgr_state.is_slabs_refilling = 0;
+    // FIXME: Make this exact
+    current.addr_mgr_state.max_addr = 511 *(addr << VMSAv8_64_L0_BITS);
+
+    slab_init(&current.addr_mgr_state.slabs, sizeof(struct addr_mgr_node),
+                NULL);
+    slab_grow(&current.addr_mgr_state.slabs, addr_mgr_node_buf,
+                sizeof(addr_mgr_node_buf));
+
+    errval_t err = addr_mgr_alloc_fixed(&current.addr_mgr_state, 0,
+                                        addr << VMSAv8_64_L0_BITS);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
     set_current_paging_state(&current);
     return SYS_ERR_OK;
@@ -419,22 +458,11 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     // - Map the user provided frame at the free virtual address
     errval_t err;
 
-    static uint64_t counter = 0;
-    uint64_t current_counter = counter;
-
-    // How many frames had to be mapped
-    // Need to be reentrant, calculate new counter before calling anything else
-    counter += bytes / BASE_PAGE_SIZE;
-    if (bytes % BASE_PAGE_SIZE) {
-        ++counter;
+    genvaddr_t addr;
+    err = addr_mgr_alloc(&st->addr_mgr_state, &addr, bytes);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FAIL);
     }
-
-    // Set first bit of l0 index
-    uint64_t addr = 1;
-
-    addr = addr << VMSAv8_64_L0_BITS;
-    addr = addr + (current_counter << VMSAv8_64_BASE_PAGE_BITS);
-
     err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
     if (err_is_fail(err)) {
         return err;
@@ -584,6 +612,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     assert(node_l3->child == node_l4);
     assert(node_l4->child == NULL);
 
+    // TODO: Needs to be member, my have multiple state
     static size_t is_refilling = 0;
     // TODO: Hope we do not run out of slabs in between
     if (slab_freecount(&st->slabs) < 32 && !is_refilling) {
@@ -685,6 +714,8 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                 // Won't ever delete L0, or we are toast
 
                 slab_free(&st->slabs, node_l1);
+
+                st->l0->child = NULL;
             } else {
                 if (node_l2->previous != NULL) {
                     if (node_l2->next != NULL) {
@@ -693,6 +724,9 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                     node_l2->previous->next = node_l2->next;
                 } else {
                     node_l1->child = node_l2->next;
+                    if (node_l2->next != NULL) {
+                        node_l2->next->previous = NULL;
+                    }
                 }
             }
             slab_free(&st->slabs, node_l2);
@@ -704,6 +738,9 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                 node_l3->previous->next = node_l3->next;
             } else {
                 node_l2->child = node_l3->next;
+                if (node_l3->next != NULL) {
+                    node_l3->next->previous = NULL;
+                }
             }
         }
 
@@ -716,6 +753,9 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
             node_l4->previous->next = node_l4->next;
         } else {
             node_l3->child = node_l4->next;
+            if (node_l4->next != NULL) {
+                node_l4->next->previous = NULL;
+            }
         }
     }
 
@@ -735,6 +775,12 @@ errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref
         frame, size_t bytes) {
     // TODO: Inefficient, but correct
     errval_t err;
+
+    // FIXME: Every unmap should have a corresponding reservation
+    err = addr_mgr_free(&st->addr_mgr_state, vaddr, bytes);
+    if (err_is_fail(err) && err_no(err) != LIB_ERR_ADDR_MGR_NOT_FOUND) {
+        return err_push(err, LIB_ERR_ADDR_MGR_FREE_FAIL);
+    }
 
     while (bytes >= BASE_PAGE_SIZE) {
         err = paging_unmap_one(st, vaddr, frame, BASE_PAGE_SIZE);

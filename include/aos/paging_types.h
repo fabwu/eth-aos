@@ -68,6 +68,7 @@ struct addr_mgr_node {
 
 struct addr_mgr_state {
     struct slab_allocator slabs;
+    int is_slabs_refilling;
     struct addr_mgr_node *head;
     struct addr_mgr_node *tail;
     genvaddr_t max_addr;

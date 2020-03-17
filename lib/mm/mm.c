@@ -83,6 +83,8 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, s
             return LIB_ERR_RAM_ALLOC;
         }
 
+        // FIXME: Not reentrant, could trigger something, move it to the
+        // beginning, potentially freeing it if not need
         struct mmnode *new = (struct mmnode *)slab_alloc(&mm->mmnode_slab);
         if (new == NULL) {
             return LIB_ERR_SLAB_ALLOC_FAIL;
@@ -136,9 +138,9 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment, s
 
     *retcap = cap;
 
-    // FIXME: HACK
     // Only need to refill mmnode_slab, as capnode_slab will never be need after
     // startup
+    // TODO: needs to be a member, as there maybe multiple mm
     static int is_refilling_slab = 0;
     // Hope 31 is enough to keep it going until refilled
     if (slab_freecount(&mm->mmnode_slab) < 32 &&  !is_refilling_slab) {
