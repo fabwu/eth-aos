@@ -66,6 +66,14 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
     struct addr_mgr_node *prev = NULL;
     genvaddr_t addr;
 
+    // Alloc here, potentially free later on, so that we get our address, we are
+    // reentrant
+    struct addr_mgr_node *new = (struct addr_mgr_node *)
+                                    slab_alloc(&st->slabs);
+    if (new == NULL) {
+        return LIB_ERR_SLAB_ALLOC_FAIL;
+    }
+
     if (st->tail != NULL) {
         prev = st->tail;
         addr = st->tail->base + st->tail->size;
@@ -74,14 +82,6 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
         addr = 0;
     }
     if ((addr + size - 1) <= st->max_addr) {
-        // TODO: Call addr_mgr_alloc_fixed, when we have a better datastructure
-        // Make reentrant, only modify linked list when we are sure we can do
-        // that without calling external dependencies
-        struct addr_mgr_node *new = (struct addr_mgr_node *)
-                                        slab_alloc(&st->slabs);
-        if (new == NULL) {
-            return LIB_ERR_SLAB_ALLOC_FAIL;
-        }
         addr_mgr_add_node(st, prev, new);
 
         new->base = addr;
@@ -101,6 +101,9 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret,
 #endif
         return SYS_ERR_OK;
     } else {
+        // Didn't get an address, free again
+        slab_free(&st->slabs, new);
+
         return LIB_ERR_ADDR_MGR_FULL;
     }
 }
@@ -129,17 +132,17 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
     // than the desired base
     struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
 
+    // Make reentrant, only modify linked list when we are sure we can do
+    // that without calling external dependencies
+    struct addr_mgr_node *new = (struct addr_mgr_node *)
+                                    slab_alloc(&st->slabs);
+    if (new == NULL) {
+        return LIB_ERR_SLAB_ALLOC_FAIL;
+    }
+
     if (prev == NULL ||
             ((prev->base + prev->size - 1) < base &&
              (prev->next == NULL || (base + size - 1) < prev->next->base))) {
-        // Make reentrant, only modify linked list when we are sure we can do
-        // that without calling external dependencies
-        struct addr_mgr_node *new = (struct addr_mgr_node *)
-                                        slab_alloc(&st->slabs);
-        if (new == NULL) {
-            return LIB_ERR_SLAB_ALLOC_FAIL;
-        }
-
         addr_mgr_add_node(st, prev, new);
 
         new->base = base;
@@ -154,6 +157,9 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
 
         return SYS_ERR_OK;
     } else {
+        // Didn't find free space, free again
+        slab_free(&st->slabs, new);
+
         return LIB_ERR_ADDR_MGR_FULL;
     }
 }
