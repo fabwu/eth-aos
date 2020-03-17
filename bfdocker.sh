@@ -14,6 +14,7 @@ BF_SOURCE=$(readlink -f `dirname $0`)
 BF_BUILD=$BF_SOURCE/build
 BF_DOCKER=achreto/barrelfish-ci
 BF_CMD="$@"
+PODMAN_CMD="${PODMAN_CMD:-podman}"
 
 echo "bfdocker: $BF_DOCKER"
 echo "bfsrc: $BF_SOURCE  build: $BF_BUILD"
@@ -30,7 +31,7 @@ if [ $# == 0 ]; then
 fi
 
 # run the command in the docker image
-podman run --rm --privileged -i -t \
+"$PODMAN_CMD" run --rm --privileged -i -t \
     -v $BF_SOURCE:/source \
     -v $BF_BUILD:/source/build \
     $BF_DOCKER /bin/bash -c "(cd /source/build && $BF_CMD)"
