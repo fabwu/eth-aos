@@ -34,6 +34,7 @@ struct spawninfo {
     //           capabilities or paging state
     struct cnoderef page_cnode_ref;
     struct cnoderef task_cnode_ref;
+    struct capref cspace;
     struct paging_state paging;
     genvaddr_t entrypoint;
     struct capref dispatcher;

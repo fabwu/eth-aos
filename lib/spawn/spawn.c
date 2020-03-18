@@ -155,6 +155,7 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     }
 
     si->page_cnode_ref = page_cnode_ref;
+    si->cspace = l1_cnode_cap;
 
     return SYS_ERR_OK;
 }
@@ -441,7 +442,7 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     arch_registers_state_t *enabled_area = dispatcher_get_enabled_save_area(handle);
     arch_registers_state_t *disabled_area = dispatcher_get_disabled_save_area(handle);
 
-    disp_gen->core_id = 0;  // TODO
+    disp_gen->core_id = disp_get_core_id();
     // Virtual address of the dispatcher frame in child’s VSpace
     disp->udisp = 0;     // TODO (need to get this information from vspace setup)
     disp->disabled = 1;  // Start in disabled mode
@@ -453,7 +454,7 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     // Initialize offset registers
     // got_addr is the address of the .got in the child’s VSpace
     // TODO:
-    armv8_set_registers(NULL/* got_addr */, handle, enabled_area, disabled_area);
+    armv8_set_registers(NULL /* got_addr */, handle, enabled_area, disabled_area);
 
     disp_gen->eh_frame = 0;
     disp_gen->eh_frame_size = 0;
@@ -461,7 +462,7 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     disp_gen->eh_frame_hdr_size = 0;
 
     if (SPAWN_DEBUG_DISPATCHER) {
-        DEBUG_PRINTF("Dispatcher is setup\n");
+        DEBUG_PRINTF("Dispatcher setup completed\n");
         dump_dispatcher(disp);
     }
 
@@ -473,7 +474,17 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     // TODO: Setup arguments
 
-    // TODO: invoke_dispatcher
+    // TODO: Is this correct?
+    struct capref domdispatcher = { .cnode = cnode_task, .slot = TASKCN_SLOT_DISPATCHER };
+    struct capref vspace = {
+        .cnode = si->page_cnode_ref,
+        .slot = 0
+    };
+    err = invoke_dispatcher(si->dispatcher, domdispatcher, si->cspace, vspace,
+                            si->dispframe, true);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_RUN);
+    }
 
     return SYS_ERR_OK;
 }
