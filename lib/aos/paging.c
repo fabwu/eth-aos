@@ -614,7 +614,7 @@ static struct paging_node *find_some(struct paging_node *head, int slot)
 static errval_t map_some(struct paging_node **ret, struct paging_node **head,
                          struct paging_node *parent, int level, struct capref pt_cpr,
                          int slot, struct paging_state *st, struct capref *frame,
-                         size_t offset)
+                         size_t offset, int flags)
 {
 #ifdef DEBUG_PAGING
     debug_printf("map_some begin\n");
@@ -647,8 +647,7 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
         }
 
         // Does Read/Write make sense for a page table?
-        err = vnode_map(pt_cpr, lower_pt_cpr, slot, VREGION_FLAGS_READ_WRITE, offset, 1,
-                        higher_lower_map);
+        err = vnode_map(pt_cpr, lower_pt_cpr, slot, flags, offset, 1, higher_lower_map);
         if (err_is_fail(err)) {
             return err;
         }
@@ -715,7 +714,8 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 #endif
 
     struct paging_node *node_l1;
-    err = map_some(&node_l1, &st->l0, NULL, 1, st->l0_pt, l0_slot, st, NULL, 0);
+    err = map_some(&node_l1, &st->l0, NULL, 1, st->l0_pt, l0_slot, st, NULL, 0,
+                   VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
@@ -723,7 +723,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 
     struct paging_node *node_l2;
     err = map_some(&node_l2, &node_l1->child, node_l1, 2, node_l1->table, l1_slot, st,
-                   NULL, 0);
+                   NULL, 0, VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
@@ -731,7 +731,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 
     struct paging_node *node_l3;
     err = map_some(&node_l3, &node_l2->child, node_l2, 3, node_l2->table, l2_slot, st,
-                   NULL, 0);
+                   NULL, 0, VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
@@ -739,7 +739,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 
     struct paging_node *node_l4;
     err = map_some(&node_l4, &node_l3->child, node_l3, 4, node_l3->table, l3_slot, st,
-                   &frame, offset);
+                   &frame, offset, flags);
     if (err_is_fail(err)) {
         return err;
     }
