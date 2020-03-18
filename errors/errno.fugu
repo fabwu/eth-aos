@@ -273,7 +273,7 @@ errors libaos LIB_ERR_ {
 
     // paging
     failure PAGING_MAP_FRAME "paging_map_frame() returned error",
-    failure PAGING_REGION_INIT_FAIL "paging_region_map() returned error",
+    failure PAGING_REGION_INIT_FAIL "paging_region_init() returned error",
     failure PAGING_REGION_MAP_FAIL "paging_region_map() returned error",
     failure PAGING_ALLOC_FAIL "paging_alloc() returned error",
 

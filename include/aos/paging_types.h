@@ -56,7 +56,6 @@ struct paging_region {
     lvaddr_t current_addr;
     size_t region_size;
     paging_flags_t flags;
-    // TODO: if needed add struct members for tracking state
 };
 
 struct addr_mgr_node {

@@ -174,6 +174,8 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
 }
 
 // TODO: Size really needed?
+// JP:   No, but we can use the size to double check if everything was done
+//       correctly and throw an error otherwise.
 static errval_t addr_mgr_free(struct addr_mgr_state *st, genvaddr_t base,
                                 gensize_t size) {
     struct addr_mgr_node *prev = addr_mgr_find_prev(st, base);
@@ -350,6 +352,8 @@ static errval_t paging_region_init_base(struct paging_state *st,
     pr->region_size = size;
     pr->flags = flags;
 
+    assert(size == ROUND_UP(size, BASE_PAGE_SIZE));
+
     return SYS_ERR_OK;
 }
 
@@ -400,6 +404,40 @@ errval_t paging_region_init(struct paging_state *st, struct paging_region *pr,
     return paging_region_init_aligned(st, pr, size, BASE_PAGE_SIZE, flags);
 }
 
+
+/**
+ * \brief Allocates physical memory and maps it, so that pr->base_addr up to next_addr_end is backed by memory.
+ */
+static errval_t paging_region_lazy_alloc(struct paging_state *st, struct paging_region *pr, lvaddr_t next_addr_end) {
+    size_t allocated = ROUND_UP(pr->current_addr - pr->base_addr, BASE_PAGE_SIZE);
+    lvaddr_t allocated_end = pr->base_addr + allocated;
+    if (next_addr_end <= allocated_end) {
+        return SYS_ERR_OK; // Already allocated enough RAM for request
+    }
+
+    // Allocate more RAM
+    errval_t err;
+    size_t bytes = ROUND_UP(next_addr_end - allocated_end, BASE_PAGE_SIZE);
+
+    struct capref frame;
+    size_t retbytes;
+    err = frame_alloc(&frame, bytes, &retbytes);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_REGION_MAP_FAIL);
+    }
+    if (retbytes < bytes) {
+        // Did not get enough memory
+        return LIB_ERR_PAGING_REGION_MAP_FAIL;
+    }
+
+    err = paging_map_fixed_attr(st, allocated_end, frame, bytes, pr->flags);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_REGION_MAP_FAIL);
+    }
+
+    return SYS_ERR_OK;
+}
+
 /**
  * \brief return a pointer to a bit of the paging region `pr`.
  * This function gets used in some of the code that is responsible
@@ -408,23 +446,31 @@ errval_t paging_region_init(struct paging_state *st, struct paging_region *pr,
 errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **retbuf,
                            size_t *ret_size)
 {
-    // TODO: Alloc ram lazyly here
     lvaddr_t end_addr = pr->base_addr + pr->region_size;
     ssize_t rem = end_addr - pr->current_addr;
     if (rem >= req_size) {
         // ok
         *retbuf = (void *)pr->current_addr;
         *ret_size = req_size;
-        pr->current_addr += req_size;
     } else if (rem > 0) {
         *retbuf = (void *)pr->current_addr;
         *ret_size = rem;
-        pr->current_addr += rem;
         debug_printf("exhausted paging region, "
                      "expect badness on next allocation\n");
     } else {
+        *retbuf = NULL;
+        *ret_size = 0;
         return LIB_ERR_VSPACE_MMU_AWARE_NO_SPACE;
     }
+
+    errval_t err = paging_region_lazy_alloc(get_current_paging_state(), pr, pr->current_addr + *ret_size);
+    if (err_is_fail(err)) {
+        *retbuf = NULL;
+        *ret_size = 0;
+        return err_push(err, LIB_ERR_PAGING_REGION_MAP_FAIL);
+    }
+    pr->current_addr += *ret_size;
+
     return SYS_ERR_OK;
 }
 
@@ -457,11 +503,6 @@ errval_t paging_region_unmap(struct paging_region *pr, lvaddr_t base, size_t byt
  */
 errval_t paging_alloc(struct paging_state *st, void **buf, size_t bytes, size_t alignment)
 {
-    /**
-     * TODO(M2): Implement this function
-     * \brief Find a bit of free virtual address space that is large enough to
-     *        accomodate a buffer of size `bytes`.
-     */
     errval_t err;
     struct capref cap;
     size_t retbytes;
