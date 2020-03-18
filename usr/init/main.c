@@ -38,7 +38,7 @@ static int
 bsp_main(int argc, char *argv[]) {
     errval_t err;
 
-    // Grading 
+    // Grading
     grading_setup_bsp_init(argc, argv);
 
     // First argument contains the bootinfo location, if it's not set
@@ -52,7 +52,7 @@ bsp_main(int argc, char *argv[]) {
 
     // TODO: initialize mem allocator, vspace management here
     
-    // Grading 
+    // Grading
     grading_test_early();
 
     // TODO: Spawn system processes, boot second core etc. here
@@ -65,7 +65,7 @@ bsp_main(int argc, char *argv[]) {
 
 	free(si);
 
-    // Grading 
+    // Grading
     grading_test_late();
 
     debug_printf("Message handler loop\n");

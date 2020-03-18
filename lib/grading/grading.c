@@ -294,18 +294,113 @@ static void test_hard(void) {
     assert(err_is_ok(err));
 }
 
+static void test_paging_region_default(void)
+{
+    errval_t err;
+    const int PAGE_COUNT = 10;
+    const size_t REQUEST_SIZE = 256;
+    struct paging_state *st = get_current_paging_state();
+    struct paging_region region;
+
+    err = paging_region_init(st, &region, PAGE_COUNT * BASE_PAGE_SIZE,
+                             VREGION_FLAGS_READ_WRITE);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Failed to init region");
+        return;
+    }
+
+    void *buf;
+    size_t retsize;
+    int valid_requests = (PAGE_COUNT * BASE_PAGE_SIZE) / REQUEST_SIZE;
+    for (int i = 0; i < valid_requests; ++i) {
+        err = paging_region_map(&region, REQUEST_SIZE, &buf, &retsize);
+        if (err_is_fail(err) || retsize < REQUEST_SIZE || buf == NULL) {
+            DEBUG_ERR(err, "Failed to map using region");
+            return;
+        }
+        *(uint64_t *)buf = 55;                       // Write to first 8 bytes
+        *(uint64_t *)(buf + REQUEST_SIZE - 8) = 55;  // Write to last 8 bytes
+    }
+
+    // Should fail now, because region is full
+    err = paging_region_map(&region, REQUEST_SIZE, &buf, &retsize);
+    if (err_is_ok(err)) {
+        DEBUG_ERR(err, "Did not fail when maping in full region");
+        return;
+    }
+
+    DEBUG_PRINTF("\033[92mSuccess\033[0m paging_region using %d * 4KB in %d byte blocks\n", PAGE_COUNT,
+                 REQUEST_SIZE);
+}
+
+static void test_paging_region_special_cases(void)
+{
+    errval_t err;
+    const int PAGE_COUNT = 10;
+    // Try out e.g. 500 as soon as alignment code in addr_mgr works
+    const int ADD_SPACE = 0;
+    const size_t REQUEST_SIZE = 300;
+    struct paging_state *st = get_current_paging_state();
+    struct paging_region region;
+
+    err = paging_region_init(st, &region, PAGE_COUNT * BASE_PAGE_SIZE + ADD_SPACE,
+                             VREGION_FLAGS_READ_WRITE);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Failed to init region");
+        return;
+    }
+
+    void *buf;
+    size_t retsize;
+    int valid_requests = (PAGE_COUNT * BASE_PAGE_SIZE) / REQUEST_SIZE;
+    for (int i = 0; i < valid_requests; ++i) {
+        err = paging_region_map(&region, REQUEST_SIZE, &buf, &retsize);
+        if (err_is_fail(err) || retsize < REQUEST_SIZE || buf == NULL) {
+            DEBUG_ERR(err, "Failed to map using region");
+            return;
+        }
+        *(uint8_t *)buf = 0x55;                       // Write to first 8 bytes
+        *(uint8_t *)(buf + REQUEST_SIZE - 1) = 0x55;  // Write to last 8 bytes
+    }
+
+    // Should fail now, because region is full
+    size_t remaining_bytes = PAGE_COUNT * BASE_PAGE_SIZE - valid_requests * REQUEST_SIZE
+                             + ADD_SPACE;
+    err = paging_region_map(&region, remaining_bytes, &buf, &retsize);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Failed to map remaining space using region");
+        return;
+    }
+
+    // Should fail now, because region is full
+    err = paging_region_map(&region, 1, &buf, &retsize);
+    if (err_is_ok(err)) {
+        DEBUG_ERR(err, "Did not fail when maping in full region");
+        return;
+    }
+
+    DEBUG_PRINTF("\033[92mSuccess\033[0m paging_region using %d * 4KB + %d\n", PAGE_COUNT,
+                 ADD_SPACE);
+}
+
 #define TEST_PAGING 0
+#define TEST_PAGING_REGION 1
 
-void
-grading_test_early(void) {
-	if(TEST_PAGING) {
-		debug_printf("Grading test early\n");
-		test_hard();
-		test_easy();
-		test_mem();
-	}
+void grading_test_early(void)
+{
+    if (TEST_PAGING) {
+        debug_printf("Grading test early\n");
+        test_hard();
+        test_easy();
+        test_mem();
+    }
+
+    if (TEST_PAGING_REGION) {
+        DEBUG_PRINTF("Start testing paging regions\n");
+        test_paging_region_default();
+        test_paging_region_special_cases();
+        DEBUG_PRINTF("End testing paging regions\n");
+    }
 }
 
-void
-grading_test_late(void) {
-}
+void grading_test_late(void) {}
