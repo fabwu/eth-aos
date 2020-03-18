@@ -40,7 +40,7 @@ armv8_set_registers(void *arch_load_info, dispatcher_handle_t handle,
     disabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
 }
 
-static errval_t create_child_cspace(struct spawninfo *si)
+static errval_t spawn_create_child_cspace(struct spawninfo *si)
 {
     struct capref l1_cnode_cap;
     struct cnoderef l1_cnode_ref;
@@ -112,18 +112,56 @@ static errval_t create_child_cspace(struct spawninfo *si)
 
     struct capref page_cnode_cap;
     struct cnoderef page_cnode_ref;
-    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_TASKCN, &page_cnode_ref);
+    err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_PAGECN, &page_cnode_ref);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
     }
+
     page_cnode_cap.cnode = page_cnode_ref;
-    // TODO: Populate task_cnode_cap
-    // L0 pagetable goes into slot 0
-    // Lower slots contain lower level page tables
-    // Which begs the question if we could read out our own page table with this
-    // information
+    page_cnode_cap.slot = 0;
+    err = vnode_create(page_cnode_cap, ObjType_VNode_AARCH64_l0);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_VNODE_CREATE);
+    }
+
+    si->pdir = page_cnode_cap;
 
     return SYS_ERR_OK;
+}
+
+
+static errval_t spawn_create_child_vspace(struct spawninfo *si)
+{
+    errval_t err;
+    struct capref pdir_our;
+    err = slot_alloc(&pdir_our);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLOT_ALLOC);
+    }
+    err = cap_copy(pdir_our, si->pdir);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_COPY);
+    }
+    // Convention is that we assume that at most slot 0 of l0 pt is used before we get to run
+    genvaddr_t max_addr = 1;
+    max_addr = (max_addr << VMSAv8_64_L0_BITS) - 1;
+    err = paging_init_state_foreign(&si->paging, 0, max_addr, pdir_our,
+                                    get_default_slot_allocator());
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_INIT_STATE_FOREIGN);
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t spawn_copy_child_vspace(struct spawninfo *si)
+{
+    // TODO: Populate task_cnode_cap
+    // Copy all pt caps except l0 from paging_state, add method to lib/aos/paging.c,
+    // because it needs to presume the structure of the paging metadata, breaking
+    // abstraction if would do it here
+
+    return LIB_ERR_NOT_IMPLEMENTED;
 }
 
 /**
@@ -274,7 +312,15 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     errval_t err = SYS_ERR_OK;
     si->binary_name = binary_name;
 
-    create_child_cspace(si);
+    err = spawn_create_child_cspace(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    err = spawn_create_child_vspace(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_VSPACE);
+    }
 
     err = locate_elf_binary(binary_name, si);
     if (err_is_fail(err)) {
@@ -283,6 +329,11 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
 
     DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
                  si->binary_size);
+
+    err = spawn_copy_child_vspace(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_COPY_CHILD_VSPACE);
+    }
 
     // TODO init cspace and vspace
     // TODO Init state which gets passed to each alloc call
