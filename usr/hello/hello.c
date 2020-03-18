@@ -21,5 +21,8 @@
 int main(int argc, char *argv[])
 {
     printf("Hello, world! from userspace\n");
+    if (argc > 1) {
+        printf("First argument: %s\n", argv[1]);
+    }
     return EXIT_SUCCESS;
 }

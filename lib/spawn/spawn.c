@@ -56,6 +56,7 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
     }
+    si->task_cnode_ref = task_cnode_ref;
     task_cnode_cap.cnode = task_cnode_ref;
     // TODO: Populate task_cnode_cap
     // Need dispatcher
@@ -299,6 +300,99 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
     return SYS_ERR_OK;
 }
 
+static errval_t spawn_setup_args(char *binary_name, struct spawninfo *si)
+{
+    struct capref task_cnode_cap;
+    struct capref frame_cap;
+    struct mem_region *module;
+    void *ptr_frame, *ptr_frame_child;
+    struct spawn_domain_params *params;
+    const char *args;
+    char **argv_array;
+    int argv_array_size = MAX_CMDLINE_ARGS + 1;
+    size_t argv_str_len;
+    char *argv_str;
+    void *argv_str_base, *argv_str_base_child;
+    int argc;
+    int64_t offset;
+    errval_t err;
+
+    /* find executable */
+    module = multiboot_find_module(bi, binary_name);
+    if (module == NULL) {
+        return SPAWN_ERR_FIND_MODULE;
+    }
+
+    /* get args string */
+    // TODO: if no args, then returns end of string; handle that
+    args = multiboot_module_opts(module);
+
+    /* allocate args page */
+    err = frame_alloc(&frame_cap, BASE_PAGE_SIZE, NULL);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    /* map args page into our vspace so we can write to it */
+    err = paging_map_frame(get_current_paging_state(), &ptr_frame,
+                           BASE_PAGE_SIZE, frame_cap, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    /* set up child's cap to args page */
+    task_cnode_cap.cnode = si->task_cnode_ref;
+    task_cnode_cap.slot = TASKCN_SLOT_ARGSPAGE;
+    err = cap_copy(task_cnode_cap, frame_cap);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_COPY);
+    }
+
+    /* map args page into child's vspace */
+    err = paging_map_frame_attr(&si->paging, &ptr_frame_child, BASE_PAGE_SIZE,
+                                frame_cap, VREGION_FLAGS_READ, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    /* zero args page */
+    // TODO does the kernel already zero every new frame?
+    memset(ptr_frame, 0, BASE_PAGE_SIZE);
+
+    /* parse args */
+    argv_array = make_argv(args, &argc, &argv_str);
+    if (!argv_array) {
+        return SPAWN_ERR_GET_CMDLINE_ARGS;
+    }
+    argv_str_len = strnlen(args, PATH_MAX + 1) + 1; // see make_argv
+
+    /* set up args struct at beginning of args page */
+    params = ptr_frame;
+    params->argc = argc;
+    params->envp[0] = NULL;
+    params->pagesize = BASE_PAGE_SIZE;
+
+    /* put argument strings after struct */
+    argv_str_base = ptr_frame + sizeof(*params);
+    argv_str_base_child = ptr_frame_child + sizeof(*params);
+    memcpy(argv_str_base, argv_str, argv_str_len);
+
+    /* fill argv */
+    offset = argv_str_base_child - (void *)argv_str;
+    for (char **strp = argv_array; *strp; strp++) {
+        *strp += offset;
+    }
+    memcpy(params->argv, argv_array, argv_array_size);
+
+    /* free memory allocated by make_argv */
+    free(argv_array);
+    free(argv_str);
+
+    // TODO better error handling
+
+    return SYS_ERR_OK;
+}
+
 /**
  * TODO(M2): Implement this function.
  * \brief Spawn a new dispatcher executing 'binary_name'
@@ -347,6 +441,11 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
                    &si->entrypoint);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_ELF_LOAD);
+    }
+
+    err = spawn_setup_args(binary_name, si);
+    if (err_is_fail(err)) {
+        return err;
     }
 
     return SYS_ERR_OK;

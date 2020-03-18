@@ -34,6 +34,7 @@ struct spawninfo {
     //           e.g. references to the child's
     //           capabilities or paging state
     struct cnoderef page_cnode_ref;
+    struct cnoderef task_cnode_ref;
     struct paging_state paging;
 	genvaddr_t entrypoint;
 };
