@@ -33,7 +33,7 @@ struct spawninfo {
     //           when spawning a new dispatcher,
     //           e.g. references to the child's
     //           capabilities or paging state
-    struct capref pdir;
+    struct cnoderef page_cnode_ref;
     struct paging_state paging;
 	genvaddr_t entrypoint;
 };

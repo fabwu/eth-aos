@@ -124,7 +124,7 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
         return err_push(err, LIB_ERR_VNODE_CREATE);
     }
 
-    si->pdir = page_cnode_cap;
+    si->page_cnode_ref = page_cnode_ref;
 
     return SYS_ERR_OK;
 }
@@ -134,11 +134,16 @@ static errval_t spawn_create_child_vspace(struct spawninfo *si)
 {
     errval_t err;
     struct capref pdir_our;
+    struct capref pdir_child;
+
+    pdir_child.cnode = si->page_cnode_ref;
+    pdir_child.slot = 0;
+
     err = slot_alloc(&pdir_our);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_SLOT_ALLOC);
     }
-    err = cap_copy(pdir_our, si->pdir);
+    err = cap_copy(pdir_our, pdir_child);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_CAP_COPY);
     }
@@ -156,12 +161,13 @@ static errval_t spawn_create_child_vspace(struct spawninfo *si)
 
 static errval_t spawn_copy_child_vspace(struct spawninfo *si)
 {
-    // TODO: Populate task_cnode_cap
-    // Copy all pt caps except l0 from paging_state, add method to lib/aos/paging.c,
-    // because it needs to presume the structure of the paging metadata, breaking
-    // abstraction if would do it here
+    errval_t err;
+    err = paging_copy_capabilities(&si->paging, si->page_cnode_ref, 1, L2_CNODE_SLOTS);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_COPY_CAPABILITIES);
+    }
 
-    return LIB_ERR_NOT_IMPLEMENTED;
+    return SYS_ERR_OK;
 }
 
 /**
