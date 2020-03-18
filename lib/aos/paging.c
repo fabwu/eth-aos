@@ -419,6 +419,11 @@ static errval_t paging_region_lazy_alloc(struct paging_state *st, struct paging_
     errval_t err;
     size_t bytes = ROUND_UP(next_addr_end - allocated_end, BASE_PAGE_SIZE);
 
+    // Limit bytes if boundary of virtual address space is reached
+    if (allocated_end + bytes > pr->base_addr + pr->region_size) {
+        bytes = (pr->base_addr + pr->region_size) - allocated_end;
+    }
+
     struct capref frame;
     size_t retbytes;
     err = frame_alloc(&frame, bytes, &retbytes);
