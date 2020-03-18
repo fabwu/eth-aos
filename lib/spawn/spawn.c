@@ -249,6 +249,7 @@ static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
 static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t flags,
                           void **ret)
 {
+    struct spawninfo *si = (struct spawninfo*) state;
     errval_t err = SYS_ERR_OK;
 
     // XXX useful command: readelf -l build/armv8/sbin/hello
@@ -278,6 +279,25 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
     DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
                  "frame flags 0x%x\n",
                  base, size, flags, frame_flags);
+
+    struct paging_region pr;
+    //TODO remove ROUND_UP from base
+
+    DEBUG_PRINTF("state: %p\n", si->paging.l0);
+    err = paging_region_init_fixed(&si->paging, &pr, 
+            base, ROUND_UP(size, BASE_PAGE_SIZE), 
+            flags);
+
+    if(err_is_fail(err)) {
+        DEBUG_ERR(err, "fail region init");
+        assert(false);
+    }
+
+    err = paging_region_map_foreign(&si->paging, &pr, size, ret, NULL);
+    if(err_is_fail(err)) {
+        DEBUG_ERR(err, "fail region map");
+        assert(false);
+    }
 
     struct capref frame_cap;
     err = frame_alloc(&frame_cap, size, NULL);
@@ -344,7 +364,8 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
 
     // TODO init cspace and vspace
     // TODO Init state which gets passed to each alloc call
-    err = elf_load(EM_AARCH64, elf_alloc, NULL, si->binary_base, si->binary_size,
+
+    err = elf_load(EM_AARCH64, elf_alloc, si, si->binary_base, si->binary_size,
                    &si->entrypoint);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_ELF_LOAD);

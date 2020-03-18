@@ -153,11 +153,13 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
         return LIB_ERR_SLAB_ALLOC_FAIL;
     }
 
+    DEBUG_PRINTF("default state %p state %p base %d size %d\n", &get_current_paging_state()->addr_mgr_state, st, base, size);
+    DEBUG_PRINTF("Prev %p\n", prev ); 
+
     if (prev == NULL
         || ((prev->base + prev->size - 1) < base
             && (prev->next == NULL || (base + size - 1) < prev->next->base))) {
         addr_mgr_add_node(st, prev, new);
-
         new->base = base;
         new->size = size;
 
@@ -478,8 +480,14 @@ static errval_t paging_region_lazy_alloc(struct paging_state *st,
  * This function gets used in some of the code that is responsible
  * for allocating Frame (and other) capabilities.
  */
-errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **retbuf,
-                           size_t *ret_size)
+errval_t paging_region_map(struct paging_region *pr, size_t req_size, 
+        void **retbuf, size_t *ret_size) {
+    return paging_region_map_foreign(get_current_paging_state(), pr, req_size,
+            retbuf, ret_size); 
+}
+
+errval_t paging_region_map_foreign(struct paging_state *st, struct paging_region *pr, 
+        size_t req_size, void **retbuf, size_t *ret_size)
 {
     lvaddr_t end_addr = pr->base_addr + pr->region_size;
     ssize_t rem = end_addr - pr->current_addr;
@@ -498,8 +506,7 @@ errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **ret
         return LIB_ERR_VSPACE_MMU_AWARE_NO_SPACE;
     }
 
-    errval_t err = paging_region_lazy_alloc(get_current_paging_state(), pr,
-                                            pr->current_addr + *ret_size);
+    errval_t err = paging_region_lazy_alloc(st, pr, pr->current_addr + *ret_size);
     if (err_is_fail(err)) {
         *retbuf = NULL;
         *ret_size = 0;
@@ -813,7 +820,6 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                                  struct capref frame, size_t bytes)
 {
     assert(bytes <= BASE_PAGE_SIZE);
-    test();
 
     // First 9 bits
     uint64_t mask = 0x1FF;
