@@ -13,6 +13,8 @@
 #include <spawn/multiboot.h>
 #include <spawn/argv.h>
 
+#define SPAWN_DEBUG_DISPATCHER 1
+
 extern struct bootinfo *bi;
 extern coreid_t my_core_id;
 
@@ -38,6 +40,33 @@ armv8_set_registers(void *arch_load_info, dispatcher_handle_t handle,
 
     enabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
     disabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
+}
+
+static errval_t spawn_prepare_dispatcher(struct spawninfo *si)
+{
+    errval_t err;
+
+    err = slot_alloc(&si->dispatcher);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLOT_ALLOC);
+    }
+
+    err = dispatcher_create(si->dispatcher);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_DISPATCHER);
+    }
+
+    size_t retbytes;
+    err = frame_alloc(&si->dispframe, DISPATCHER_FRAME_SIZE, &retbytes);
+    if (err_is_fail(err) || retbytes < DISPATCHER_FRAME_SIZE) {
+        return err_push(err, SPAWN_ERR_CREATE_DISPATCHER_FRAME);
+    }
+
+    if (SPAWN_DEBUG_DISPATCHER) {
+        DEBUG_PRINTF("Created dispatcher DCB and frame\n");
+    }
+
+    return SYS_ERR_OK;
 }
 
 static errval_t spawn_create_child_cspace(struct spawninfo *si)
@@ -393,6 +422,62 @@ static errval_t spawn_setup_args(char *binary_name, struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
+static errval_t spawn_dispatch(struct spawninfo *si)
+{
+    errval_t err;
+    dispatcher_handle_t handle;
+    struct paging_state *st = get_current_paging_state();
+
+    // Map dispatcher frame and get references to dispatcher structs
+    err = paging_map_frame_attr(st, (void **)&handle, DISPATCHER_FRAME_SIZE,
+                                si->dispframe, VREGION_FLAGS_READ_WRITE, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
+    }
+
+    struct dispatcher_shared_generic *disp = get_dispatcher_shared_generic(handle);
+    struct dispatcher_generic *disp_gen = get_dispatcher_generic(handle);
+
+    arch_registers_state_t *enabled_area = dispatcher_get_enabled_save_area(handle);
+    arch_registers_state_t *disabled_area = dispatcher_get_disabled_save_area(handle);
+
+    disp_gen->core_id = 0;  // TODO
+    // Virtual address of the dispatcher frame in child’s VSpace
+    disp->udisp = 0;     // TODO (need to get this information from vspace setup)
+    disp->disabled = 1;  // Start in disabled mode
+    strncpy(disp->name, si->binary_name, DISP_NAME_LEN);  // Dispatcher name for debugging
+
+    // Set program counter (where it should start to execute)
+    disabled_area->named.pc = si->entrypoint;  // TODO: Is this correct?
+
+    // Initialize offset registers
+    // got_addr is the address of the .got in the child’s VSpace
+    // TODO:
+    armv8_set_registers(NULL/* got_addr */, handle, enabled_area, disabled_area);
+
+    disp_gen->eh_frame = 0;
+    disp_gen->eh_frame_size = 0;
+    disp_gen->eh_frame_hdr = 0;
+    disp_gen->eh_frame_hdr_size = 0;
+
+    if (SPAWN_DEBUG_DISPATCHER) {
+        DEBUG_PRINTF("Dispatcher is setup\n");
+        dump_dispatcher(disp);
+    }
+
+    // Unmap dispatcher frame
+    err = paging_unmap(st, (lvaddr_t)handle, si->dispframe, DISPATCHER_FRAME_SIZE);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
+    }
+
+    // TODO: Setup arguments
+
+    // TODO: invoke_dispatcher
+
+    return SYS_ERR_OK;
+}
+
 /**
  * TODO(M2): Implement this function.
  * \brief Spawn a new dispatcher executing 'binary_name'
@@ -414,7 +499,12 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     // - Call spawn_load_argv
     si->binary_name = binary_name;
 
-    errval_t err = spawn_create_child_cspace(si);
+    errval_t err = err = spawn_prepare_dispatcher(si);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = spawn_create_child_cspace(si);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
@@ -444,6 +534,11 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     }
 
     err = spawn_setup_args(binary_name, si);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = spawn_dispatch(si);
     if (err_is_fail(err)) {
         return err;
     }

@@ -384,7 +384,7 @@ static void test_paging_region_special_cases(void)
 }
 
 #define TEST_PAGING 0
-#define TEST_PAGING_REGION 1
+#define TEST_PAGING_REGION 0
 
 void grading_test_early(void)
 {

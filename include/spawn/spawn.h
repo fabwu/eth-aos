@@ -19,15 +19,14 @@
 #include "aos/paging.h"
 
 
-
 struct spawninfo {
     // the next in the list of spawned domains
-    struct spawninfo *next; 
+    struct spawninfo *next;
 
     // Information about the binary
-    char * binary_name;     // Name of the binary
-	lvaddr_t binary_base;
-	size_t binary_size;
+    char *binary_name;  // Name of the binary
+    lvaddr_t binary_base;
+    size_t binary_size;
 
     // TODO(M2): Add fields you need to store state
     //           when spawning a new dispatcher,
@@ -36,7 +35,9 @@ struct spawninfo {
     struct cnoderef page_cnode_ref;
     struct cnoderef task_cnode_ref;
     struct paging_state paging;
-	genvaddr_t entrypoint;
+    genvaddr_t entrypoint;
+    struct capref dispatcher;
+    struct capref dispframe;
 };
 
 // Start a child process using the multiboot command line. Fills in si.
