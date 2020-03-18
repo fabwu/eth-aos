@@ -229,8 +229,8 @@ static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
 
     // XXX What about this frame? Can we remove it if ELF sections are mapped?
     err = paging_map_frame_attr(get_current_paging_state(), (void **)&elf_binary,
-                                si->binary_size, child_frame, VREGION_FLAGS_READ, NULL,
-                                NULL);
+                                ROUND_UP(si->binary_size, BASE_PAGE_SIZE), child_frame,
+                                VREGION_FLAGS_READ, NULL, NULL);
 
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_MAP_MODULE);
@@ -285,8 +285,9 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
         return err_push(err, SPAWN_ERR_CREATE_ELF_FRAME);
     }
 
-    err = paging_map_frame_attr(get_current_paging_state(), ret, size, frame_cap,
-                                frame_flags, NULL, NULL);
+    err = paging_map_frame_attr(get_current_paging_state(), ret,
+                                ROUND_UP(size, BASE_PAGE_SIZE), frame_cap, frame_flags,
+                                NULL, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -330,7 +331,7 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
 
     err = locate_elf_binary(binary_name, si);
     if (err_is_fail(err)) {
-        return err;
+        return err_push(err, SPAWN_ERR_LOCATE_ELF_BINARY);
     }
 
     DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
@@ -346,7 +347,7 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     err = elf_load(EM_AARCH64, elf_alloc, NULL, si->binary_base, si->binary_size,
                    &si->entrypoint);
     if (err_is_fail(err)) {
-        return err;
+        return err_push(err, SPAWN_ERR_ELF_LOAD);
     }
 
     return err;

@@ -66,6 +66,9 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensi
 #endif
     // TODO: Handle alignment
     assert(alignment == BASE_PAGE_SIZE);
+    if (size % BASE_PAGE_SIZE) {
+        return LIB_ERR_ADDR_MGR_ALLOC;
+    }
     assert(size % BASE_PAGE_SIZE == 0);
     // Just go at the end of linked list, we have infinite space (Just check we
     // did not run out of infinite space)
@@ -810,6 +813,7 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                                  struct capref frame, size_t bytes)
 {
     assert(bytes <= BASE_PAGE_SIZE);
+    test();
 
     // First 9 bits
     uint64_t mask = 0x1FF;
@@ -975,31 +979,34 @@ static errval_t paging_cap_copy(struct cnoderef l2_cnode_ref, size_t *slot,
 errval_t paging_copy_capabilities(struct paging_state *st, struct cnoderef l2_cnode_ref,
                                   size_t start_slot, size_t num_slots)
 {
-    errval_t err;
-    struct paging_node *l1_pt = st->l0->child;
-    while (l1_pt != NULL) {
-        struct paging_node *l2_pt = l1_pt->child;
-        while (l2_pt != NULL) {
-            struct paging_node *l3_pt = l2_pt->child;
-            while (l3_pt != NULL) {
-                err = paging_cap_copy(l2_cnode_ref, &start_slot, num_slots, l3_pt->table);
+    if (st->l0 != NULL) {
+        errval_t err;
+        struct paging_node *l1_pt = st->l0->child;
+        while (l1_pt != NULL) {
+            struct paging_node *l2_pt = l1_pt->child;
+            while (l2_pt != NULL) {
+                struct paging_node *l3_pt = l2_pt->child;
+                while (l3_pt != NULL) {
+                    err = paging_cap_copy(l2_cnode_ref, &start_slot, num_slots,
+                                          l3_pt->table);
+                    if (err_is_fail(err)) {
+                        return err;
+                    }
+                    l3_pt = l3_pt->next;
+                }
+                err = paging_cap_copy(l2_cnode_ref, &start_slot, num_slots, l2_pt->table);
                 if (err_is_fail(err)) {
                     return err;
                 }
-                l3_pt = l3_pt->next;
+                l2_pt = l2_pt->next;
             }
-            err = paging_cap_copy(l2_cnode_ref, &start_slot, num_slots, l2_pt->table);
+            err = paging_cap_copy(l2_cnode_ref, &start_slot, num_slots, l1_pt->table);
             if (err_is_fail(err)) {
                 return err;
             }
-            l2_pt = l2_pt->next;
+            l1_pt = l1_pt->next;
         }
-        err = paging_cap_copy(l2_cnode_ref, &start_slot, num_slots, l1_pt->table);
-        if (err_is_fail(err)) {
-            return err;
-        }
-        l1_pt = l1_pt->next;
     }
 
-    return SYS_ERR_NOT_IMPLEMENTED;
+    return SYS_ERR_OK;
 }

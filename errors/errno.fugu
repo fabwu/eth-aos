@@ -601,6 +601,8 @@ errors spawn SPAWN_ERR_ {
     failure DETERMINE_CPUTYPE    "Failure in spawn_determine_cputype",
     failure SETUP_DISPATCHER     "Failure in spawn_setup_dispatcher",
     failure ELF_MAP         "Failure in spawn_elf_map",
+    failure ELF_LOAD         "Failure in spawn_elf_load",
+    failure LOCATE_ELF_BINARY         "Failure in spawn_locat_elf_binary",
 
     failure SET_CAPS         "Failure in set_special_caps",
     failure MONEP_SLOT_ALLOC "Failure allocating a slot for monitor EP",
