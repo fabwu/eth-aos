@@ -205,8 +205,6 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
 
 static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
 {
-    errval_t err = SYS_ERR_OK;
-
     assert(bi);
     assert(binary_name);
     assert(si);
@@ -227,15 +225,16 @@ static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
 
     void *elf_binary;
 
-    // XXX What about this frame? Can we remove it if ELF sections are mapped?
-    err = paging_map_frame_attr(get_current_paging_state(), (void **)&elf_binary,
-                                ROUND_UP(si->binary_size, BASE_PAGE_SIZE), child_frame,
-                                VREGION_FLAGS_READ, NULL, NULL);
+    // TODO Remove this frame after spawing child
+    errval_t err = paging_map_frame_attr(get_current_paging_state(), (void **)&elf_binary,
+                                         ROUND_UP(si->binary_size, BASE_PAGE_SIZE),
+                                         child_frame, VREGION_FLAGS_READ, NULL, NULL);
 
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_MAP_MODULE);
     }
 
+    // TODO Use pointer for this
     si->binary_base = (lvaddr_t)elf_binary;
 
     uint8_t magic_number = *(uint8_t *)si->binary_base;
@@ -243,14 +242,13 @@ static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
         return ELF_ERR_HEADER;
     }
 
-    return err;
+    return SYS_ERR_OK;
 }
 
 static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t flags,
                           void **ret)
 {
-    struct spawninfo *si = (struct spawninfo*) state;
-    errval_t err = SYS_ERR_OK;
+    struct spawninfo *si = (struct spawninfo *)state;
 
     // XXX useful command: readelf -l build/armv8/sbin/hello
     int frame_flags;
@@ -280,41 +278,25 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
                  "frame flags 0x%x\n",
                  base, size, flags, frame_flags);
 
-    struct paging_region pr;
-    //TODO remove ROUND_UP from base
-
-    DEBUG_PRINTF("state: %p\n", si->paging.l0);
-    err = paging_region_init_fixed(&si->paging, &pr, 
-            base, ROUND_UP(size, BASE_PAGE_SIZE), 
-            flags);
-
-    if(err_is_fail(err)) {
-        DEBUG_ERR(err, "fail region init");
-        assert(false);
-    }
-
-    err = paging_region_map_foreign(&si->paging, &pr, size, ret, NULL);
-    if(err_is_fail(err)) {
-        DEBUG_ERR(err, "fail region map");
-        assert(false);
-    }
-
     struct capref frame_cap;
-    err = frame_alloc(&frame_cap, size, NULL);
+    errval_t err = frame_alloc(&frame_cap, size, NULL);
     if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_ELF_FRAME);
+        return err_push(err, LIB_ERR_FRAME_ALLOC);
     }
 
-    err = paging_map_frame_attr(get_current_paging_state(), ret,
-                                ROUND_UP(size, BASE_PAGE_SIZE), frame_cap, frame_flags,
-                                NULL, NULL);
+    err = paging_map_frame(get_current_paging_state(), ret,
+                           ROUND_UP(size, BASE_PAGE_SIZE), frame_cap, NULL, NULL);
     if (err_is_fail(err)) {
-        return err;
+        return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
     }
 
-    // TODO Map frame into child
+    err = paging_map_fixed_attr(&si->paging, ROUND_DOWN(base, BASE_PAGE_SIZE), frame_cap,
+                                ROUND_UP(size, BASE_PAGE_SIZE), frame_flags);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
+    }
 
-    return err;
+    return SYS_ERR_OK;
 }
 
 /**
@@ -336,10 +318,9 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     // - Get the mem_region from the multiboot image
     // - Fill in argc/argv from the multiboot command line
     // - Call spawn_load_argv
-    errval_t err = SYS_ERR_OK;
     si->binary_name = binary_name;
 
-    err = spawn_create_child_cspace(si);
+    errval_t err = spawn_create_child_cspace(si);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
@@ -362,15 +343,12 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
         return err_push(err, SPAWN_ERR_COPY_CHILD_VSPACE);
     }
 
-    // TODO init cspace and vspace
-    // TODO Init state which gets passed to each alloc call
-
     err = elf_load(EM_AARCH64, elf_alloc, si, si->binary_base, si->binary_size,
                    &si->entrypoint);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_ELF_LOAD);
     }
 
-    return err;
+    return SYS_ERR_OK;
 }
 

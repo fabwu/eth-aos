@@ -66,6 +66,7 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensi
 #endif
     // TODO: Handle alignment
     assert(alignment == BASE_PAGE_SIZE);
+    assert(size > 0);
     if (size % BASE_PAGE_SIZE) {
         return LIB_ERR_ADDR_MGR_ALLOC;
     }
@@ -141,6 +142,7 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
     // TODO: Handle alignment
     assert(base % BASE_PAGE_SIZE == 0);
     assert(size % BASE_PAGE_SIZE == 0);
+    assert(size > 0);
     // Just go at the end of linked list, we have infinite space (Just check we
     // Find first node whose next is inexistent or has a larger or equal base
     // than the desired base
@@ -153,8 +155,6 @@ static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
         return LIB_ERR_SLAB_ALLOC_FAIL;
     }
 
-    DEBUG_PRINTF("default state %p state %p base %d size %d\n", &get_current_paging_state()->addr_mgr_state, st, base, size);
-    DEBUG_PRINTF("Prev %p\n", prev ); 
 
     if (prev == NULL
         || ((prev->base + prev->size - 1) < base
@@ -280,9 +280,11 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->slabs = paging_slabs;
     st->addr_mgr_state.slabs = addr_mgr_slabs;
 
-    errval_t err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, start_vaddr);
-    if (err_is_fail(err)) {
-        return LIB_ERR_ADDR_MGR_ALLOC_FIXED;
+    if (start_vaddr > 0) {
+        errval_t err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, start_vaddr);
+        if (err_is_fail(err)) {
+            return LIB_ERR_ADDR_MGR_ALLOC_FIXED;
+        }
     }
 
     return SYS_ERR_OK;
@@ -480,14 +482,8 @@ static errval_t paging_region_lazy_alloc(struct paging_state *st,
  * This function gets used in some of the code that is responsible
  * for allocating Frame (and other) capabilities.
  */
-errval_t paging_region_map(struct paging_region *pr, size_t req_size, 
-        void **retbuf, size_t *ret_size) {
-    return paging_region_map_foreign(get_current_paging_state(), pr, req_size,
-            retbuf, ret_size); 
-}
-
-errval_t paging_region_map_foreign(struct paging_state *st, struct paging_region *pr, 
-        size_t req_size, void **retbuf, size_t *ret_size)
+errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **retbuf,
+                           size_t *ret_size)
 {
     lvaddr_t end_addr = pr->base_addr + pr->region_size;
     ssize_t rem = end_addr - pr->current_addr;
@@ -506,7 +502,7 @@ errval_t paging_region_map_foreign(struct paging_state *st, struct paging_region
         return LIB_ERR_VSPACE_MMU_AWARE_NO_SPACE;
     }
 
-    errval_t err = paging_region_lazy_alloc(st, pr, pr->current_addr + *ret_size);
+    errval_t err = paging_region_lazy_alloc(get_current_paging_state(), pr, pr->current_addr + *ret_size);
     if (err_is_fail(err)) {
         *retbuf = NULL;
         *ret_size = 0;
