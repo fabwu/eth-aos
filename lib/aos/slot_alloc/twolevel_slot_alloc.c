@@ -94,7 +94,9 @@ errval_t two_level_alloc(struct slot_allocator *ca, struct capref *ret)
             void *slab_buf;
             size_t size;
 
-            err = paging_region_map(&mca->region, mca->slab.blocksize, &slab_buf, &size);
+            // Need more than one blocksize, or slab_grow won't work, because
+            // it needs some space for it's housekeeping
+            err = paging_region_map(&mca->region, 10*mca->slab.blocksize, &slab_buf, &size);
             if (err_is_fail(err)) {
                 return err_push(err, LIB_ERR_PAGING_REGION_MAP_FAIL);
             }
