@@ -669,13 +669,13 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
         }
         err = slot_alloc(&higher_lower_map);
         if (err_is_fail(err)) {
-            return err;
+            return err_push(err, LIB_ERR_SLOT_ALLOC);
         }
 
         // Does Read/Write make sense for a page table?
         err = vnode_map(pt_cpr, lower_pt_cpr, slot, flags, offset, 1, higher_lower_map);
         if (err_is_fail(err)) {
-            return err;
+            return err_push(err, LIB_ERR_VNODE_MAP);
         }
 
         // FIXME: This is not necessarily reentrant
@@ -783,7 +783,10 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     // TODO: Hope we do not run out of slabs in between
     if (slab_freecount(&st->slabs) < 32 && !is_refilling) {
         is_refilling = 1;
-        slab_default_refill(&st->slabs);
+        err = slab_default_refill(&st->slabs);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_SLAB_REFILL);
+        }
         is_refilling = 0;
     }
 

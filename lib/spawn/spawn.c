@@ -611,9 +611,6 @@ static errval_t spawn_dispatch(struct spawninfo *si)
         return err_push(err, SPAWN_ERR_COPY_CHILD_VSPACE);
     }
 
-    // TODO: Setup arguments
-
-    // TODO: Is this correct?
     struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
     err = invoke_dispatcher(si->dispatcher, cap_dispatcher, si->cspace, vspace,
                             si->child_dispframe, true);
