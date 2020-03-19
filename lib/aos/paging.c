@@ -285,6 +285,11 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
         if (err_is_fail(err)) {
             return LIB_ERR_ADDR_MGR_ALLOC_FIXED;
         }
+    } else {
+        errval_t err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, BASE_PAGE_SIZE);
+        if (err_is_fail(err)) {
+            return LIB_ERR_ADDR_MGR_ALLOC_FIXED;
+        }
     }
 
     return SYS_ERR_OK;
