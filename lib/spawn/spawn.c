@@ -101,17 +101,40 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     // DISPFRAME
     // ARGSPACE
 
-    // cap_copy dispframe and dispatcher caps
-    si->child_dispframe.cnode = si->task_cnode_ref;
-    si->child_dispframe.slot = TASKCN_SLOT_DISPFRAME;
-    err = cap_copy(si->child_dispframe, si->dispframe);
+    // Create SELFEP capability
+    struct capref selfep;
+    err = slot_alloc(&selfep);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
 
+    err = cap_retype(selfep, si->dispatcher, 0, ObjType_EndPointLMP, 0, 1);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    struct capref child_selfep = {
+        .cnode = si->task_cnode_ref,
+        .slot = TASKCN_SLOT_SELFEP
+    };
+    err = cap_copy(child_selfep, selfep);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    // TODO: Destroy cap and free slot selfep (in parent)
+
+    // cap_copy dispframe and dispatcher caps
     si->child_dispatcher.cnode = si->task_cnode_ref;
     si->child_dispatcher.slot = TASKCN_SLOT_DISPATCHER;
     err = cap_copy(si->child_dispatcher, si->dispatcher);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    si->child_dispframe.cnode = si->task_cnode_ref;
+    si->child_dispframe.slot = TASKCN_SLOT_DISPFRAME;
+    err = cap_copy(si->child_dispframe, si->dispframe);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
