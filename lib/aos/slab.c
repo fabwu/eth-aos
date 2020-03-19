@@ -181,20 +181,24 @@ static errval_t slab_refill_pages(struct slab_allocator *slabs, size_t bytes)
 {
     errval_t err;
     struct capref frame_cap;
+    size_t retbytes;
 
-    err = frame_alloc(&frame_cap, bytes, &bytes);
+    err = frame_alloc(&frame_cap, bytes, &retbytes);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_FRAME_CREATE);
     }
 
+    // FIXEM: magic, without it the code doesn't wor
+    assert(retbytes == bytes);
+
     void *buf;
-    err = paging_map_frame(get_current_paging_state(), &buf, bytes,
+    err = paging_map_frame(get_current_paging_state(), &buf, retbytes,
             frame_cap, NULL, NULL);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_VSPACE_MAP);
     }
 
-    slab_grow(slabs, buf, bytes);
+    slab_grow(slabs, buf, retbytes);
     return SYS_ERR_OK;
 }
 
