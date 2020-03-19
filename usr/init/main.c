@@ -57,7 +57,7 @@ bsp_main(int argc, char *argv[]) {
 
     // TODO: Spawn system processes, boot second core etc. here
     struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-    for (int i = 0; i < 10; ++i) {  // Required for assessment
+    for (int i = 0; i < 1; ++i) {  // Required for assessment
         err = spawn_load_by_name("hello", si, NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn module");

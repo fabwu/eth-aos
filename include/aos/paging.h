@@ -94,13 +94,6 @@ errval_t slab_refill_no_pagefault(struct slab_allocator *slabs, struct capref fr
 errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref frame,
                       size_t bytes);
 
-
-/**
- * \brief copies capabilites into given cnode
- */
-errval_t paging_copy_capabilities(struct paging_state *st, struct cnoderef l2_cnode_ref,
-                                  size_t start_slot, size_t num_slots);
-
 /// Map user provided frame while allocating VA space for it
 static inline errval_t paging_map_frame(struct paging_state *st, void **buf, size_t bytes,
                                         struct capref frame, void *arg1, void *arg2)
