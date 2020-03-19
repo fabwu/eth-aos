@@ -101,6 +101,21 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     // DISPFRAME
     // ARGSPACE
 
+    // cap_copy dispframe and dispatcher caps
+    si->child_dispframe.cnode = si->task_cnode_ref;
+    si->child_dispframe.slot = TASKCN_SLOT_DISPFRAME;
+    err = cap_copy(si->child_dispframe, si->dispframe);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    si->child_dispatcher.cnode = si->task_cnode_ref;
+    si->child_dispatcher.slot = TASKCN_SLOT_DISPATCHER;
+    err = cap_copy(si->child_dispatcher, si->dispatcher);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
     struct cnoderef alloc_0_cnode_ref;
     err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_SLOT_ALLOC0,
                                   &alloc_0_cnode_ref);
@@ -430,25 +445,10 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     dispatcher_handle_t handle;
     struct paging_state *st = get_current_paging_state();
 
-    // cap_copy dispframe and dispatcher caps
-    struct capref child_dispframe = { .cnode = si->task_cnode_ref,
-                                      .slot = TASKCN_SLOT_DISPFRAME };
-    err = cap_copy(child_dispframe, si->dispframe);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
-    struct capref child_dispatcher = { .cnode = si->task_cnode_ref,
-                                       .slot = TASKCN_SLOT_DISPATCHER };
-    err = cap_copy(child_dispatcher, si->dispatcher);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
     // Map dispatcher frame for child
     lvaddr_t child_dispframe_map;
     err = paging_map_frame_attr(&si->paging, (void **)&child_dispframe_map,
-                                DISPATCHER_FRAME_SIZE, child_dispframe,
+                                DISPATCHER_FRAME_SIZE, si->child_dispframe,
                                 VREGION_FLAGS_READ_WRITE, NULL, NULL);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
@@ -509,7 +509,7 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     struct capref domdispatcher = { .cnode = cnode_task, .slot = TASKCN_SLOT_DISPATCHER };
     struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
     err = invoke_dispatcher(si->dispatcher, domdispatcher, si->cspace, vspace,
-                            child_dispframe, true);
+                            si->child_dispframe, true);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_RUN);
     }
