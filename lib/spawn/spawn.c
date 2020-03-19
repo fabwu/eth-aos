@@ -487,6 +487,8 @@ static errval_t spawn_setup_args(char *binary_name, struct spawninfo *si)
         return err;
     }
 
+    // TODO: unmap from our space again
+
     /* map args page into our vspace so we can write to it */
     err = paging_map_frame(get_current_paging_state(), &ptr_frame,
                            BASE_PAGE_SIZE, frame_cap, NULL, NULL);
@@ -508,6 +510,7 @@ static errval_t spawn_setup_args(char *binary_name, struct spawninfo *si)
     if (err_is_fail(err)) {
         return err;
     }
+    si->child_args_addr = (lvaddr_t)ptr_frame_child;
 
     /* zero args page */
     // TODO does the kernel already zero every new frame?
@@ -576,6 +579,7 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     // Set program counter (where it should start to execute)
     disabled_area->named.pc = si->entrypoint;
+    enabled_area->named.x0 = (uint64_t) si->child_args_addr;
 
     // Initialize offset registers
     // got_addr is the address of the .got in the child’s VSpace
@@ -610,9 +614,8 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     // TODO: Setup arguments
 
     // TODO: Is this correct?
-    struct capref domdispatcher = { .cnode = cnode_task, .slot = TASKCN_SLOT_DISPATCHER };
     struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
-    err = invoke_dispatcher(si->dispatcher, domdispatcher, si->cspace, vspace,
+    err = invoke_dispatcher(si->dispatcher, cap_dispatcher, si->cspace, vspace,
                             si->child_dispframe, true);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_RUN);
