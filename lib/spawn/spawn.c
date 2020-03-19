@@ -430,6 +430,30 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     dispatcher_handle_t handle;
     struct paging_state *st = get_current_paging_state();
 
+    // cap_copy dispframe and dispatcher caps
+    struct capref child_dispframe = { .cnode = si->task_cnode_ref,
+                                      .slot = TASKCN_SLOT_DISPFRAME };
+    err = cap_copy(child_dispframe, si->dispframe);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    struct capref child_dispatcher = { .cnode = si->task_cnode_ref,
+                                       .slot = TASKCN_SLOT_DISPATCHER };
+    err = cap_copy(child_dispatcher, si->dispatcher);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    // Map dispatcher frame for child
+    lvaddr_t child_dispframe_map;
+    err = paging_map_frame_attr(&si->paging, (void **)&child_dispframe_map,
+                                DISPATCHER_FRAME_SIZE, child_dispframe,
+                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
+    }
+
     // Map dispatcher frame and get references to dispatcher structs
     err = paging_map_frame_attr(st, (void **)&handle, DISPATCHER_FRAME_SIZE,
                                 si->dispframe, VREGION_FLAGS_READ_WRITE, NULL, NULL);
@@ -445,7 +469,7 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     disp_gen->core_id = disp_get_core_id();
     // Virtual address of the dispatcher frame in child’s VSpace
-    disp->udisp = 0;     // TODO (need to get this information from vspace setup)
+    disp->udisp = child_dispframe_map;
     disp->disabled = 1;  // Start in disabled mode
     // TODO: do I have to set this? disp_gen->domain_id
     //       Theres a domain id handed to spawn_load_by_name
@@ -456,7 +480,11 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     // Initialize offset registers
     // got_addr is the address of the .got in the child’s VSpace
-    struct Elf64_Shdr * got = elf64_find_section_header_name(si->binary_base, si->binary_size, ".got");
+    struct Elf64_Shdr *got = elf64_find_section_header_name(si->binary_base,
+                                                            si->binary_size, ".got");
+    if (got == NULL) {
+        return SPAWN_ERR_DISPATCHER_SETUP;
+    }
     armv8_set_registers((void *)got->sh_addr, handle, enabled_area, disabled_area);
 
     disp_gen->eh_frame = 0;
@@ -479,18 +507,9 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     // TODO: Is this correct?
     struct capref domdispatcher = { .cnode = cnode_task, .slot = TASKCN_SLOT_DISPATCHER };
-    struct capref vspace = {
-        .cnode = si->page_cnode_ref,
-        .slot = 0
-    };
-    // Need the create capref to dispframe in child cspace
-    // struct capref child_dispframe = {
-    //     .cnode = {
-    //         .croot =
-    //     }
-    // };
+    struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
     err = invoke_dispatcher(si->dispatcher, domdispatcher, si->cspace, vspace,
-                            /* should be child dispframe */ si->dispframe, true);
+                            child_dispframe, true);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_RUN);
     }
