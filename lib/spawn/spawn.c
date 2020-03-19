@@ -225,6 +225,14 @@ static errval_t spawn_create_child_vspace(struct spawninfo *si)
         return err_push(err, LIB_ERR_PAGING_INIT_STATE_FOREIGN);
     }
 
+    // Map dispatcher frame for child
+    err = paging_map_frame_attr(&si->paging, (void **)&si->child_dispframe_map,
+                                DISPATCHER_FRAME_SIZE, si->child_dispframe,
+                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
+    }
+
     return SYS_ERR_OK;
 }
 
@@ -468,15 +476,6 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     dispatcher_handle_t handle;
     struct paging_state *st = get_current_paging_state();
 
-    // Map dispatcher frame for child
-    lvaddr_t child_dispframe_map;
-    err = paging_map_frame_attr(&si->paging, (void **)&child_dispframe_map,
-                                DISPATCHER_FRAME_SIZE, si->child_dispframe,
-                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
-    }
-
     // Map dispatcher frame and get references to dispatcher structs
     err = paging_map_frame_attr(st, (void **)&handle, DISPATCHER_FRAME_SIZE,
                                 si->dispframe, VREGION_FLAGS_READ_WRITE, NULL, NULL);
@@ -492,14 +491,14 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     disp_gen->core_id = disp_get_core_id();
     // Virtual address of the dispatcher frame in child’s VSpace
-    disp->udisp = child_dispframe_map;
+    disp->udisp = si->child_dispframe_map;
     disp->disabled = 1;  // Start in disabled mode
     // TODO: do I have to set this? disp_gen->domain_id
     //       Theres a domain id handed to spawn_load_by_name
     strncpy(disp->name, si->binary_name, DISP_NAME_LEN);  // Dispatcher name for debugging
 
     // Set program counter (where it should start to execute)
-    disabled_area->named.pc = si->entrypoint;  // TODO: Is this correct?
+    disabled_area->named.pc = si->entrypoint;
 
     // Initialize offset registers
     // got_addr is the address of the .got in the child’s VSpace

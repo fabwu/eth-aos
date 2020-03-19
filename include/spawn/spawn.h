@@ -41,6 +41,7 @@ struct spawninfo {
     struct capref dispframe;
     struct capref child_dispatcher;
     struct capref child_dispframe;
+    lvaddr_t child_dispframe_map;
 };
 
 // Start a child process using the multiboot command line. Fills in si.
