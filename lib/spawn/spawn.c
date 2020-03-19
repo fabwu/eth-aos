@@ -269,6 +269,7 @@ static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
     si->binary_base = (lvaddr_t)elf_binary;
 
     uint8_t magic_number = *(uint8_t *)si->binary_base;
+    DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment
     if (magic_number != 0x7f) {
         return ELF_ERR_HEADER;
     }
