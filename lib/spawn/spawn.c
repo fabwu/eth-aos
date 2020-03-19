@@ -42,7 +42,7 @@ armv8_set_registers(void *arch_load_info, dispatcher_handle_t handle,
     disabled_area->regs[REG_OFFSET(PIC_REGISTER)] = got_base;
 }
 
-static errval_t spawn_prepare_dispatcher(struct spawninfo *si)
+static errval_t spawn_setup_dispatcher(struct spawninfo *si)
 {
     errval_t err;
 
@@ -87,19 +87,11 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     }
     si->task_cnode_ref = task_cnode_ref;
     task_cnode_cap.cnode = task_cnode_ref;
-    // TODO: Populate task_cnode_cap
-    // Need dispatcher
-    // SELFEP
-    // DISPATCHER
-    // ROOTCN, give child(more probably dispatcher?) to child l1 cnode
     task_cnode_cap.slot = TASKCN_SLOT_ROOTCN;
-    // TODO: Is this how it is done??
     err = cap_copy(task_cnode_cap, l1_cnode_cap);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_CAP_COPY);
     }
-    // DISPFRAME
-    // ARGSPACE
 
     // Create SELFEP capability
     struct capref selfep;
@@ -319,46 +311,12 @@ static errval_t spawn_copy_child_vspace(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
-/**
- * TODO(M2): Implement this function.
- * \brief Spawn a new dispatcher called 'argv[0]' with 'argc' arguments.
- *
- * This function spawns a new dispatcher running the ELF binary called
- * 'argv[0]' with 'argc' - 1 additional arguments. It fills out 'si'
- * and 'pid'.
- *
- * \param argc The number of command line arguments. Must be > 0.
- * \param argv An array storing 'argc' command line arguments.
- * \param si A pointer to the spawninfo struct representing
- * the child. It will be filled out by this function. Must not be NULL.
- * \param pid A pointer to a domainid_t variable that will be
- * assigned to by this function. Must not be NULL.
- * \return Either SYS_ERR_OK if no error occured or an error
- * indicating what went wrong otherwise.
- */
-errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
-{
-    // TODO: Implement me
-    // - Initialize the spawn_info struct
-    // - Get the module from the multiboot image
-    //   and map it (take a look at multiboot.c)
-    // - Setup the child's cspace
-    // - Setup the child's vspace
-    // - Load the ELF binary
-    // - Setup the dispatcher
-    // - Setup the environment
-    // - Make the new dispatcher runnable
-
-    return LIB_ERR_NOT_IMPLEMENTED;
-}
-
-static errval_t locate_elf_binary(char *binary_name, struct spawninfo *si)
+static errval_t spawn_locate_elf_binary(struct spawninfo *si)
 {
     assert(bi);
-    assert(binary_name);
     assert(si);
 
-    struct mem_region *module = multiboot_find_module(bi, binary_name);
+    struct mem_region *module = multiboot_find_module(bi, si->binary_name);
 
     if (module == NULL) {
         return SPAWN_ERR_FIND_MODULE;
@@ -454,7 +412,7 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
     return SYS_ERR_OK;
 }
 
-static errval_t spawn_setup_args(char *binary_name, struct spawninfo *si)
+static errval_t spawn_setup_args(struct spawninfo *si)
 {
     struct capref task_cnode_cap;
     struct capref frame_cap;
@@ -472,7 +430,7 @@ static errval_t spawn_setup_args(char *binary_name, struct spawninfo *si)
     errval_t err;
 
     /* find executable */
-    module = multiboot_find_module(bi, binary_name);
+    module = multiboot_find_module(bi, si->binary_name);
     if (module == NULL) {
         return SPAWN_ERR_FIND_MODULE;
     }
@@ -623,6 +581,84 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
 /**
  * TODO(M2): Implement this function.
+ * \brief Spawn a new dispatcher called 'argv[0]' with 'argc' arguments.
+ *
+ * This function spawns a new dispatcher running the ELF binary called
+ * 'argv[0]' with 'argc' - 1 additional arguments. It fills out 'si'
+ * and 'pid'.
+ *
+ * \param argc The number of command line arguments. Must be > 0.
+ * \param argv An array storing 'argc' command line arguments.
+ * \param si A pointer to the spawninfo struct representing
+ * the child. It will be filled out by this function. Must not be NULL.
+ * \param pid A pointer to a domainid_t variable that will be
+ * assigned to by this function. Must not be NULL.
+ * \return Either SYS_ERR_OK if no error occured or an error
+ * indicating what went wrong otherwise.
+ */
+errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
+{
+    // TODO: Implement me
+    // - Initialize the spawn_info struct
+    // - Get the module from the multiboot image
+    //   and map it (take a look at multiboot.c)
+    // - Setup the child's cspace
+    // - Setup the child's vspace
+    // - Load the ELF binary
+    // - Setup the dispatcher
+    // - Setup the environment
+    // - Make the new dispatcher runnable
+    assert(argv[0]);
+    errval_t err;
+
+    // init spawn_info
+    si->binary_name = argv[0];
+
+    // get module and map it
+    err = spawn_locate_elf_binary(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_LOCATE_ELF_BINARY);
+    }
+
+    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
+                 si->binary_size);
+
+    err = spawn_setup_dispatcher(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_SETUP_DISPATCHER);
+    }
+
+    err = spawn_create_child_cspace(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    err = spawn_create_child_vspace(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_VSPACE);
+    }
+
+    err = elf_load(EM_AARCH64, elf_alloc, si, si->binary_base, si->binary_size,
+                   &si->entrypoint);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_ELF_LOAD);
+    }
+
+    err = spawn_setup_args(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_SETUP_ARGS);
+    }
+
+    err = spawn_dispatch(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_SPAWN_DISPATCH);
+    }
+
+    return SYS_ERR_OK;
+}
+
+/**
+ * TODO(M2): Implement this function.
  * \brief Spawn a new dispatcher executing 'binary_name'
  *
  * \param binary_name The name of the binary.
@@ -640,45 +676,15 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     // - Get the mem_region from the multiboot image
     // - Fill in argc/argv from the multiboot command line
     // - Call spawn_load_argv
-    si->binary_name = binary_name;
+    errval_t err;
+    int argc = 1;
+    char *argv[argc];
 
-    errval_t err = err = spawn_prepare_dispatcher(si);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    err = spawn_create_child_cspace(si);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
-    err = spawn_create_child_vspace(si);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_VSPACE);
-    }
-
-    err = locate_elf_binary(binary_name, si);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_LOCATE_ELF_BINARY);
-    }
-
-    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
-                 si->binary_size);
-
-    err = elf_load(EM_AARCH64, elf_alloc, si, si->binary_base, si->binary_size,
-                   &si->entrypoint);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_ELF_LOAD);
-    }
-
-    err = spawn_setup_args(binary_name, si);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    err = spawn_dispatch(si);
-    if (err_is_fail(err)) {
-        return err;
+    argv[0] = binary_name;
+    //TODO Move argument parsing from spawn_setup_argsv to here
+    err = spawn_load_argv(argc, argv, si, pid);
+    if(err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_LOAD_ARGV);
     }
 
     return SYS_ERR_OK;
