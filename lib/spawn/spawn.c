@@ -447,6 +447,8 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     // Virtual address of the dispatcher frame in child’s VSpace
     disp->udisp = 0;     // TODO (need to get this information from vspace setup)
     disp->disabled = 1;  // Start in disabled mode
+    // TODO: do I have to set this? disp_gen->domain_id
+    //       Theres a domain id handed to spawn_load_by_name
     strncpy(disp->name, si->binary_name, DISP_NAME_LEN);  // Dispatcher name for debugging
 
     // Set program counter (where it should start to execute)
@@ -454,8 +456,8 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     // Initialize offset registers
     // got_addr is the address of the .got in the child’s VSpace
-    // TODO:
-    armv8_set_registers(NULL /* got_addr */, handle, enabled_area, disabled_area);
+    struct Elf64_Shdr * got = elf64_find_section_header_name(si->binary_base, si->binary_size, ".got");
+    armv8_set_registers((void *)got->sh_addr, handle, enabled_area, disabled_area);
 
     disp_gen->eh_frame = 0;
     disp_gen->eh_frame_size = 0;
@@ -481,8 +483,14 @@ static errval_t spawn_dispatch(struct spawninfo *si)
         .cnode = si->page_cnode_ref,
         .slot = 0
     };
+    // Need the create capref to dispframe in child cspace
+    // struct capref child_dispframe = {
+    //     .cnode = {
+    //         .croot =
+    //     }
+    // };
     err = invoke_dispatcher(si->dispatcher, domdispatcher, si->cspace, vspace,
-                            si->dispframe, true);
+                            /* should be child dispframe */ si->dispframe, true);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_RUN);
     }
