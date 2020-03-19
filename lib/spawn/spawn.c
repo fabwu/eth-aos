@@ -428,20 +428,25 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
                  "frame flags 0x%x\n",
                  base, size, flags, frame_flags);
 
+    genvaddr_t aligned_base = ROUND_DOWN(base, BASE_PAGE_SIZE);
+    size_t aligned_size = ROUND_UP(size + (base - aligned_base), BASE_PAGE_SIZE);
+
     struct capref frame_cap;
-    errval_t err = frame_alloc(&frame_cap, size, NULL);
+    errval_t err = frame_alloc(&frame_cap, aligned_size, NULL);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_FRAME_ALLOC);
     }
 
-    err = paging_map_frame(get_current_paging_state(), ret,
-                           ROUND_UP(size, BASE_PAGE_SIZE), frame_cap, NULL, NULL);
+
+    err = paging_map_frame(get_current_paging_state(), ret, aligned_size, frame_cap, NULL, NULL);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
     }
 
-    err = paging_map_fixed_attr(&si->paging, ROUND_DOWN(base, BASE_PAGE_SIZE), frame_cap,
-                                ROUND_UP(size, BASE_PAGE_SIZE), frame_flags);
+    *ret += (base - aligned_base);
+
+    err = paging_map_fixed_attr(&si->paging, aligned_base, frame_cap,
+                                aligned_size, frame_flags);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
     }
