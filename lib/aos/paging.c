@@ -270,6 +270,7 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     // TODO (M4): Implement page fault handler that installs frames when a page fault
     // occurs and keeps track of the virtual address space.
     st->l0_pt = pdir;
+    st->l0 = NULL;
 
     st->addr_mgr_state.head = NULL;
     st->addr_mgr_state.tail = NULL;
