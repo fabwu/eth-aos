@@ -444,6 +444,20 @@ errval_t paging_region_init(struct paging_state *st, struct paging_region *pr,
 /**
  * \brief Allocates physical memory and maps it, so that pr->base_addr up to next_addr_end
  * is backed by memory.
+ *
+ * The paging_region currently works by only looking at the position of pr->current_addr
+ * and using pr->base_addr and pr->region_size to determine which virtual addresses are
+ * backed by memory.
+ *
+ * The code always maintains the invariant that at least the bytes from pr->base_addr to
+ * pr->current_addr - 1 are backed by memory. Before increasing pr->current_addr it
+ * is checked if the invariant would still hold and if not, BASE_PAGE_SIZE sized pages
+ * are mapped until there is enough memory mapped for the current request.
+ *
+ * Assumptions:
+ * - The paging_region.base_addr hase to be BASE_PAGE_SIZE aligned.
+ * - paging_region virtual addresses are currently not freed anymore, so no holes exist
+ *   in the region
  */
 static errval_t paging_region_lazy_alloc(struct paging_state *st,
                                          struct paging_region *pr, lvaddr_t next_addr_end)
