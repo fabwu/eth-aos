@@ -13,7 +13,7 @@
 #include <spawn/multiboot.h>
 #include <spawn/argv.h>
 
-#define SPAWN_DEBUG_DISPATCHER 1
+#define SPAWN_DEBUG_DISPATCHER 0
 
 extern struct bootinfo *bi;
 extern coreid_t my_core_id;
@@ -93,29 +93,6 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
         return err_push(err, LIB_ERR_CAP_COPY);
     }
 
-    // Create SELFEP capability
-    struct capref selfep;
-    err = slot_alloc(&selfep);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
-    err = cap_retype(selfep, si->dispatcher, 0, ObjType_EndPointLMP, 0, 1);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
-    struct capref child_selfep = {
-        .cnode = si->task_cnode_ref,
-        .slot = TASKCN_SLOT_SELFEP
-    };
-    err = cap_copy(child_selfep, selfep);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
-    // TODO: Destroy cap and free slot selfep (in parent)
-
     // cap_copy dispframe and dispatcher caps
     si->child_dispatcher.cnode = si->task_cnode_ref;
     si->child_dispatcher.slot = TASKCN_SLOT_DISPATCHER;
@@ -127,6 +104,14 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     si->child_dispframe.cnode = si->task_cnode_ref;
     si->child_dispframe.slot = TASKCN_SLOT_DISPFRAME;
     err = cap_copy(si->child_dispframe, si->dispframe);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    // Retype dispatcher to SELFEP (self end point)
+    struct capref child_selfep = { .cnode = si->task_cnode_ref,
+                                   .slot = TASKCN_SLOT_SELFEP };
+    err = cap_retype(child_selfep, si->child_dispatcher, 0, ObjType_EndPointLMP, 0, 1);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
@@ -345,7 +330,7 @@ static errval_t spawn_locate_elf_binary(struct spawninfo *si)
     si->binary_base = (lvaddr_t)elf_binary;
 
     uint8_t magic_number = *(uint8_t *)si->binary_base;
-    DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment
+    // DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
     if (magic_number != 0x7f) {
         return ELF_ERR_HEADER;
     }
@@ -579,8 +564,24 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
+static errval_t spawn_free(struct spawninfo *si)
+{
+    errval_t err;
+
+    err = cap_destroy(si->dispatcher);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_DESTROY_DISAPTCHER);
+    }
+
+    err = cap_destroy(si->dispframe);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_DESTROY_DISFRAME);
+    }
+
+    return SYS_ERR_OK;
+}
+
 /**
- * TODO(M2): Implement this function.
  * \brief Spawn a new dispatcher called 'argv[0]' with 'argc' arguments.
  *
  * This function spawns a new dispatcher running the ELF binary called
@@ -598,16 +599,6 @@ static errval_t spawn_dispatch(struct spawninfo *si)
  */
 errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
 {
-    // TODO: Implement me
-    // - Initialize the spawn_info struct
-    // - Get the module from the multiboot image
-    //   and map it (take a look at multiboot.c)
-    // - Setup the child's cspace
-    // - Setup the child's vspace
-    // - Load the ELF binary
-    // - Setup the dispatcher
-    // - Setup the environment
-    // - Make the new dispatcher runnable
     assert(argv[0]);
     errval_t err;
 
@@ -654,11 +645,15 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
         return err_push(err, SPAWN_ERR_SPAWN_DISPATCH);
     }
 
+    err = spawn_free(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_FREE);
+    }
+
     return SYS_ERR_OK;
 }
 
 /**
- * TODO(M2): Implement this function.
  * \brief Spawn a new dispatcher executing 'binary_name'
  *
  * \param binary_name The name of the binary.
@@ -672,10 +667,6 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
  */
 errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t *pid)
 {
-    // TODO: Implement me
-    // - Get the mem_region from the multiboot image
-    // - Fill in argc/argv from the multiboot command line
-    // - Call spawn_load_argv
     errval_t err;
     int argc = 1;
     char *argv[argc];
