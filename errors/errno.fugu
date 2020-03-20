@@ -593,25 +593,25 @@ errors spawn SPAWN_ERR_ {
     failure GET_CMDLINE_ARGS    "Failure in get_cmdline_args",
     failure SETUP_ARGS          "Failure in spawn_setup_args",
     failure SETUP_ENV           "Failure in spawn_setup_env",
-    failure UNKNOWN_TARGET_ARCH    "Unknown target architecture type",
+    failure UNKNOWN_TARGET_ARCH "Unknown target architecture type",
     failure UNSUPPORTED_TARGET_ARCH     "Unsupported target architecture type",
-    failure OUT_OF_PIDS     "Failure allocating a pid",
+    failure OUT_OF_PIDS         "Failure allocating a pid",
 
-    failure CREATE_CHILD_CSPACE    "Failure in spawn_create_child_cspace",
-    failure CREATE_CHILD_VSPACE     "Failure in spawn_create_child_vspace",
-    failure COPY_CHILD_VSPACE     "Failure in spawn_copy_child_vspace",
-    failure DETERMINE_CPUTYPE    "Failure in spawn_determine_cputype",
-    failure SETUP_DISPATCHER     "Failure in spawn_setup_dispatcher",
-    failure SPAWN_DISPATCH       "Failure in spawn_dispatch",
-    failure ELF_MAP         "Failure in spawn_elf_map",
-    failure ELF_LOAD         "Failure in spawn_elf_load",
-    failure LOCATE_ELF_BINARY         "Failure in spawn_locat_elf_binary",
-    failure LOAD_ARGV         "Failure in spawn_load_argv",
+    failure CREATE_CHILD_CSPACE "Failure in spawn_create_child_cspace",
+    failure CREATE_CHILD_VSPACE "Failure in spawn_create_child_vspace",
+    failure COPY_CHILD_VSPACE   "Failure in spawn_copy_child_vspace",
+    failure DETERMINE_CPUTYPE   "Failure in spawn_determine_cputype",
+    failure SETUP_DISPATCHER    "Failure in spawn_setup_dispatcher",
+    failure SPAWN_DISPATCH      "Failure in spawn_dispatch",
+    failure ELF_MAP             "Failure in spawn_elf_map",
+    failure ELF_LOAD            "Failure in spawn_elf_load",
+    failure LOCATE_ELF_BINARY   "Failure in spawn_locat_elf_binary",
+    failure LOAD_ARGV           "Failure in spawn_load_argv",
 
-    failure SET_CAPS         "Failure in set_special_caps",
-    failure MONEP_SLOT_ALLOC "Failure allocating a slot for monitor EP",
-    failure MONITOR_CLIENT         "Failure in monitor_client_setup",
-    failure FREE             "Failure in spawn_free",
+    failure SET_CAPS            "Failure in set_special_caps",
+    failure MONEP_SLOT_ALLOC    "Failure allocating a slot for monitor EP",
+    failure MONITOR_CLIENT      "Failure in monitor_client_setup",
+    failure FREE                "Failure in spawn_free",
 
 	failure CREATE_ELF_FRAME	"Failure creating ELF frame",
 
@@ -639,8 +639,8 @@ errors spawn SPAWN_ERR_ {
     failure MAP_DISPATCHER_TO_SELF "Failure mapping dispatcher frame to parent",
     failure MAP_ARGSPG_TO_NEW   "Failure mapping arguments page to new domain",
     failure MAP_ARGSPG_TO_SELF  "Failure mapping arguments page to parent",
-    failure MAP_FDSPG_TO_NEW   "Failure mapping file descriptors page to new domain",
-    failure MAP_FDSPG_TO_SELF  "Failure mapping file descriptors page to parent",
+    failure MAP_FDSPG_TO_NEW    "Failure mapping file descriptors page to new domain",
+    failure MAP_FDSPG_TO_SELF   "Failure mapping file descriptors page to parent",
 
     failure FILL_SMALLCN        "Failure filling smallcn of new domain",
     failure MAP_BOOTINFO        "Failure mapping bootinfo to new domain",
@@ -658,12 +658,12 @@ errors spawn SPAWN_ERR_ {
     failure SETUP_INHERITED_CAPS "Failure setup inherited caps",
 
     // setup argument caps
-    failure SETUP_ARGCN          "Failure setup CNode containing caps passed as arguments",
-    failure COPY_ARGCN           "Error copying CNode containing caps passed as arguments",
+    failure SETUP_ARGCN         "Failure setup CNode containing caps passed as arguments",
+    failure COPY_ARGCN          "Error copying CNode containing caps passed as arguments",
 
     // setup file descriptors
     failure SETUP_FDCAP         "Failure setting up frame for copying file descriptors",
-    failure FDSPG_OVERFLOW     "Overflow in file descriptors page: too many file descriptors",
+    failure FDSPG_OVERFLOW      "Overflow in file descriptors page: too many file descriptors",
 
     // setup session id cap
     failure SETUP_SIDCAP        "Failure setting up session capability",
@@ -691,18 +691,18 @@ errors spawn SPAWN_ERR_ {
     failure DISPATCHER_SETUP    "Dispatcher setup",
 
     // domain management
-    failure DOMAIN_ALLOCATE    "No more domain descriptors",
-    failure DOMAIN_NOTFOUND    "Domain not found",
-    failure DOMAIN_RUNNING    "Domain is running",
+    failure DOMAIN_ALLOCATE     "No more domain descriptors",
+    failure DOMAIN_NOTFOUND     "Domain not found",
+    failure DOMAIN_RUNNING      "Domain is running",
     
     failure IDENTIFY_PROC_MNGR_CAP "Failed to identify process manager cap",
-    failure NOT_PROC_MNGR          "Request did not come from the process manager",
+    failure NOT_PROC_MNGR       "Request did not come from the process manager",
 
-    failure CREATE_DOMAIN_TABLE  "Failed to create domain hash table",
-    failure DOMAIN_CAP_HASH      "Failed to compute hash code for domain cap",
-    failure DOMAIN_TABLE_FIND    "Failed to find requested domain in domain table",
+    failure CREATE_DOMAIN_TABLE "Failed to create domain hash table",
+    failure DOMAIN_CAP_HASH     "Failed to compute hash code for domain cap",
+    failure DOMAIN_TABLE_FIND   "Failed to find requested domain in domain table",
 
-    failure FIND_SPAWNDS       "Unable to find spawn daemons",
+    failure FIND_SPAWNDS        "Unable to find spawn daemons",
     failure MALFORMED_SPAWND_RECORD "Spawn record without ID found?",
 };
 
