@@ -25,8 +25,10 @@ struct spawninfo {
 
     // Information about the binary
     char *binary_name;  // Name of the binary
-    lvaddr_t binary_base;
-    size_t binary_size;
+
+    struct capref module_frame;
+    void *module_base;
+    size_t module_size;
 
     // TODO(M2): Add fields you need to store state
     //           when spawning a new dispatcher,
@@ -37,8 +39,11 @@ struct spawninfo {
     struct capref cspace;
     struct paging_state paging;
     genvaddr_t entrypoint;
+
     struct capref dispatcher;
     struct capref dispframe;
+    void *dispbase;
+
     struct capref child_dispatcher;
     struct capref child_dispframe;
     lvaddr_t child_dispframe_map;
@@ -46,14 +51,10 @@ struct spawninfo {
 };
 
 // Start a child process using the multiboot command line. Fills in si.
-errval_t spawn_load_by_name(char *binary_name, struct spawninfo * si,
-                            uint32_t * pid);
+errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, uint32_t *pid);
 
 // Start a child with an explicit command line. Fills in si.
-errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si,
-                         domainid_t *pid);
-
-
+errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid);
 
 
 #endif /* _INIT_SPAWN_H_ */

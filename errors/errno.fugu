@@ -272,6 +272,7 @@ errors libaos LIB_ERR_ {
     // paging
     failure PAGING_MAP_FRAME "paging_map_frame() returned error",
     failure PAGING_MAP_FIXED_ATTR "paging_map_fixed_attr() returned error",
+    failure PAGING_UNMAP "paging_unmap() returned error",
     failure PAGING_REGION_INIT_FAIL "paging_region_init() returned error",
     failure PAGING_REGION_MAP_FAIL "paging_region_map() returned error",
     failure PAGING_INIT_STATE_FOREIGN "paging_init_state_foreign() returned error",
@@ -602,7 +603,7 @@ errors spawn SPAWN_ERR_ {
     failure COPY_CHILD_VSPACE   "Failure in spawn_copy_child_vspace",
     failure DETERMINE_CPUTYPE   "Failure in spawn_determine_cputype",
     failure SETUP_DISPATCHER    "Failure in spawn_setup_dispatcher",
-    failure SPAWN_DISPATCH      "Failure in spawn_dispatch",
+    failure DISPATCH            "Failure in spawn_dispatch",
     failure ELF_MAP             "Failure in spawn_elf_map",
     failure ELF_LOAD            "Failure in spawn_elf_load",
     failure LOCATE_ELF_BINARY   "Failure in spawn_locat_elf_binary",

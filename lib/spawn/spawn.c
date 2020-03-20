@@ -13,7 +13,11 @@
 #include <spawn/multiboot.h>
 #include <spawn/argv.h>
 
+#define L1_NODE_SLOT_OFFSET 50
+
 #define SPAWN_DEBUG_DISPATCHER 0
+#define DEBUG_ELF 0
+#define DEBUG_COPY_CAPS 0
 
 extern struct bootinfo *bi;
 extern coreid_t my_core_id;
@@ -27,10 +31,9 @@ extern coreid_t my_core_id;
  * \param enabled_area The "resume enabled" register set. Must not be NULL.
  * \param disabled_area The "resume disabled" register set. Must not be NULL.
  */
-__attribute__((__used__)) static void
-armv8_set_registers(void *arch_load_info, dispatcher_handle_t handle,
-                    arch_registers_state_t *enabled_area,
-                    arch_registers_state_t *disabled_area)
+static void armv8_set_registers(void *arch_load_info, dispatcher_handle_t handle,
+                                arch_registers_state_t *enabled_area,
+                                arch_registers_state_t *disabled_area)
 {
     assert(arch_load_info != NULL);
     uintptr_t got_base = (uintptr_t)arch_load_info;
@@ -175,7 +178,6 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
-
 static errval_t spawn_create_child_vspace(struct spawninfo *si)
 {
     errval_t err;
@@ -258,7 +260,7 @@ static errval_t spawn_copy_child_vspace(struct spawninfo *si)
     errval_t err;
     struct paging_state *st = &si->paging;
     struct capref l1_node = si->cspace;
-    size_t next_l1_slot = 50;  // TODO just start somewhere
+    size_t next_l1_slot = L1_NODE_SLOT_OFFSET;
     struct cnoderef page_cnode_ref = si->page_cnode_ref;
     struct cnoderef *current_l2_cnode = &page_cnode_ref;
     size_t current_slot = 1;
@@ -301,35 +303,37 @@ static errval_t spawn_locate_elf_binary(struct spawninfo *si)
     assert(bi);
     assert(si);
 
+    //TODO Keep module mapped and find required values by binary name
     struct mem_region *module = multiboot_find_module(bi, si->binary_name);
 
     if (module == NULL) {
         return SPAWN_ERR_FIND_MODULE;
     }
 
+#if DEBUG_ELF
     DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
                  module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
+#endif
 
-    // map binary frame into vaddress space
-    struct capref child_frame = { .cnode = cnode_module, .slot = module->mrmod_slot };
+    si->module_frame = (struct capref) { .cnode = cnode_module,
+                                         .slot = module->mrmod_slot };
+    si->module_size = module->mrmod_size;
 
-    si->binary_size = module->mrmod_size;
-
-    void *elf_binary;
-
-    // TODO Remove this frame after spawing child
-    errval_t err = paging_map_frame_attr(get_current_paging_state(), (void **)&elf_binary,
-                                         ROUND_UP(si->binary_size, BASE_PAGE_SIZE),
-                                         child_frame, VREGION_FLAGS_READ, NULL, NULL);
+    size_t aligned_size = ROUND_UP(si->module_size, BASE_PAGE_SIZE);
+    errval_t err = paging_map_frame_attr(get_current_paging_state(), &si->module_base,
+                                         aligned_size, si->module_frame,
+                                         VREGION_FLAGS_READ, NULL, NULL);
 
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_MAP_MODULE);
     }
 
-    // TODO Use pointer for this
-    si->binary_base = (lvaddr_t)elf_binary;
+#if DEBUG_ELF
+    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->module_base,
+                 si->module_size);
+#endif
 
-    uint8_t magic_number = *(uint8_t *)si->binary_base;
+    uint8_t magic_number = *(uint8_t *)si->module_base;
     // DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
     if (magic_number != 0x7f) {
         return ELF_ERR_HEADER;
@@ -367,9 +371,11 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
         assert(false);
     }
 
+#if DEBUG_ELF
     DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
                  "frame flags 0x%x\n",
                  base, size, flags, frame_flags);
+#endif
 
     genvaddr_t aligned_base = ROUND_DOWN(base, BASE_PAGE_SIZE);
     size_t aligned_size = ROUND_UP(size + (base - aligned_base), BASE_PAGE_SIZE);
@@ -380,16 +386,16 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
         return err_push(err, LIB_ERR_FRAME_ALLOC);
     }
 
-
-    err = paging_map_frame(get_current_paging_state(), ret, aligned_size, frame_cap, NULL, NULL);
+    err = paging_map_frame(get_current_paging_state(), ret, aligned_size, frame_cap, NULL,
+                           NULL);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
     }
 
     *ret += (base - aligned_base);
 
-    err = paging_map_fixed_attr(&si->paging, aligned_base, frame_cap,
-                                aligned_size, frame_flags);
+    err = paging_map_fixed_attr(&si->paging, aligned_base, frame_cap, aligned_size,
+                                frame_flags);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
     }
@@ -433,8 +439,8 @@ static errval_t spawn_setup_args(struct spawninfo *si)
     // TODO: unmap from our space again
 
     /* map args page into our vspace so we can write to it */
-    err = paging_map_frame(get_current_paging_state(), &ptr_frame,
-                           BASE_PAGE_SIZE, frame_cap, NULL, NULL);
+    err = paging_map_frame(get_current_paging_state(), &ptr_frame, BASE_PAGE_SIZE,
+                           frame_cap, NULL, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -448,8 +454,8 @@ static errval_t spawn_setup_args(struct spawninfo *si)
     }
 
     /* map args page into child's vspace */
-    err = paging_map_frame_attr(&si->paging, &ptr_frame_child, BASE_PAGE_SIZE,
-                                frame_cap, VREGION_FLAGS_READ, NULL, NULL);
+    err = paging_map_frame_attr(&si->paging, &ptr_frame_child, BASE_PAGE_SIZE, frame_cap,
+                                VREGION_FLAGS_READ, NULL, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -464,7 +470,7 @@ static errval_t spawn_setup_args(struct spawninfo *si)
     if (!argv_array) {
         return SPAWN_ERR_GET_CMDLINE_ARGS;
     }
-    argv_str_len = strnlen(args, PATH_MAX + 1) + 1; // see make_argv
+    argv_str_len = strnlen(args, PATH_MAX + 1) + 1;  // see make_argv
 
     /* set up args struct at beginning of args page */
     params = ptr_frame;
@@ -496,15 +502,16 @@ static errval_t spawn_setup_args(struct spawninfo *si)
 static errval_t spawn_dispatch(struct spawninfo *si)
 {
     errval_t err;
-    dispatcher_handle_t handle;
     struct paging_state *st = get_current_paging_state();
 
     // Map dispatcher frame and get references to dispatcher structs
-    err = paging_map_frame_attr(st, (void **)&handle, DISPATCHER_FRAME_SIZE,
-                                si->dispframe, VREGION_FLAGS_READ_WRITE, NULL, NULL);
+    err = paging_map_frame_attr(st, &si->dispbase, DISPATCHER_FRAME_SIZE, si->dispframe,
+                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
     }
+
+    dispatcher_handle_t handle = (dispatcher_handle_t)si->dispbase;
 
     struct dispatcher_shared_generic *disp = get_dispatcher_shared_generic(handle);
     struct dispatcher_generic *disp_gen = get_dispatcher_generic(handle);
@@ -522,12 +529,12 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 
     // Set program counter (where it should start to execute)
     disabled_area->named.pc = si->entrypoint;
-    enabled_area->named.x0 = (uint64_t) si->child_args_addr;
+    enabled_area->named.x0 = (uint64_t)si->child_args_addr;
 
     // Initialize offset registers
     // got_addr is the address of the .got in the child’s VSpace
-    struct Elf64_Shdr *got = elf64_find_section_header_name(si->binary_base,
-                                                            si->binary_size, ".got");
+    struct Elf64_Shdr *got = elf64_find_section_header_name((genvaddr_t)si->module_base,
+                                                            si->module_size, ".got");
     if (got == NULL) {
         return SPAWN_ERR_DISPATCHER_SETUP;
     }
@@ -541,12 +548,6 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     if (SPAWN_DEBUG_DISPATCHER) {
         DEBUG_PRINTF("Dispatcher setup completed\n");
         dump_dispatcher(disp);
-    }
-
-    // Unmap dispatcher frame
-    err = paging_unmap(st, (lvaddr_t)handle, si->dispframe, DISPATCHER_FRAME_SIZE);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_DISPATCHER_SETUP);
     }
 
     err = spawn_copy_child_vspace(si);
@@ -567,6 +568,20 @@ static errval_t spawn_dispatch(struct spawninfo *si)
 static errval_t spawn_free(struct spawninfo *si)
 {
     errval_t err;
+    struct paging_state *st = get_current_paging_state();
+
+    // Free ELF
+    err = paging_unmap(st, (lvaddr_t)si->module_base, si->module_frame,
+                       ROUND_UP(si->module_size, BASE_PAGE_SIZE));
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_UNMAP);
+    }
+
+    // Free dispatcher
+    err = paging_unmap(st, (lvaddr_t)si->dispbase, si->dispframe, DISPATCHER_FRAME_SIZE);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_UNMAP);
+    }
 
     err = cap_destroy(si->dispatcher);
     if (err_is_fail(err)) {
@@ -611,9 +626,6 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
         return err_push(err, SPAWN_ERR_LOCATE_ELF_BINARY);
     }
 
-    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->binary_base,
-                 si->binary_size);
-
     err = spawn_setup_dispatcher(si);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_SETUP_DISPATCHER);
@@ -629,8 +641,8 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
         return err_push(err, SPAWN_ERR_CREATE_CHILD_VSPACE);
     }
 
-    err = elf_load(EM_AARCH64, elf_alloc, si, si->binary_base, si->binary_size,
-                   &si->entrypoint);
+    err = elf_load(EM_AARCH64, elf_alloc, si, (genvaddr_t)si->module_base,
+                   si->module_size, &si->entrypoint);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_ELF_LOAD);
     }
@@ -642,7 +654,7 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
 
     err = spawn_dispatch(si);
     if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_SPAWN_DISPATCH);
+        return err_push(err, SPAWN_ERR_DISPATCH);
     }
 
     err = spawn_free(si);
@@ -672,9 +684,9 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     char *argv[argc];
 
     argv[0] = binary_name;
-    //TODO Move argument parsing from spawn_setup_argsv to here
+    // TODO Move argument parsing from spawn_setup_argsv to here
     err = spawn_load_argv(argc, argv, si, pid);
-    if(err_is_fail(err)) {
+    if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_LOAD_ARGV);
     }
 
