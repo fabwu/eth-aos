@@ -781,7 +781,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     // TODO: Needs to be member, my have multiple state
     static size_t is_refilling = 0;
     // TODO: Hope we do not run out of slabs in between
-    if (slab_freecount(&st->slabs) < 32 && !is_refilling) {
+    if (slab_freecount(&st->slabs) < 64 && !is_refilling) {
         is_refilling = 1;
         err = slab_default_refill(&st->slabs);
         if (err_is_fail(err)) {

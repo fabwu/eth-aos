@@ -25,6 +25,7 @@
 #include <aos/paging.h>
 #include <aos/systime.h>
 #include <barrelfish_kpi/domain_params.h>
+#include <aos/waitset.h>
 
 #include "threads_priv.h"
 #include "init.h"
@@ -45,34 +46,34 @@ void libc_exit(int status)
     debug_printf("libc exit NYI!\n");
     thread_exit(status);
     // If we're not dead by now, we wait
-    while (1) {}
+    while (1) {
+    }
 }
 
-static void libc_assert(const char *expression, const char *file,
-                        const char *function, int line)
+static void libc_assert(const char *expression, const char *file, const char *function,
+                        int line)
 {
     char buf[512];
     size_t len;
 
     /* Formatting as per suggestion in C99 spec 7.2.1.1 */
-    len = snprintf(buf, sizeof(buf), "Assertion failed on core %d in %.*s: %s,"
+    len = snprintf(buf, sizeof(buf),
+                   "Assertion failed on core %d in %.*s: %s,"
                    " function %s, file %s, line %d.\n",
-                   disp_get_core_id(), DISP_NAME_LEN,
-                   disp_name(), expression, function, file, line);
+                   disp_get_core_id(), DISP_NAME_LEN, disp_name(), expression, function,
+                   file, line);
     sys_print(buf, len < sizeof(buf) ? len : sizeof(buf));
 }
 
-__attribute__((__used__))
-static size_t syscall_terminal_write(const char *buf, size_t len)
+__attribute__((__used__)) static size_t syscall_terminal_write(const char *buf, size_t len)
 {
-    if(len) {
+    if (len) {
         return sys_print(buf, len);
     }
     return 0;
 }
 
-__attribute__((__used__))
-static size_t dummy_terminal_read(char *buf, size_t len)
+__attribute__((__used__)) static size_t dummy_terminal_read(char *buf, size_t len)
 {
     debug_printf("Terminal read NYI!\n");
     return len;
@@ -97,6 +98,35 @@ void barrelfish_libc_glue_init(void)
     setvbuf(stdout, buf, _IOLBF, sizeof(buf));
 }
 
+static int got_pong;
+
+static void barrelfish_recv_init_closure(void *arg)
+{
+    errval_t err;
+    struct lmp_chan *lc = (struct lmp_chan *)arg;
+    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
+    err = lmp_chan_recv(lc, &msg, NULL);
+    debug_printf("recv init called!\n");
+    // Got message
+    if (!err_is_fail(err)) {
+        debug_printf("recv init success!\n");
+        // TODO: implement protocol
+
+        got_pong = 1;
+
+        return;
+    } else if (lmp_err_is_transient(err)) {
+        debug_printf("recv init retry!\n");
+        // Want to receive further messages
+        err = lmp_chan_register_recv(lc, get_default_waitset(),
+                                     MKCLOSURE(barrelfish_recv_init_closure, arg));
+        if (!err_is_fail(err)) {
+            return;
+        }
+    }
+
+    DEBUG_ERR(err, "recv_init_closure failed hard");
+}
 
 /** \brief Initialise libbarrelfish.
  *
@@ -142,23 +172,69 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
 
     lmp_endpoint_init();
 
-    // HINT: Use init_domain to check if we are the init domain.
+    if (!init_domain) {
+        struct lmp_chan chan_to_init;
+        lmp_chan_init(&chan_to_init);
 
-    // TODO MILESTONE 3: register ourselves with init
-    /* allocate lmp channel structure */
-    /* create local endpoint */
-    /* set remote endpoint to init's endpoint */
-    /* set receive handler */
-    /* send local ep to init */
-    /* wait for init to acknowledge receiving the endpoint */
-    /* initialize init RPC client with lmp channel */
-    /* set init RPC client in our program state */
+        /* create local endpoint */
+        struct lmp_endpoint *my_ep;
+        struct capref my_ep_cap;
+        err = endpoint_create(LMP_RECV_LENGTH + 10, &my_ep_cap, &my_ep);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_ENDPOINT_CREATE);
+        }
 
-    /* TODO MILESTONE 3: now we should have a channel with init set up and can
-     * use it for the ram allocator */
+        chan_to_init.local_cap = my_ep_cap;
 
-    // right now we don't have the nameservice & don't need the terminal
-    // and domain spanning, so we return here
+        /* set remote endpoint to init's endpoint */
+        chan_to_init.remote_cap = cap_initep;
+        chan_to_init.endpoint = my_ep;
+
+        // FIXME: Shouldn't be necessary
+        err = lmp_chan_alloc_recv_slot(&chan_to_init);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
+        }
+
+        /* set receive handler */
+        lmp_chan_register_recv(&chan_to_init, get_default_waitset(),
+                               MKCLOSURE(barrelfish_recv_init_closure, &chan_to_init));
+
+        /* send local ep to init */
+        // LMP_FLAG_SYNC because we want init to run immediatly, because the next thing we
+        // do is wait for init
+        // TODO: Document protocol
+        // If arg1 is 0, this means it is a child cap
+        do {
+            err = lmp_ep_send(cap_initep, LMP_FLAG_SYNC, my_ep_cap, 1, 0, 0, 0, 0);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Had err while sending");
+            }
+            // FIXME: on which errors do we need to retry??
+        } while (err_is_fail(err) && lmp_err_is_transient(err));
+
+        got_pong = 0;
+
+        /* wait for init to acknowledge receiving the endpoint */
+        while (!got_pong) {
+            debug_printf("loop child\n");
+            err = event_dispatch(default_ws);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "in event_dispatch");
+                abort();
+            }
+        }
+
+        /* initialize init RPC client with lmp channel */
+        /* set init RPC client in our program state */
+
+        /* TODO MILESTONE 3: now we should have a channel with init set up and can
+         * use it for the ram allocator */
+
+        // right now we don't have the nameservice & don't need the terminal
+        // and domain spanning, so we return here
+    }
+
     return SYS_ERR_OK;
 }
 

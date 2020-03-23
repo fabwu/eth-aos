@@ -408,7 +408,6 @@ static void test_rpc(void)
 #define TEST_PAGING 0
 #define TEST_PAGING_REGION 0
 #define TEST_SPAWN 0
-#define TEST_RPC 1
 
 void grading_test_early(void)
 {
@@ -429,10 +428,13 @@ void grading_test_early(void)
     if (TEST_SPAWN) {
         test_spawn();
     }
+}
 
+#define TEST_RPC 1
+
+void grading_test_late(void)
+{
     if (TEST_RPC) {
         test_rpc();
     }
 }
-
-void grading_test_late(void) {}

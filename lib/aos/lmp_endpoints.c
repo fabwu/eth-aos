@@ -368,7 +368,7 @@ errval_t lmp_endpoint_recv(struct lmp_endpoint *ep, struct lmp_recv_buf *buf,
                            struct capref *cap)
 {
     assert(buf != NULL);
-
+    
     dispatcher_handle_t handle = disp_disable();
 
     if (!lmp_endpoint_can_recv(ep)) {

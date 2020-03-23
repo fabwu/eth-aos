@@ -43,6 +43,8 @@ struct aos_rpc *get_init_rpc(void);
 struct morecore_state *get_morecore_state(void);
 struct paging_state *get_current_paging_state(void);
 void set_current_paging_state(struct paging_state *st);
+struct lmp_state *get_current_lmp_state(void);
+void set_current_lmp_state(struct lmp_state *st);
 struct ram_alloc_state *get_ram_alloc_state(void);
 struct slot_alloc_state *get_slot_alloc_state(void);
 

@@ -23,38 +23,44 @@
 #include <mm/mm.h>
 #include <spawn/spawn.h>
 #include <grading.h>
+#include <aos/core_state.h>
 
 #include "mem_alloc.h"
-
-
 
 
 struct bootinfo *bi;
 
 coreid_t my_core_id;
 
+struct lmp_state lmp_state;
 
-static int
-bsp_main(int argc, char *argv[]) {
+static int bsp_main(int argc, char *argv[])
+{
     errval_t err;
 
     // Grading
     grading_setup_bsp_init(argc, argv);
 
     // First argument contains the bootinfo location, if it's not set
-    bi = (struct bootinfo*)strtol(argv[1], NULL, 10);
+    bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
     assert(bi);
 
     err = initialize_ram_alloc();
-    if(err_is_fail(err)){
+    if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_ram_alloc");
+        return -1;
     }
 
     // TODO: initialize mem allocator, vspace management here
-    
+
     // Grading
     grading_test_early();
 
+    err = aos_rpc_init2(&lmp_state);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "aos_rpc_init2 failed");
+        return -1;
+    }
     // TODO: Spawn system processes, boot second core etc. here
 
     // Grading
@@ -64,6 +70,7 @@ bsp_main(int argc, char *argv[]) {
     // Hang around
     struct waitset *default_ws = get_default_waitset();
     while (true) {
+        debug_printf("loop main\n");
         err = event_dispatch(default_ws);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "in event_dispatch");
@@ -74,8 +81,8 @@ bsp_main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
 }
 
-static int
-app_main(int argc, char *argv[]) {
+static int app_main(int argc, char *argv[])
+{
     // Implement me in Milestone 5
     // Remember to call
     // - grading_setup_app_init(..);
@@ -96,11 +103,13 @@ int main(int argc, char *argv[])
 
     debug_printf("init: on core %" PRIuCOREID ", invoked as:", my_core_id);
     for (int i = 0; i < argc; i++) {
-       printf(" %s", argv[i]);
+        printf(" %s", argv[i]);
     }
     printf("\n");
     fflush(stdout);
 
-    if(my_core_id == 0) return bsp_main(argc, argv);
-    else                return app_main(argc, argv);
+    if (my_core_id == 0)
+        return bsp_main(argc, argv);
+    else
+        return app_main(argc, argv);
 }

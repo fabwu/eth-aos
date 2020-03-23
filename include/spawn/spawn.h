@@ -44,6 +44,8 @@ struct spawninfo {
 
     struct capref child_dispatcher;
     struct capref child_dispframe;
+    struct capref selfep;
+    struct capref initep;
     lvaddr_t child_dispframe_map;
     lvaddr_t child_args_addr;
 };

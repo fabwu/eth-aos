@@ -24,7 +24,7 @@
 #include <aos/thread_sync.h>
 #include <barrelfish_kpi/paging_arch.h>
 #include <barrelfish_kpi/capabilities.h>
-#include <barrelfish_kpi/init.h> // for CNODE_SLOTS_*
+#include <barrelfish_kpi/init.h>  // for CNODE_SLOTS_*
 
 struct morecore_state {
     struct thread_mutex mutex;
@@ -53,15 +53,26 @@ struct slot_alloc_state {
 
     struct single_slot_allocator top;
     struct slot_allocator_list head;
-    struct slot_allocator_list extra; // for 2level cspace
+    struct slot_allocator_list extra;  // for 2level cspace
     struct slot_allocator_list reserve;
 
-    char     top_buf[SINGLE_SLOT_ALLOC_BUFLEN(SLOT_ALLOC_CNODE_SLOTS)];
-    char    head_buf[SINGLE_SLOT_ALLOC_BUFLEN(SLOT_ALLOC_CNODE_SLOTS)];
+    char top_buf[SINGLE_SLOT_ALLOC_BUFLEN(SLOT_ALLOC_CNODE_SLOTS)];
+    char head_buf[SINGLE_SLOT_ALLOC_BUFLEN(SLOT_ALLOC_CNODE_SLOTS)];
     char reserve_buf[SINGLE_SLOT_ALLOC_BUFLEN(SLOT_ALLOC_CNODE_SLOTS)];
-    char    root_buf[SINGLE_SLOT_ALLOC_BUFLEN(L2_CNODE_SLOTS)];
+    char root_buf[SINGLE_SLOT_ALLOC_BUFLEN(L2_CNODE_SLOTS)];
 
     struct single_slot_allocator rootca;
+};
+
+struct dispatcher_node {
+    struct lmp_chan chan;
+    enum { DISPATCHER_DISCONNECTED, DISPATCHER_CONNECTED } state;
+    struct dispatcher_node *next;
+};
+
+struct lmp_state {
+    struct slab_allocator slabs;
+    struct dispatcher_node *head;
 };
 
 struct terminal_state;
@@ -73,7 +84,6 @@ struct spawn_rpc_client;
 struct paging_state;
 
 
-
 struct core_state_generic {
     struct waitset default_waitset;
     struct aos_chan *init_chan;
@@ -82,6 +92,7 @@ struct core_state_generic {
     struct paging_state *paging_state;
     struct ram_alloc_state ram_alloc_state;
     struct slot_alloc_state slot_alloc_state;
+    struct lmp_state *lmp_state;
 };
 
 #endif

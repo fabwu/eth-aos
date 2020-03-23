@@ -96,6 +96,26 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
         return err_push(err, LIB_ERR_CAP_COPY);
     }
 
+    // Create SELFEP capability
+    struct capref selfep;
+    err = slot_alloc(&selfep);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    err = cap_retype(selfep, si->dispatcher, 0, ObjType_EndPointLMP, 0, 1);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    task_cnode_cap.slot = TASKCN_SLOT_SELFEP;
+    err = cap_copy(task_cnode_cap, selfep);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    si->selfep = selfep;
+
     // cap_copy dispframe and dispatcher caps
     si->child_dispatcher.cnode = si->task_cnode_ref;
     si->child_dispatcher.slot = TASKCN_SLOT_DISPATCHER;
@@ -107,14 +127,6 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     si->child_dispframe.cnode = si->task_cnode_ref;
     si->child_dispframe.slot = TASKCN_SLOT_DISPFRAME;
     err = cap_copy(si->child_dispframe, si->dispframe);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
-    }
-
-    // Retype dispatcher to SELFEP (self end point)
-    struct capref child_selfep = { .cnode = si->task_cnode_ref,
-                                   .slot = TASKCN_SLOT_SELFEP };
-    err = cap_retype(child_selfep, si->child_dispatcher, 0, ObjType_EndPointLMP, 0, 1);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
@@ -174,6 +186,23 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
 
     si->page_cnode_ref = page_cnode_ref;
     si->cspace = l1_cnode_cap;
+
+    return SYS_ERR_OK;
+}
+
+static errval_t spawn_child_cspace_set_initep(struct spawninfo *si)
+{
+    errval_t err;
+    struct capref task_cnode_cap;
+    task_cnode_cap.cnode = si->task_cnode_ref;
+    task_cnode_cap.slot = TASKCN_SLOT_INITEP;
+
+    struct capref init_ep_cap;
+    init_ep_cap = si->initep;
+    err = cap_copy(task_cnode_cap, init_ep_cap);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
 
     return SYS_ERR_OK;
 }
@@ -561,6 +590,16 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
     err = spawn_create_child_cspace(si);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
+    err = aos_rpc_create_child_channel(si->selfep, &si->initep);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_CREATE_CHILD_CHANNEL);
+    }
+
+    err = spawn_child_cspace_set_initep(si);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CHILD_CSPACE_SET_INITEP);
     }
 
     err = spawn_create_child_vspace(si);
