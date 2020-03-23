@@ -1,0 +1,20 @@
+Build:
+./bfdocker.sh ../hake/hake.sh -s .. -a armv8
+./bfdocker.sh make -j12 imx8x
+
+Udev:
+vim /etc/udev/rules.d/60-colibri.rules
+# USB OTG
+SUBSYSTEM=="usb", ATTR{idVendor}=="0525", ATTR{idProduct}=="4026", MODE="0666"
+# Serial USB device
+SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", MODE="0666"
+# Serial TTY device
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE="0666"
+
+Terminal:
+picocom -e e -b 115200 -f n /dev/ttyUSB0
+
+Boot:
+Put https://github.com/NXPmicro/mfgtools/releases uuu into $HOME/bin
+sudo ln -s /lib64/libbz2.so.1.0.8 /lib64/libbz2.so.1.0
+./tools/imx8x/bf-boot.sh --bf ./build/armv8_imx8x_image.efi
