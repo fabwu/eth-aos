@@ -26,14 +26,12 @@ struct spawninfo {
     // Information about the binary
     char *binary_name;  // Name of the binary
 
-    struct capref module_frame;
+    char *argv_str;
+    size_t argv_str_len;
+
     void *module_base;
     size_t module_size;
 
-    // TODO(M2): Add fields you need to store state
-    //           when spawning a new dispatcher,
-    //           e.g. references to the child's
-    //           capabilities or paging state
     struct cnoderef page_cnode_ref;
     struct cnoderef task_cnode_ref;
     struct capref cspace;

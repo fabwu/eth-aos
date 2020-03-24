@@ -298,56 +298,12 @@ static errval_t spawn_copy_child_vspace(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
-static errval_t spawn_locate_elf_binary(struct spawninfo *si)
-{
-    assert(bi);
-    assert(si);
-
-    //TODO Keep module mapped and find required values by binary name
-    struct mem_region *module = multiboot_find_module(bi, si->binary_name);
-
-    if (module == NULL) {
-        return SPAWN_ERR_FIND_MODULE;
-    }
-
-#if DEBUG_ELF
-    DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
-                 module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
-#endif
-
-    si->module_frame = (struct capref) { .cnode = cnode_module,
-                                         .slot = module->mrmod_slot };
-    si->module_size = module->mrmod_size;
-
-    size_t aligned_size = ROUND_UP(si->module_size, BASE_PAGE_SIZE);
-    errval_t err = paging_map_frame_attr(get_current_paging_state(), &si->module_base,
-                                         aligned_size, si->module_frame,
-                                         VREGION_FLAGS_READ, NULL, NULL);
-
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_MAP_MODULE);
-    }
-
-#if DEBUG_ELF
-    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->module_base,
-                 si->module_size);
-#endif
-
-    uint8_t magic_number = *(uint8_t *)si->module_base;
-    // DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
-    if (magic_number != 0x7f) {
-        return ELF_ERR_HEADER;
-    }
-
-    return SYS_ERR_OK;
-}
-
 static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t flags,
                           void **ret)
 {
     struct spawninfo *si = (struct spawninfo *)state;
 
-    // XXX useful command: readelf -l build/armv8/sbin/hello
+    // useful command: readelf -l build/armv8/sbin/hello
     int frame_flags;
 
     switch (flags) {
@@ -403,32 +359,15 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
     return SYS_ERR_OK;
 }
 
-static errval_t spawn_setup_args(struct spawninfo *si)
+static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
 {
     struct capref task_cnode_cap;
     struct capref frame_cap;
-    struct mem_region *module;
     void *ptr_frame, *ptr_frame_child;
     struct spawn_domain_params *params;
-    const char *args;
-    char **argv_array;
     int argv_array_size = MAX_CMDLINE_ARGS + 1;
-    size_t argv_str_len;
-    char *argv_str;
-    void *argv_str_base, *argv_str_base_child;
-    int argc;
     int64_t offset;
     errval_t err;
-
-    /* find executable */
-    module = multiboot_find_module(bi, si->binary_name);
-    if (module == NULL) {
-        return SPAWN_ERR_FIND_MODULE;
-    }
-
-    /* get args string */
-    // TODO: if no args, then returns end of string; handle that
-    args = multiboot_module_opts(module);
 
     /* allocate args page */
     err = frame_alloc(&frame_cap, BASE_PAGE_SIZE, NULL);
@@ -465,13 +404,6 @@ static errval_t spawn_setup_args(struct spawninfo *si)
     // TODO does the kernel already zero every new frame?
     memset(ptr_frame, 0, BASE_PAGE_SIZE);
 
-    /* parse args */
-    argv_array = make_argv(args, &argc, &argv_str);
-    if (!argv_array) {
-        return SPAWN_ERR_GET_CMDLINE_ARGS;
-    }
-    argv_str_len = strnlen(args, PATH_MAX + 1) + 1;  // see make_argv
-
     /* set up args struct at beginning of args page */
     params = ptr_frame;
     params->argc = argc;
@@ -479,20 +411,16 @@ static errval_t spawn_setup_args(struct spawninfo *si)
     params->pagesize = BASE_PAGE_SIZE;
 
     /* put argument strings after struct */
-    argv_str_base = ptr_frame + sizeof(*params);
-    argv_str_base_child = ptr_frame_child + sizeof(*params);
-    memcpy(argv_str_base, argv_str, argv_str_len);
+    void *argv_str_base = ptr_frame + sizeof(*params);
+    void *argv_str_base_child = ptr_frame_child + sizeof(*params);
+    memcpy(argv_str_base, si->argv_str, si->argv_str_len);
 
     /* fill argv */
-    offset = argv_str_base_child - (void *)argv_str;
-    for (char **strp = argv_array; *strp; strp++) {
+    offset = argv_str_base_child - (void *)si->argv_str;
+    for (char **strp = argv; *strp; strp++) {
         *strp += offset;
     }
-    memcpy(params->argv, argv_array, argv_array_size);
-
-    /* free memory allocated by make_argv */
-    free(argv_array);
-    free(argv_str);
+    memcpy(params->argv, argv, argv_array_size);
 
     // TODO better error handling
 
@@ -570,13 +498,6 @@ static errval_t spawn_free(struct spawninfo *si)
     errval_t err;
     struct paging_state *st = get_current_paging_state();
 
-    // Free ELF
-    err = paging_unmap(st, (lvaddr_t)si->module_base, si->module_frame,
-                       ROUND_UP(si->module_size, BASE_PAGE_SIZE));
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_PAGING_UNMAP);
-    }
-
     // Free dispatcher
     err = paging_unmap(st, (lvaddr_t)si->dispbase, si->dispframe, DISPATCHER_FRAME_SIZE);
     if (err_is_fail(err)) {
@@ -620,10 +541,16 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
     // init spawn_info
     si->binary_name = argv[0];
 
-    // get module and map it
-    err = spawn_locate_elf_binary(si);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_LOCATE_ELF_BINARY);
+    // currently the location of the binary is given by si->module_base and si->module_size
+#if DEBUG_ELF
+    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->module_base,
+                 si->module_size);
+#endif
+
+    uint8_t magic_number = *(uint8_t *)si->module_base;
+    // DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
+    if (magic_number != 0x7f) {
+        return ELF_ERR_HEADER;
     }
 
     err = spawn_setup_dispatcher(si);
@@ -647,7 +574,7 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
         return err_push(err, SPAWN_ERR_ELF_LOAD);
     }
 
-    err = spawn_setup_args(si);
+    err = spawn_setup_args(si, argc, argv);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_SETUP_ARGS);
     }
@@ -680,14 +607,60 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
 errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t *pid)
 {
     errval_t err;
-    int argc = 1;
-    char *argv[argc];
 
-    argv[0] = binary_name;
-    // TODO Move argument parsing from spawn_setup_argsv to here
+    // find multiboot image
+    struct mem_region *module = multiboot_find_module(bi, binary_name);
+    if (module == NULL) {
+        return SPAWN_ERR_FIND_MODULE;
+    }
+
+    // parse args
+    int argc = 0;
+    char **argv;
+    char *argv_str;
+
+    const char *args = multiboot_module_opts(module);
+    argv = make_argv(args, &argc, &argv_str);
+    if (argv == NULL) {
+        return SPAWN_ERR_GET_CMDLINE_ARGS;
+    }
+
+    // TODO Build string in argv
+    si->argv_str = argv_str;
+    si->argv_str_len = strnlen(args, PATH_MAX + 1) + 1;  // see make_argv
+
+    assert(argc > 0);
+
+    // map elf binary into current vspace
+    si->module_size = module->mrmod_size;
+
+    struct paging_state *st = get_current_paging_state();
+    struct capref module_frame = { .cnode = cnode_module, .slot = module->mrmod_slot };
+    size_t aligned_size = ROUND_UP(si->module_size, BASE_PAGE_SIZE);
+
+    err = paging_map_frame_attr(st, &si->module_base, aligned_size, module_frame,
+                                VREGION_FLAGS_READ, NULL, NULL);
+
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_MAP_MODULE);
+    }
+
+#if DEBUG_ELF
+    DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
+                 module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
+#endif
+
+    // spawn binary
     err = spawn_load_argv(argc, argv, si, pid);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_LOAD_ARGV);
+    }
+
+    // Free ELF
+    err = paging_unmap(st, (lvaddr_t)si->module_base, module_frame,
+                       ROUND_UP(si->module_size, BASE_PAGE_SIZE));
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_UNMAP);
     }
 
     return SYS_ERR_OK;
