@@ -592,7 +592,7 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }
 
-    err = aos_rpc_create_child_channel(si->selfep, &si->initep);
+    err = aos_rpc_create_child_channel(&si->initep);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_CREATE_CHILD_CHANNEL);
     }

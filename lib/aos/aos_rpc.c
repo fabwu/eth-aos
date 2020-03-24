@@ -135,8 +135,7 @@ errval_t aos_rpc_init2(struct lmp_state *st)
     return SYS_ERR_OK;
 }
 
-errval_t aos_rpc_create_child_channel(struct capref child_ep_cap,
-                                      struct capref *ret_init_ep_cap)
+errval_t aos_rpc_create_child_channel(struct capref *ret_init_ep_cap)
 {
     // FIXME: cleanup upon err
     errval_t err;
@@ -163,7 +162,6 @@ errval_t aos_rpc_create_child_channel(struct capref child_ep_cap,
     lmp_chan_init(&node->chan);
 
     node->chan.local_cap = init_ep_cap;
-    // node->chan.remote_cap = child_ep_cap;
     node->chan.endpoint = init_ep;
 
     // FIXME: Shouldn't be necessary
