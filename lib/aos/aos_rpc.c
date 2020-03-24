@@ -16,6 +16,8 @@
 #include <aos/aos_rpc.h>
 #include <aos/core_state.h>
 
+// FIXME: add mechanism to report error in the message loop
+
 static void aos_rpc_recv_regular_closure(void *arg)
 {
     errval_t err;
@@ -91,15 +93,9 @@ static void aos_rpc_recv_setup_closure(void *arg)
 
         // FIXME: shouldn't this loop in usr/init/main.c not also just execute a send close?
         debug_printf("aos_rpc_recv_setup_closure success!\n");
-        err = lmp_ep_send(chan->remote_cap, LMP_FLAG_SYNC, NULL_CAP, 1, 1, 0, 0, 0);
-        if (!err_is_fail(err)) {
-            err = lmp_chan_register_recv(chan, get_default_waitset(),
-                                         MKCLOSURE(aos_rpc_recv_regular_closure, arg));
-            return;
-        } else if (lmp_err_is_transient(err)) {
-            err = lmp_chan_register_send(chan, get_default_waitset(),
-                                         MKCLOSURE(aos_rpc_send_setup_closure, arg));
-        }
+        aos_rpc_send_setup_closure(arg);
+
+        return;
     } else if (lmp_err_is_transient(err)) {
         debug_printf("aos_rpc_recv_setup_closure retry!\n");
         // Want to receive further messages
