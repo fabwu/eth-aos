@@ -430,7 +430,7 @@ void grading_test_early(void)
     }
 }
 
-#define TEST_RPC 1
+#define TEST_RPC 0
 
 void grading_test_late(void)
 {

@@ -17,10 +17,6 @@
 
 #include <aos/aos.h>
 
-errval_t aos_rpc_init2(struct lmp_state *st);
-
-errval_t aos_rpc_create_child_channel(struct capref *ret_init_ep_cap);
-
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {
     // TODO(M3): Add state

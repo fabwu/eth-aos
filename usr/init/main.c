@@ -26,7 +26,7 @@
 #include <aos/core_state.h>
 
 #include "mem_alloc.h"
-
+#include "rpc.h"
 
 struct bootinfo *bi;
 
@@ -51,16 +51,31 @@ static int bsp_main(int argc, char *argv[])
         return -1;
     }
 
-    // TODO: initialize mem allocator, vspace management here
+    err = initialize_lmp(&lmp_state);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "initialize_lmp failed");
+        return -1;
+    }
 
     // Grading
     grading_test_early();
 
-    err = aos_rpc_init2(&lmp_state);
+    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+
+    //FIXME use explicit argument to pass initep to spawn.c
+    err = create_child_channel_to_init(&si->initep);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "aos_rpc_init2 failed");
+        DEBUG_ERR(err, "couldn't create init ep for child");
         return -1;
     }
+
+    err = spawn_load_by_name("memeater", si, NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't spawn memeater");
+    }
+
+    free(si);
+
     // TODO: Spawn system processes, boot second core etc. here
 
     // Grading
