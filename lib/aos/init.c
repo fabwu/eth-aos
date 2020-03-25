@@ -26,6 +26,7 @@
 #include <aos/systime.h>
 #include <barrelfish_kpi/domain_params.h>
 #include <aos/waitset.h>
+#include <aos/aos_rpc.h>
 
 #include "threads_priv.h"
 #include "init.h"
@@ -110,7 +111,6 @@ static void barrelfish_recv_init_closure(void *arg)
     // Got message
     if (!err_is_fail(err)) {
         debug_printf("recv init success!\n");
-        // TODO: implement protocol
 
         got_pong = 1;
 
@@ -227,10 +227,9 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
 
         /* initialize init RPC client with lmp channel */
         /* set init RPC client in our program state */
-
+        aos_rpc_set_init_channel(chan_to_init);
         /* TODO MILESTONE 3: now we should have a channel with init set up and can
          * use it for the ram allocator */
-
         // right now we don't have the nameservice & don't need the terminal
         // and domain spanning, so we return here
     }

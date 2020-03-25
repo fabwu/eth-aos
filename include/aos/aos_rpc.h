@@ -24,6 +24,7 @@ errval_t aos_rpc_create_child_channel(struct capref *ret_init_ep_cap);
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {
     // TODO(M3): Add state
+    struct lmp_chan chan;
 };
 
 /**
@@ -36,6 +37,10 @@ void aos_rpc_handler_print(char *string, uintptr_t *val, struct capref *cap);
  */
 errval_t aos_rpc_init(struct aos_rpc *rpc);
 
+/**
+ * \brief Set channel to init
+ */
+errval_t aos_rpc_set_init_channel(struct lmp_chan chan);
 
 /**
  * \brief Send a number.
