@@ -26,6 +26,11 @@ __BEGIN_DECLS
 struct lmp_chan;
 struct event_queue_node;
 
+struct lmp_msg_holder {
+    struct capref cap;
+    uintptr_t words[4]; 
+};
+
 /// A bidirectional LMP channel
 struct lmp_chan {
     struct waitset_chanstate send_waitset; ///< State belonging to waitset (for send)
@@ -41,6 +46,8 @@ struct lmp_chan {
     } connstate;
 
     size_t buflen_words;    ///< requested LMP buffer length, in words
+
+    struct lmp_msg_holder holder;
 };
 
 void lmp_chan_init(struct lmp_chan *lc);

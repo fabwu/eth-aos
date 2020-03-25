@@ -51,7 +51,7 @@ static int bsp_main(int argc, char *argv[])
         return -1;
     }
 
-    err = initialize_lmp(&lmp_state);
+    err = rpc_initialize_lmp(&lmp_state);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_lmp failed");
         return -1;
@@ -63,7 +63,7 @@ static int bsp_main(int argc, char *argv[])
     struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
 
     //FIXME use explicit argument to pass initep to spawn.c
-    err = create_child_channel_to_init(&si->initep);
+    err = rpc_create_child_channel_to_init(&si->initep);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "couldn't create init ep for child");
         return -1;

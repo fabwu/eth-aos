@@ -16,6 +16,6 @@
 #include <aos/aos.h>
 #include <aos/core_state.h>
 
-errval_t initialize_lmp(struct lmp_state *lmp_state);
-errval_t create_child_channel_to_init(struct capref *ret_init_ep_cap);
+errval_t rpc_initialize_lmp(struct lmp_state *lmp_state);
+errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap);
 

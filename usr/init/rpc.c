@@ -7,96 +7,205 @@
 
 #define DEBUG_RPC_SETUP 1
 
-/**
- * Handles messages from different child channels
- */
-static void init_message_handler(void *arg)
+static void rpc_handler_send_closure(void *arg)
 {
     errval_t err;
-    struct dispatcher_node *node = (struct dispatcher_node *)arg;
-    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
-    struct capref cap;
-    err = lmp_chan_recv(&node->chan, &msg, &cap);
-    debug_printf("aos_rpc_recv_regular_closure called!\n");
+    struct lmp_chan *chan = (struct lmp_chan *)arg;
+    // Bump child that this channel is now ready
+    err = lmp_ep_send(chan->remote_cap, LMP_FLAG_SYNC, chan->holder.cap, 1,
+                      chan->holder.words[0], chan->holder.words[1], chan->holder.words[2],
+                      chan->holder.words[3]);
+
+#if DEBUG_RPC_SETUP
+    debug_printf("rpc_handler_send_closure called!\n");
+#endif
 
     if (err_is_ok(err)) {
-        // TODO: implement protocol here
-        DEBUG_PRINTF("msg_buflen %zu\n", msg.buf.msglen);
-        DEBUG_PRINTF("msg.words[0] = %d\n", msg.words[0]);
-        DEBUG_PRINTF("msg.words[1] = %d\n", msg.words[1]);
+#if DEBUG_RPC_SETUP
+        debug_printf("rpc_handler_send_closure success!\n");
+#endif
 
-        if (msg.words[0] == 2) {
-            // send ram back
-            err = lmp_chan_send2(&node->chan, LMP_SEND_FLAGS_DEFAULT, NULL_CAP,
-                                 msg.words[0], msg.words[1]);
-        }
-
-        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
-                                     MKCLOSURE(init_message_handler, node));
-        if (err_is_fail(err)) {
-            goto fail;
-        }
-
-        debug_printf("aos_rpc_recv_regular_closure success!\n");
         return;
     } else if (lmp_err_is_transient(err)) {
-        debug_printf("aos_rpc_recv_regular_closure retry!\n");
+#if DEBUG_RPC_SETUP
+        debug_printf("rpc_handler_send_closure retry!\n");
+#endif
         // Want to receive further messages
-        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
-                                     MKCLOSURE(init_message_handler, node));
+        err = lmp_chan_register_send(chan, get_default_waitset(),
+                                     MKCLOSURE(rpc_handler_send_closure, arg));
         if (err_is_ok(err)) {
             return;
         }
     }
 
+    DEBUG_ERR(err, "rpc_handler_send_closure failed hard!\n");
+}
+/**
+ * Allocates ram, sends capability to child
+ * msg.words[0] == 1 (Memory message)
+ * msg.words[1] == size
+ * msg.words[2] == alignment
+ * msg.words[3] == success
+ */
+static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignment)
+{
+    errval_t err = SYS_ERR_OK;
+
+    // FIXEM: Can't put it onto chan, because then we can't service multiple requests per
+    // channel
+    // Would be easy if closure arg really would be opaque, which it didn't seem to be
+    // last I tested
+    chan->holder.cap = NULL_CAP;
+    chan->holder.words[0] = 1;
+    chan->holder.words[1] = size;
+    chan->holder.words[2] = alignment;
+    chan->holder.words[3] = 0;
+
+    struct capref ram_cap;
+    err = slot_alloc(&ram_cap);
+    if (err_is_fail(err)) {
+        err = err_push(err, LIB_ERR_SLOT_ALLOC);
+    }
+    err = ram_alloc_aligned(&ram_cap, size, alignment);
+    if (err_is_fail(err)) {
+        err = err_push(err, LIB_ERR_RAM_ALLOC_ALIGNED);
+    } else {
+        chan->holder.cap = ram_cap;
+        chan->holder.words[3] = 1;
+    }
+
+    rpc_handler_send_closure(chan);
+
+    return SYS_ERR_OK;
+}
+
+/**
+ * Spawns process
+ * msg.words[0] == 2 (Spawn message)
+ * msg.words[1] == pid
+ * msg.words[2] == success
+ */
+// TODO: Transfer string
+static void rpc_spawn_process(struct lmp_chan *chan, char *name) {}
+
+/**
+ * Send child ep to a process
+ * msg.words[0] == 3 (Memory message)
+ * msg.words[1] == pid
+ * msg.words[2] == success
+ */
+// TODO: Maybe only to the processes that got spawned by corresponding child
+static void rpc_get_ep_to_process(struct lmp_chan *chan, int pid) {}
+
+
+/**
+ * Handles messages from different child channels
+ */
+static void rpc_handler_recv_closure(void *arg)
+{
+    errval_t err;
+    struct lmp_chan *chan = (struct lmp_chan *)arg;
+    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
+    struct capref cap;
+    err = lmp_chan_recv(chan, &msg, &cap);
+#if DEBUG_RPC_SETUP
+    debug_printf("rpc_handler_recv_closure called!\n");
+#endif
+
+    if (err_is_ok(err)) {
+        // cap.cnode == NULL_CNODE
+        if (cap.cnode.croot == 0 && cap.cnode.cnode == 0) {
+            lmp_chan_alloc_recv_slot(chan);
+        }
+        switch (msg.words[0]) {
+        case 1:
+            rpc_send_ram(chan, msg.words[1], msg.words[2]);
+            break;
+        case 2:
+            // TODO: Handle string
+            rpc_spawn_process(chan, "hello");
+            break;
+        case 3:
+            rpc_get_ep_to_process(chan, msg.words[1]);
+            break;
+        default:
+            debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
+        }
+
+        // Want to receive further messages
+        err = lmp_chan_register_recv(chan, get_default_waitset(),
+                                     MKCLOSURE(rpc_handler_recv_closure, arg));
+        if (err_is_fail(err)) {
+            goto fail;
+        }
+
+#if DEBUG_RPC_SETUP
+        debug_printf("rpc_handler_recv_closure success!\n");
+#endif
+        return;
+    } else if (lmp_err_is_transient(err)) {
+        // Want to receive further messages
+        err = lmp_chan_register_recv(chan, get_default_waitset(),
+                                     MKCLOSURE(rpc_handler_recv_closure, arg));
+        if (err_is_fail(err)) {
+            goto fail;
+        }
+
+#if DEBUG_RPC_SETUP
+        debug_printf("rpc_handler_recv_closure retry!\n");
+#endif
+        return;
+    }
+
 fail:
-    DEBUG_ERR(err, "recv_real_closure failed hard");
+    DEBUG_ERR(err, "rpc_handler_recv_closure failed hard");
 }
 
 /**
  * Notify child that channel is ready
  */
-static void setup_send_closure(void *arg)
+static void rpc_setup_send_closure(void *arg)
 {
     errval_t err;
     struct lmp_chan *chan = (struct lmp_chan *)arg;
     // Bump child that this channel is now ready
-    err = lmp_ep_send(chan->remote_cap, LMP_FLAG_SYNC, NULL_CAP, 1, 1, 0, 0, 0);
+    err = lmp_ep_send(chan->remote_cap, LMP_FLAG_SYNC, NULL_CAP, 1, 0, 0, 0, 0);
 
 #if DEBUG_RPC_SETUP
-    debug_printf("setup_send_closure called!\n");
+    debug_printf("rpc_setup_send_closure called!\n");
 #endif
 
     if (err_is_ok(err)) {
 #if DEBUG_RPC_SETUP
-        debug_printf("setup_send_closure success!\n");
+        debug_printf("rpc_setup_send_closure success!\n");
 #endif
 
+        // Channel to child is setup, switch to child handler
         err = lmp_chan_register_recv(chan, get_default_waitset(),
-                                     MKCLOSURE(init_message_handler, arg));
+                                     MKCLOSURE(rpc_handler_recv_closure, arg));
         if (err_is_ok(err)) {
             return;
         }
     } else if (lmp_err_is_transient(err)) {
 #if DEBUG_RPC_SETUP
-        debug_printf("setup_send_closure retry!\n");
+        debug_printf("rpc_setup_send_closure retry!\n");
 #endif
         // Want to receive further messages
         err = lmp_chan_register_send(chan, get_default_waitset(),
-                                     MKCLOSURE(setup_send_closure, arg));
+                                     MKCLOSURE(rpc_setup_send_closure, arg));
         if (err_is_ok(err)) {
             return;
         }
     }
 
-    DEBUG_ERR(err, "setup_send_closure failed hard!\n");
+    DEBUG_ERR(err, "rpc_setup_send_closure failed hard!\n");
 }
 
 /**
  * Receives a child endpoint cap, saves it in the channel and notify the child
  * that channel is ready
  */
-static void setup_recv_closure(void *arg)
+static void rpc_setup_recv_closure(void *arg)
 {
     errval_t err;
 
@@ -106,11 +215,14 @@ static void setup_recv_closure(void *arg)
     err = lmp_chan_recv(chan, &msg, &cap);
 
 #if DEBUG_RPC_SETUP
-    debug_printf("setup_recv_closure called!\n");
+    debug_printf("rpc_setup_recv_closure called!\n");
 #endif
 
     // Got message
     if (err_is_ok(err)) {
+        // Check if setup message
+        assert(msg.words[0] == 0);
+
         chan->remote_cap = cap;
 
         err = lmp_chan_alloc_recv_slot(chan);
@@ -120,32 +232,32 @@ static void setup_recv_closure(void *arg)
 
 #if DEBUG_RPC_SETUP
         // FIXME: shouldn't this loop in usr/init/main.c not also just execute a send close?
-        debug_printf("setup_recv_closure success!\n");
+        debug_printf("rpc_setup_recv_closure success!\n");
 #endif
 
-        setup_send_closure(arg);
+        rpc_setup_send_closure(arg);
 
         return;
     } else if (lmp_err_is_transient(err)) {
 #if DEBUG_RPC_SETUP
-        debug_printf("setup_recv_closure retry!\n");
+        debug_printf("rpc_setup_recv_closure retry!\n");
 #endif
         // Want to receive further messages
         err = lmp_chan_register_recv(chan, get_default_waitset(),
-                                     MKCLOSURE(setup_recv_closure, arg));
+                                     MKCLOSURE(rpc_setup_recv_closure, arg));
         if (err_is_ok(err)) {
             return;
         }
     }
 
 fail:
-    DEBUG_ERR(err, "setup_recv_closure failed hard!\n");
+    DEBUG_ERR(err, "rpc_setup_recv_closure failed hard!\n");
 }
 
 /**
  * Creates a unique channel to a child (to be spawned)
  */
-errval_t create_child_channel_to_init(struct capref *ret_init_ep_cap)
+errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
 {
     // FIXME: cleanup upon err
     errval_t err;
@@ -181,7 +293,7 @@ errval_t create_child_channel_to_init(struct capref *ret_init_ep_cap)
     }
 
     err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
-                                 MKCLOSURE(setup_recv_closure, &node->chan));
+                                 MKCLOSURE(rpc_setup_recv_closure, &node->chan));
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
     }
@@ -191,7 +303,7 @@ errval_t create_child_channel_to_init(struct capref *ret_init_ep_cap)
     return SYS_ERR_OK;
 }
 
-errval_t initialize_lmp(struct lmp_state *st)
+errval_t rpc_initialize_lmp(struct lmp_state *st)
 {
     errval_t err;
     st->head = NULL;

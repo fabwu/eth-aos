@@ -46,30 +46,77 @@ void aos_rpc_handler_print(char *string, uintptr_t *val, struct capref *cap)
     }
 }
 
-static errval_t aos_lmp_send(struct lmp_chan *chan, uint8_t message_type,
-                             struct capref cap, uintptr_t arg1, uintptr_t arg2,
-                             uintptr_t arg3)
-{
+struct lmp_call_state {
+    struct lmp_chan *chan;
+    uint8_t message_type;
+    struct capref cap;
+    uintptr_t arg1;
+    uintptr_t arg2;
+    uintptr_t arg3;
+    struct capref *ret_cap;
+    uintptr_t *ret_arg1;
+    uintptr_t *ret_arg2;
+    uintptr_t *ret_arg3;
+    bool done;
+};
+
+static void recv_closure(void *arg) {
     errval_t err;
-    uintptr_t meta_data = (uintptr_t)message_type;
-    uint8_t num_retries = 10;
 
-    do {
-        err = lmp_chan_send4(chan, LMP_SEND_FLAGS_DEFAULT, cap, meta_data, arg1, arg2,
-                             arg3);
-        if (err_is_fail(err)) {
-            --num_retries;
-            DEBUG_ERR(err, "Couldn't send message (%d retries left). Trying again...",
-                      num_retries);
+    struct lmp_call_state *st = (struct lmp_call_state *)arg;
+    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
+   
+    err = lmp_chan_recv(st->chan, &msg, st->ret_cap);
+
+    if(err_is_ok(err)) {
+        if(!capref_is_null(*st->ret_cap)) {
+            err = lmp_chan_alloc_recv_slot(st->chan);
+            if(err_is_fail(err)) {
+                DEBUG_ERR(err, "Couldn't allocate slot for ret_cap");
+            }
         }
-    } while (err_is_fail(err) && (num_retries > 0));
 
-    if (num_retries == 0) {
-        DEBUG_ERR(err, "No retries left. Giving up...");
-        return err;
+        *st->ret_arg1 = msg.words[1];
+        *st->ret_arg2 = msg.words[2];
+        *st->ret_arg3 = msg.words[3];
+        st->done = true;
+        return;
+    } else if (lmp_err_is_transient(err)) {
+        err = lmp_chan_register_recv(st->chan, get_default_waitset(), MKCLOSURE(recv_closure, arg));
+        if(err_is_ok(err)) {
+            return;
+        }
     }
 
-    return SYS_ERR_OK;
+    DEBUG_ERR(err, "recv_closure failed hard");
+}
+
+static void send_closure(void *arg) {
+    errval_t err;
+
+    struct lmp_call_state *st = (struct lmp_call_state *)arg;
+
+    err = lmp_chan_send4(st->chan, LMP_SEND_FLAGS_DEFAULT, 
+            st->cap, 
+            st->message_type, 
+            st->arg1,
+            st->arg2,
+            st->arg3
+        );
+
+    if(err_is_ok(err)) {
+        err = lmp_chan_register_recv(st->chan, get_default_waitset(), MKCLOSURE(recv_closure, arg));
+        if(err_is_ok(err)) {
+            return;
+        }
+    } else if(lmp_err_is_transient(err)) {
+        err = lmp_chan_register_send(st->chan, get_default_waitset(), MKCLOSURE(send_closure, arg));
+        if(err_is_ok(err)) {
+            return;
+        }
+    }
+
+    DEBUG_ERR(err, "send_closure failed hard");
 }
 
 static errval_t aos_lmp_call(struct lmp_chan *chan, uint8_t message_type,
@@ -77,27 +124,31 @@ static errval_t aos_lmp_call(struct lmp_chan *chan, uint8_t message_type,
                              uintptr_t arg3, struct capref *ret_cap, uintptr_t *ret_arg1,
                              uintptr_t *ret_arg2, uintptr_t *ret_arg3)
 {
-    // XXX This is maybe too simple but it works as long as call is blocking and
-    //    the remote ep sends the answers in the correct order
     errval_t err;
+    struct lmp_call_state *state = (struct lmp_call_state*)malloc(sizeof(struct lmp_call_state));
 
-    err = aos_lmp_send(chan, message_type, cap, arg1, arg2, arg3);
+    state->chan = chan;
+    state->message_type = message_type;
+    state->cap = cap;
+    state->arg1 = arg1;
+    state->arg2 = arg2;
+    state->arg3 = arg3;
+    state->ret_cap = ret_cap;
+    state->ret_arg1 = ret_arg1;
+    state->ret_arg2 = ret_arg2;
+    state->ret_arg3 = ret_arg3;
+    state->done = false;
+    
+    send_closure(state);
 
-    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
-
-    //FIXME Rewrite this using lmp_recv_register and event_dispatch
-    do {
-        // block until message is available
-        err = lmp_chan_recv(chan, &msg, ret_cap);
-    } while (err == LIB_ERR_NO_LMP_MSG);
-
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_LMP_CHAN_RECV);
+    struct waitset *default_ws = get_default_waitset();
+    while (!state->done) {
+        debug_printf("loop call\n");
+        err = event_dispatch(default_ws);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_EVENT_DISPATCH);
+        }
     }
-
-    *ret_arg1 = msg.words[1];
-    *ret_arg2 = msg.words[2];
-    *ret_arg3 = msg.words[3];
 
     return SYS_ERR_OK;
 }
@@ -106,7 +157,7 @@ errval_t aos_rpc_send_number(struct aos_rpc *rpc, uintptr_t num)
 {
     // TODO: implement functionality to send a number over the channel
     // given channel and wait until the ack gets returned.
-    return aos_lmp_send(&rpc->chan, 1, NULL_CAP, num, 0, 0);
+    return SYS_ERR_OK;
 }
 
 errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)

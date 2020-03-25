@@ -223,6 +223,7 @@ errors libaos LIB_ERR_ {
     failure CNODE_CREATE        "Failure in cnode_create()",
     failure CNODE_CREATE_FROM_MEM "Failure in cnode_create_from_mem()",
     failure CNODE_CREATE_FOREIGN_L2 "Failure in cnode_create_foreign_l2()",
+    failure RAM_ALLOC_ALIGNED           "Failure in ram_alloc_aligned()",
     failure RAM_ALLOC           "Failure in ram_alloc()",
     failure RAM_FREE           "Failure in ram_free()",
     failure RAM_ALLOC_WRONG_SIZE "Wrong size of memory requested in ram alloc",
