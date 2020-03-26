@@ -17,6 +17,16 @@
 
 #include <aos/aos.h>
 
+#define AOS_RPC_MSG_SEND_NUMBER          1
+#define AOS_RPC_MSG_SEND_STRING          2
+#define AOS_RPC_MSG_GET_RAM_CAP          3
+#define AOS_RPC_MSG_SERIAL_GETCHAR       5
+#define AOS_RPC_MSG_SERIAL_PUTCHAR       6
+#define AOS_RPC_MSG_PROCESS_SPAWN        7
+#define AOS_RPC_MSG_PROCESS_GET_NAME     8
+#define AOS_RPC_MSG_PROCESS_GET_ALL_PIDS 9
+#define AOS_RPC_MSG_GET_DEVICE_CAP       10
+
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {
     // TODO(M3): Add state

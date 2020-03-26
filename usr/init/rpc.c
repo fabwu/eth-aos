@@ -40,9 +40,22 @@ static void rpc_handler_send_closure(void *arg)
 
     DEBUG_ERR(err, "rpc_handler_send_closure failed hard!\n");
 }
+
+/**
+ * Receives a number
+ * msg.words[0] == AOS_RPC_MSG_SEND_NUMBER
+ * msg.words[1] == number
+ * msg.words[2] == not used
+ * msg.words[3] == not used
+ */
+static errval_t rpc_print_number(uintptr_t number) {
+    debug_printf("init received the following number: %d\n", number);
+    return SYS_ERR_OK;
+}
+
 /**
  * Allocates ram, sends capability to child
- * msg.words[0] == 1 (Memory message)
+ * msg.words[0] == AOS_RPC_MSG_GET_RAM_CAP
  * msg.words[1] == size
  * msg.words[2] == alignment
  * msg.words[3] == success
@@ -51,7 +64,7 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 {
     errval_t err = SYS_ERR_OK;
 
-    // FIXEM: Can't put it onto chan, because then we can't service multiple requests per
+    // FIXME: Can't put it onto chan, because then we can't service multiple requests per
     // channel
     // Would be easy if closure arg really would be opaque, which it didn't seem to be
     // last I tested
@@ -81,22 +94,12 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 
 /**
  * Spawns process
- * msg.words[0] == 2 (Spawn message)
+ * msg.words[0] == AOS_RPC_MSG_PROCESS_SPAWN
  * msg.words[1] == pid
  * msg.words[2] == success
  */
 // TODO: Transfer string
 static void rpc_spawn_process(struct lmp_chan *chan, char *name) {}
-
-/**
- * Send child ep to a process
- * msg.words[0] == 3 (Memory message)
- * msg.words[1] == pid
- * msg.words[2] == success
- */
-// TODO: Maybe only to the processes that got spawned by corresponding child
-static void rpc_get_ep_to_process(struct lmp_chan *chan, int pid) {}
-
 
 /**
  * Handles messages from different child channels
@@ -117,16 +120,17 @@ static void rpc_handler_recv_closure(void *arg)
         if (cap.cnode.croot == 0 && cap.cnode.cnode == 0) {
             lmp_chan_alloc_recv_slot(chan);
         }
-        switch (msg.words[0]) {
-        case 1:
+        uintptr_t message_type = msg.words[0];
+        switch (message_type) {
+        case AOS_RPC_MSG_SEND_NUMBER:
+            rpc_print_number(msg.words[1]);
+            break;
+        case AOS_RPC_MSG_GET_RAM_CAP:
             rpc_send_ram(chan, msg.words[1], msg.words[2]);
             break;
-        case 2:
+        case AOS_RPC_MSG_PROCESS_SPAWN:
             // TODO: Handle string
             rpc_spawn_process(chan, "hello");
-            break;
-        case 3:
-            rpc_get_ep_to_process(chan, msg.words[1]);
             break;
         default:
             debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
