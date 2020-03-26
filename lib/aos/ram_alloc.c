@@ -19,8 +19,18 @@
 /* remote (indirect through a channel) version of ram_alloc, for most domains */
 static errval_t ram_alloc_remote(struct capref *ret, size_t size, size_t alignment)
 {
-    //TODO(M3): Implement me!
-    return LIB_ERR_NOT_IMPLEMENTED;
+    errval_t err;
+    struct aos_rpc *mem_channel = aos_rpc_get_memory_channel();
+
+    size_t retbytes;
+    err = aos_rpc_get_ram_cap(mem_channel, size, alignment, ret, &retbytes);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_RAM_CAP);
+    }
+    // TODO: if request couldn't be fulfilled, error out
+    assert(size == retbytes);
+
+    return SYS_ERR_OK;
 }
 
 // static errval_t ram_free_remote(struct capref cap, size_t size)

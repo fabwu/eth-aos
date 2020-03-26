@@ -1392,5 +1392,6 @@ errors aos AOS_ERR_ {
     failure LMP_SEND_FAILURE        "Failure while sending AOS LMP message",
     failure LMP_MSGTYPE_UNKNOWN     "Unknown message type for AOS LMP implementation",
     failure RPC_CREATE_CHILD_CHANNEL     "Failure in aos_rpc_create_child_channel()",
+    failure RPC_GET_RAM_CAP     "Failure in aos_rpc_get_ram_cap()",
 };
 

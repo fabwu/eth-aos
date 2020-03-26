@@ -228,8 +228,13 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
         /* initialize init RPC client with lmp channel */
         /* set init RPC client in our program state */
         aos_rpc_set_init_channel(chan_to_init);
+
         /* TODO MILESTONE 3: now we should have a channel with init set up and can
          * use it for the ram allocator */
+        // Get ram_alloc to use remote allocator
+        ram_alloc_set(NULL);
+        ram_free_set(NULL);
+
         // right now we don't have the nameservice & don't need the terminal
         // and domain spanning, so we return here
     }
