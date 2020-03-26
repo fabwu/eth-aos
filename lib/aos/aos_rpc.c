@@ -126,7 +126,7 @@ static void aos_rpc_call_recv_closure(void *arg)
     err = lmp_chan_recv(st->chan, &msg, st->ret_cap);
 
     if (err_is_ok(err)) {
-        if (!capref_is_null(*st->ret_cap)) {
+        if (st->ret_cap != NULL && !capref_is_null(*st->ret_cap)) {
             err = lmp_chan_alloc_recv_slot(st->chan);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Couldn't allocate slot for ret_cap");

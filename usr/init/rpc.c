@@ -139,8 +139,6 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
         holder->words[3] = 1;
     }
 
-    grading_rpc_handler_ram_cap(size, alignment);
-
     rpc_handler_send_closure(holder);
 
     return err;
@@ -230,6 +228,13 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *buf) {
     // FIXME: Pass large strings and core id
     // FIXME: Split name from command line arguments
     char *name = (char *)buf;
+    // HOTFIX
+    for (int i = 1; i < AOS_RPC_BUFFER_SIZE; ++i) {
+        if (name[i] == ' ') {
+            name[i] = '\0';
+            break;
+        }
+    }
     DEBUG_PRINTF("Spawn: %s\n", name);
 
     struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
