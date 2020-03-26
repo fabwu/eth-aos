@@ -10,14 +10,11 @@
 static void rpc_handler_send_closure(void *arg)
 {
     errval_t err;
-    struct lmp_chan *chan = (struct lmp_chan *)arg;
-    debug_printf("chan->holder.words[1]: 0x%" PRIx64 "\n", chan->holder.words[1]);
-    debug_printf("chan->holder.words[2]: 0x%" PRIx64 "\n", chan->holder.words[2]);
-    debug_printf("chan->holder.words[3]: 0x%" PRIx64 "\n", chan->holder.words[3]);
+    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)arg;
     // Bump child that this channel is now ready
-    err = lmp_chan_send4(chan, LMP_SEND_FLAGS_DEFAULT, chan->holder.cap,
-                         chan->holder.words[0], chan->holder.words[1],
-                         chan->holder.words[2], chan->holder.words[3]);
+    err = lmp_chan_send4(holder->chan, LMP_SEND_FLAGS_DEFAULT, holder->cap,
+                         holder->words[0], holder->words[1],
+                         holder->words[2], holder->words[3]);
 
 #if DEBUG_RPC_SETUP
     debug_printf("rpc_handler_send_closure called!\n");
@@ -27,6 +24,7 @@ static void rpc_handler_send_closure(void *arg)
 #if DEBUG_RPC_SETUP
         debug_printf("rpc_handler_send_closure success!\n");
 #endif
+        free(holder);
 
         return;
     } else if (lmp_err_is_transient(err)) {
@@ -34,7 +32,7 @@ static void rpc_handler_send_closure(void *arg)
         debug_printf("rpc_handler_send_closure retry!\n");
 #endif
         // Want to receive further messages
-        err = lmp_chan_register_send(chan, get_default_waitset(),
+        err = lmp_chan_register_send(holder->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_handler_send_closure, arg));
         if (err_is_ok(err)) {
             return;
@@ -93,15 +91,17 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 {
     errval_t err = SYS_ERR_OK;
 
-    // FIXME: Can't put it onto chan, because then we can't service multiple requests per
-    // channel
-    // Would be easy if closure arg really would be opaque, which it didn't seem to be
-    // last I tested
-    chan->holder.cap = NULL_CAP;
-    chan->holder.words[0] = 1;
-    chan->holder.words[1] = size;
-    chan->holder.words[2] = alignment;
-    chan->holder.words[3] = 0;
+    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(sizeof(struct lmp_msg_holder));
+    if (holder == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    holder->cap = NULL_CAP;
+    holder->words[0] = 1;
+    holder->words[1] = size;
+    holder->words[2] = alignment;
+    holder->words[3] = 0;
+    holder->chan = chan;
 
     struct capref ram_cap;
     err = slot_alloc(&ram_cap);
@@ -112,11 +112,11 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_RAM_ALLOC_ALIGNED);
     } else {
-        chan->holder.cap = ram_cap;
-        chan->holder.words[3] = 1;
+        holder->cap = ram_cap;
+        holder->words[3] = 1;
     }
 
-    rpc_handler_send_closure(chan);
+    rpc_handler_send_closure(holder);
 
     return err;
 }
