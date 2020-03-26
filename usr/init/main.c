@@ -64,11 +64,11 @@ static int bsp_main(int argc, char *argv[])
     grading_test_early();
 
     if (INIT_EXECUTE_MEMORYTEST) {
-        init_spawn("memeater");
+        init_spawn("memeater", NULL);
     }
 
     if (INIT_EXECUTE_SPAWNTEST) {
-        init_spawn("spawnTester");
+        init_spawn("spawnTester", NULL);
     }
 
     // TODO: Spawn system processes, boot second core etc. here

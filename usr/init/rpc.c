@@ -8,7 +8,7 @@
 #define DEBUG_RPC_SETUP 0
 
 
-errval_t init_spawn(char *name) {
+errval_t init_spawn(char *name, domainid_t *pid) {
     errval_t err;
     struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
 
@@ -18,7 +18,7 @@ errval_t init_spawn(char *name) {
         return err_push(err, INIT_ERR_PREPARE_SPAWN);
     }
 
-    err = spawn_load_by_name(name, si, NULL);
+    err = spawn_load_by_name(name, si, pid);
     if (err_is_fail(err)) {
         return err_push(err, INIT_ERR_SPAWN);
     }
@@ -243,14 +243,15 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *buf) {
         return LIB_ERR_MALLOC_FAIL;
     }
 
-    err = init_spawn(name);
+    domainid_t pid;
+    err = init_spawn(name, &pid);
     if (err_is_fail(err)) {
         return err;
     }
 
     holder->cap = NULL_CAP;
     holder->words[0] = AOS_RPC_MSG_PROCESS_SPAWN;
-    holder->words[1] = 0; // FIXME: pid
+    holder->words[1] = pid;
     holder->words[2] = err_is_ok(err);
     holder->chan = chan;
 

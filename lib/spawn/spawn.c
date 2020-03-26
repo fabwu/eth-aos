@@ -16,11 +16,13 @@
 #define L1_NODE_SLOT_OFFSET 50
 
 #define SPAWN_DEBUG_DISPATCHER 0
-#define DEBUG_ELF 0
-#define DEBUG_COPY_CAPS 0
+#define SPAWN_DEBUG_ELF 0
+#define SPAWN_DEBUG_COPY_CAPS 0
 
 extern struct bootinfo *bi;
 extern coreid_t my_core_id;
+
+static domainid_t next_pid = 1;
 
 /**
  * \brief Set the base address of the .got (Global Offset Table) section of the ELF binary
@@ -247,7 +249,7 @@ static errval_t paging_cap_copy(struct capref l1_node, size_t *next_l1_slot,
 {
     errval_t err;
 
-#if DEBUG_COPY_CAPS
+#if SPAWN_DEBUG_COPY_CAPS
     DEBUG_PRINTF("copy into l2 %d slot %d\n", (*current_l2_node)->cnode, *slot);
 #endif
 
@@ -267,7 +269,7 @@ static errval_t paging_cap_copy(struct capref l1_node, size_t *next_l1_slot,
             return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
         }
 
-#if DEBUG_COPY_CAPS
+#if SPAWN_DEBUG_COPY_CAPS
         DEBUG_PRINTF("create new l2 node %d in l1 slot %d\n", (*current_l2_node)->cnode,
                      *next_l1_slot);
 #endif
@@ -353,7 +355,7 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
         assert(false);
     }
 
-#if DEBUG_ELF
+#if SPAWN_DEBUG_ELF
     DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
                  "frame flags 0x%x\n",
                  base, size, flags, frame_flags);
@@ -453,7 +455,7 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     return SYS_ERR_OK;
 }
 
-static errval_t spawn_dispatch(struct spawninfo *si)
+static errval_t spawn_dispatch(struct spawninfo *si, domainid_t pid)
 {
     errval_t err;
     struct paging_state *st = get_current_paging_state();
@@ -474,11 +476,10 @@ static errval_t spawn_dispatch(struct spawninfo *si)
     arch_registers_state_t *disabled_area = dispatcher_get_disabled_save_area(handle);
 
     disp_gen->core_id = disp_get_core_id();
+    disp_gen->domain_id = pid;
     // Virtual address of the dispatcher frame in child’s VSpace
     disp->udisp = si->child_dispframe_map;
     disp->disabled = 1;  // Start in disabled mode
-    // TODO: do I have to set this? disp_gen->domain_id
-    //       Theres a domain id handed to spawn_load_by_name
     strncpy(disp->name, si->binary_name, DISP_NAME_LEN);  // Dispatcher name for debugging
 
     // Set program counter (where it should start to execute)
@@ -567,8 +568,18 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
     // init spawn_info
     si->binary_name = argv[0];
 
+    // Set pid (core specific)
+    assert(disp_get_core_id() <= 0xff);
+    assert(next_pid <= 0xffffff);
+    domainid_t domain_id = (next_pid & 0xffffff) | (disp_get_core_id() & 0xff);
+    next_pid += 1;
+
+    if (pid != NULL) {
+        *pid = domain_id;
+    }
+
     // currently the location of the binary is given by si->module_base and si->module_size
-#if DEBUG_ELF
+#if SPAWN_DEBUG_ELF
     DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->module_base,
                  si->module_size);
 #endif
@@ -610,7 +621,7 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
         return err_push(err, SPAWN_ERR_SETUP_ARGS);
     }
 
-    err = spawn_dispatch(si);
+    err = spawn_dispatch(si, domain_id);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_DISPATCH);
     }
@@ -676,7 +687,7 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
         return err_push(err, SPAWN_ERR_MAP_MODULE);
     }
 
-#if DEBUG_ELF
+#if SPAWN_DEBUG_ELF
     DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
                  module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
 #endif
