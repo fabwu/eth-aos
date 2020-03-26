@@ -138,7 +138,7 @@ static void barrelfish_recv_init_closure(void *arg)
 #endif
 
     // Got message
-    if (!err_is_fail(err)) {
+    if (err_is_ok(err)) {
 #if DEBUG_INIT_SETUP_RPC
         DEBUG_PRINTF("recv init success!\n");
 #endif
@@ -153,7 +153,7 @@ static void barrelfish_recv_init_closure(void *arg)
         // Want to receive further messages
         err = lmp_chan_register_recv(lc, get_default_waitset(),
                                      MKCLOSURE(barrelfish_recv_init_closure, arg));
-        if (!err_is_fail(err)) {
+        if (err_is_ok(err)) {
             return;
         }
     }
@@ -210,18 +210,14 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
         lmp_chan_init(&chan_to_init);
 
         /* create local endpoint */
-        struct lmp_endpoint *my_ep;
-        struct capref my_ep_cap;
-        err = endpoint_create(LMP_RECV_LENGTH + 10, &my_ep_cap, &my_ep);
+        err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &chan_to_init.local_cap,
+                              &chan_to_init.endpoint);
         if (err_is_fail(err)) {
             return err_push(err, LIB_ERR_ENDPOINT_CREATE);
         }
 
-        chan_to_init.local_cap = my_ep_cap;
-
         /* set remote endpoint to init's endpoint */
         chan_to_init.remote_cap = cap_initep;
-        chan_to_init.endpoint = my_ep;
 
         // FIXME: Shouldn't be necessary
         err = lmp_chan_alloc_recv_slot(&chan_to_init);
@@ -230,16 +226,14 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
         }
 
         /* set receive handler */
-        lmp_chan_register_recv(&chan_to_init, get_default_waitset(),
+        lmp_chan_register_recv(&chan_to_init, default_ws,
                                MKCLOSURE(barrelfish_recv_init_closure, &chan_to_init));
 
         /* send local ep to init */
-        // LMP_FLAG_SYNC because we want init to run immediatly, because the next thing we
-        // do is wait for init
         // TODO: Document protocol
         // If arg1 is 0, this means it is a child cap
         do {
-            err = lmp_ep_send(cap_initep, LMP_FLAG_SYNC, my_ep_cap, 1, 0, 0, 0, 0);
+            err = lmp_ep_send1(cap_initep, LMP_SEND_FLAGS_DEFAULT, chan_to_init.local_cap, 0);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Had err while sending");
             }

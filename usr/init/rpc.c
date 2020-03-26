@@ -296,9 +296,9 @@ fail:
 static void rpc_setup_send_closure(void *arg)
 {
     errval_t err;
-    struct lmp_chan *chan = (struct lmp_chan *)arg;
+    struct dispatcher_node *node = (struct dispatcher_node *)arg;
     // Bump child that this channel is now ready
-    err = lmp_ep_send(chan->remote_cap, LMP_FLAG_SYNC, NULL_CAP, 1, 0, 0, 0, 0);
+    err = lmp_ep_send1(node->chan.remote_cap, LMP_SEND_FLAGS_DEFAULT, NULL_CAP, 0);
 
 #if DEBUG_RPC_SETUP
     debug_printf("rpc_setup_send_closure called!\n");
@@ -310,7 +310,7 @@ static void rpc_setup_send_closure(void *arg)
 #endif
 
         // Channel to child is setup, switch to child handler
-        err = lmp_chan_register_recv(chan, get_default_waitset(),
+        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_handler_recv_closure, arg));
         if (err_is_ok(err)) {
             return;
@@ -320,7 +320,7 @@ static void rpc_setup_send_closure(void *arg)
         debug_printf("rpc_setup_send_closure retry!\n");
 #endif
         // Want to receive further messages
-        err = lmp_chan_register_send(chan, get_default_waitset(),
+        err = lmp_chan_register_send(&node->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_setup_send_closure, arg));
         if (err_is_ok(err)) {
             return;
@@ -338,10 +338,10 @@ static void rpc_setup_recv_closure(void *arg)
 {
     errval_t err;
 
-    struct lmp_chan *chan = (struct lmp_chan *)arg;
+    struct dispatcher_node *node = (struct dispatcher_node *)arg;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
-    err = lmp_chan_recv(chan, &msg, &cap);
+    err = lmp_chan_recv(&node->chan, &msg, &cap);
 
 #if DEBUG_RPC_SETUP
     debug_printf("rpc_setup_recv_closure called!\n");
@@ -350,11 +350,12 @@ static void rpc_setup_recv_closure(void *arg)
     // Got message
     if (err_is_ok(err)) {
         // Check if setup message
-        assert(msg.words[0] == 0);
+        assert(msg.words[0] == 0);  // FIXME: Replace 0 with constant
 
-        chan->remote_cap = cap;
+        node->chan.remote_cap = cap;
+        node->state = DISPATCHER_CONNECTED;
 
-        err = lmp_chan_alloc_recv_slot(chan);
+        err = lmp_chan_alloc_recv_slot(&node->chan);
         if (err_is_fail(err)) {
             goto fail;
         }
@@ -372,7 +373,7 @@ static void rpc_setup_recv_closure(void *arg)
         debug_printf("rpc_setup_recv_closure retry!\n");
 #endif
         // Want to receive further messages
-        err = lmp_chan_register_recv(chan, get_default_waitset(),
+        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_setup_recv_closure, arg));
         if (err_is_ok(err)) {
             return;
@@ -398,22 +399,13 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
         return LIB_ERR_SLAB_ALLOC_FAIL;
     }
 
-    node->next = st->head;
-    st->head = node;
-
     node->state = DISPATCHER_DISCONNECTED;
+    lmp_chan_init(&node->chan);
 
-    struct capref init_ep_cap;
-    struct lmp_endpoint *init_ep;
-    err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &init_ep_cap, &init_ep);
+    err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &node->chan.local_cap, &node->chan.endpoint);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_ENDPOINT_CREATE);
     }
-
-    lmp_chan_init(&node->chan);
-
-    node->chan.local_cap = init_ep_cap;
-    node->chan.endpoint = init_ep;
 
     // FIXME: Shouldn't be necessary
     err = lmp_chan_alloc_recv_slot(&node->chan);
@@ -422,12 +414,18 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
     }
 
     err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
-                                 MKCLOSURE(rpc_setup_recv_closure, &node->chan));
+                                 MKCLOSURE(rpc_setup_recv_closure, node));
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
     }
 
-    *ret_init_ep_cap = init_ep_cap;
+    // Add node to dispatcher list
+    // Done as late as possible so there's no unfinished node in the list
+    node->next = st->head;
+    st->head = node;
+
+    assert(!capref_is_null(node->chan.local_cap));
+    *ret_init_ep_cap = node->chan.local_cap;
 
     return SYS_ERR_OK;
 }
