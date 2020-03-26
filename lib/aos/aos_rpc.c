@@ -292,6 +292,31 @@ errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment
     return SYS_ERR_OK;
 }
 
+errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr)
+{
+    errval_t err;
+    struct capref ret_cap;
+    uintptr_t ret_addr = 0;
+    uintptr_t ret_success = 0;
+    uintptr_t ret_arg3;
+    err = aos_rpc_lmp_call(&rpc->chan, AOS_RPC_MSG_FREE_RAM_CAP, NULL_CAP, addr,
+                           0, 0, &ret_cap, &ret_addr, &ret_success, &ret_arg3);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_LMP_CALL);
+    }
+
+    // get ram cap failed
+    if (!ret_success) {
+        return AOS_ERR_RPC_FREE_RAM_CAP_REMOTE_ERR;
+    }
+
+    // Didn't get what I wanted
+    if (ret_addr != addr) {
+        return AOS_ERR_RPC_FREE_RAM_CAP_REMOTE_ERR;
+    }
+
+    return SYS_ERR_OK;
+}
 
 errval_t aos_rpc_serial_getchar(struct aos_rpc *rpc, char *retc)
 {

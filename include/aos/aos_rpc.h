@@ -22,6 +22,7 @@
 #define AOS_RPC_MSG_SEND_NUMBER          1
 #define AOS_RPC_MSG_SEND_STRING          2
 #define AOS_RPC_MSG_GET_RAM_CAP          3
+#define AOS_RPC_MSG_FREE_RAM_CAP          4
 #define AOS_RPC_MSG_SERIAL_GETCHAR       5
 #define AOS_RPC_MSG_SERIAL_PUTCHAR       6
 #define AOS_RPC_MSG_PROCESS_SPAWN        7
@@ -68,6 +69,11 @@ errval_t aos_rpc_send_string(struct aos_rpc *chan, const char *string);
 errval_t aos_rpc_get_ram_cap(struct aos_rpc *chan, size_t bytes, size_t alignment,
                              struct capref *retcap, size_t *ret_bytes);
 
+/**
+ * \brief Request a RAM capability with >= request_bits of size over the given
+ * channel.
+ */
+errval_t aos_rpc_free_ram_cap(struct aos_rpc *chan, genpaddr_t addr);
 
 /**
  * \brief Get one character from the serial port

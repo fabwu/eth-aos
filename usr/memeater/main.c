@@ -106,6 +106,12 @@ static errval_t request_and_map_memory(void)
     debug_printf("performing memset.\n");
     memset(buf2, 0x00, LARGE_PAGE_SIZE);
 
+    struct capref cap3;
+    err = frame_alloc(&cap3, LARGE_PAGE_SIZE, &bytes);
+    assert(err_is_ok(err));
+    err = frame_free(cap3, bytes);
+    assert(err_is_ok(err));
+
     return SYS_ERR_OK;
 
 }

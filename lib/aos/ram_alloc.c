@@ -33,11 +33,18 @@ static errval_t ram_alloc_remote(struct capref *ret, size_t size, size_t alignme
     return SYS_ERR_OK;
 }
 
-// static errval_t ram_free_remote(struct capref cap, size_t size)
-// {
-//     //TODO(M3): Implement me!
-//     return LIB_ERR_NOT_IMPLEMENTED;
-// }
+static errval_t ram_free_remote(genpaddr_t addr)
+{
+    errval_t err;
+    struct aos_rpc *mem_channel = aos_rpc_get_memory_channel();
+
+    err = aos_rpc_free_ram_cap(mem_channel, addr);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_FREE_RAM_CAP);
+    }
+
+    return SYS_ERR_OK;
+}
 
 
 void ram_set_affinity(uint64_t minbase, uint64_t maxlimit)
@@ -176,6 +183,7 @@ errval_t ram_free_set(ram_free_func_t local_free)
     }
 
     // TODO: Adjust method signature
-    // ram_alloc_state->ram_free_func = ram_free_remote;
+    ram_alloc_state->ram_free_func = ram_free_remote;
+
     return SYS_ERR_OK;
 }

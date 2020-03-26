@@ -5,7 +5,7 @@
 
 #include "rpc.h"
 
-#define DEBUG_RPC_SETUP 1
+#define DEBUG_RPC_SETUP 0
 
 static void rpc_handler_send_closure(void *arg)
 {
@@ -13,8 +13,8 @@ static void rpc_handler_send_closure(void *arg)
     struct lmp_msg_holder *holder = (struct lmp_msg_holder *)arg;
     // Bump child that this channel is now ready
     err = lmp_chan_send4(holder->chan, LMP_SEND_FLAGS_DEFAULT, holder->cap,
-                         holder->words[0], holder->words[1],
-                         holder->words[2], holder->words[3]);
+                         holder->words[0], holder->words[1], holder->words[2],
+                         holder->words[3]);
 
 #if DEBUG_RPC_SETUP
     debug_printf("rpc_handler_send_closure called!\n");
@@ -91,7 +91,8 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 {
     errval_t err = SYS_ERR_OK;
 
-    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(sizeof(struct lmp_msg_holder));
+    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
+        sizeof(struct lmp_msg_holder));
     if (holder == NULL) {
         return LIB_ERR_MALLOC_FAIL;
     }
@@ -114,6 +115,43 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
     } else {
         holder->cap = ram_cap;
         holder->words[3] = 1;
+    }
+
+    rpc_handler_send_closure(holder);
+
+    return err;
+}
+
+/**
+ * Allocates ram, sends capability to child
+ * msg.words[0] == AOS_RPC_MSG_GET_RAM_CAP
+ * msg.words[1] == size
+ * msg.words[2] == alignment
+ * msg.words[3] == success
+ */
+// FIXME: Add mechanism so processes can only free their only ram, why we can't get the
+// capability here is because of fram_free
+static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
+{
+    errval_t err = SYS_ERR_OK;
+
+    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
+        sizeof(struct lmp_msg_holder));
+    if (holder == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    holder->cap = NULL_CAP;
+    holder->words[0] = 1;
+    holder->words[1] = addr;
+    holder->words[2] = 0;
+    holder->chan = chan;
+
+    err = ram_free(addr);
+    if (err_is_fail(err)) {
+        err = err_push(err, LIB_ERR_RAM_FREE);
+    } else {
+        holder->words[2] = 1;
     }
 
     rpc_handler_send_closure(holder);
@@ -155,12 +193,18 @@ static void rpc_handler_recv_closure(void *arg)
             rpc_print_number(msg.words[1]);
             break;
         case AOS_RPC_MSG_SEND_STRING:
-            rpc_print_string(msg.words+1);
+            rpc_print_string(msg.words + 1);
             break;
         case AOS_RPC_MSG_GET_RAM_CAP:
             err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_send_ram failed");
+            }
+            break;
+        case AOS_RPC_MSG_FREE_RAM_CAP:
+            err = rpc_free_ram(chan, msg.words[1]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_free_ram failed");
             }
             break;
         case AOS_RPC_MSG_PROCESS_SPAWN:
