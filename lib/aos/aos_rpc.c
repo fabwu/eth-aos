@@ -133,9 +133,18 @@ static void aos_rpc_call_recv_closure(void *arg)
             }
         }
 
-        *st->ret_arg1 = msg.words[1];
-        *st->ret_arg2 = msg.words[2];
-        *st->ret_arg3 = msg.words[3];
+        if (st->ret_arg1 != NULL) {
+            *st->ret_arg1 = msg.words[1];
+        }
+
+        if (st->ret_arg2 != NULL) {
+            *st->ret_arg2 = msg.words[2];
+        }
+
+        if (st->ret_arg3 != NULL) {
+            *st->ret_arg3 = msg.words[3];
+        }
+
         st->done = true;
         return;
     } else if (lmp_err_is_transient(err)) {
@@ -329,7 +338,38 @@ errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c)
 errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core,
                                domainid_t *newpid)
 {
-    // TODO (M5): implement spawn new process rpc
+    errval_t err;
+    uintptr_t ret_pid = 0;
+    uintptr_t ret_success = 0;
+
+    // TODO (M5): Send request to correct core
+
+    size_t msg_len = strlen(cmdline) + 1;
+
+    // TODO: send strings of arb. length
+    if (msg_len > AOS_RPC_BUFFER_SIZE) {
+        return LIB_ERR_NOT_IMPLEMENTED;
+    }
+
+    assert(msg_len <= AOS_RPC_BUFFER_SIZE);
+
+    uintptr_t buf[3];
+    memcpy(buf, cmdline, msg_len);
+    memset(buf + msg_len, 0, AOS_RPC_BUFFER_SIZE - msg_len);
+
+    err = aos_rpc_lmp_call(&rpc->chan, AOS_RPC_MSG_PROCESS_SPAWN, NULL_CAP, buf[0],
+                           buf[1], buf[2], NULL, &ret_pid, &ret_success, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_LMP_CALL);
+    }
+
+    if (!ret_success) {
+        *newpid = 0;
+        return AOS_ERR_RPC_SPAWN_PROCESS;
+    }
+
+    *newpid = ret_pid;
+
     return SYS_ERR_OK;
 }
 
@@ -369,7 +409,7 @@ struct aos_rpc *aos_rpc_get_init_channel(void)
  */
 struct aos_rpc *aos_rpc_get_memory_channel(void)
 {
-    // FIXME return channel to memory server domain
+    // FIXME: return channel to memory server domain
     return &rpc_init;
 }
 
@@ -378,10 +418,8 @@ struct aos_rpc *aos_rpc_get_memory_channel(void)
  */
 struct aos_rpc *aos_rpc_get_process_channel(void)
 {
-    // TODO: Return channel to talk to process server process (or whoever
-    // implements process server functionality)
-    debug_printf("aos_rpc_get_process_channel NYI\n");
-    return NULL;
+    // FIXME: return channel to process server domain
+    return &rpc_init;
 }
 
 /**
@@ -389,6 +427,7 @@ struct aos_rpc *aos_rpc_get_process_channel(void)
  */
 struct aos_rpc *aos_rpc_get_serial_channel(void)
 {
+    // FIXME: return channel to terminal server domain
     return &rpc_init;
 }
 

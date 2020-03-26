@@ -1391,13 +1391,14 @@ errors vas VAS_ERR_ {
 
 // errors for AOS
 errors aos AOS_ERR_ {
-    failure LMP_SEND_FAILURE        "Failure while sending AOS LMP message",
-    failure LMP_MSGTYPE_UNKNOWN     "Unknown message type for AOS LMP implementation",
-    failure RPC_CREATE_CHILD_CHANNEL     "Failure in aos_rpc_create_child_channel()",
-    failure RPC_GET_RAM_CAP     "Failure in aos_rpc_get_ram_cap()",
-    failure RPC_GET_RAM_CAP_REMOTE_ERR     "Got err from remote in aos_rpc_get_ram_cap()",
-    failure RPC_FREE_RAM_CAP     "Failure in aos_rpc_free_ram_cap()",
-    failure RPC_FREE_RAM_CAP_REMOTE_ERR     "Got err from remote in aos_rpc_free_ram_cap()",
-    failure RPC_LMP_CALL     "Failure in aos_rpc_lmp_call()",
+    failure LMP_SEND_FAILURE       "Failure while sending AOS LMP message",
+    failure LMP_MSGTYPE_UNKNOWN    "Unknown message type for AOS LMP implementation",
+    failure RPC_CREATE_CHILD_CHANNEL "Failure in aos_rpc_create_child_channel()",
+    failure RPC_GET_RAM_CAP        "Failure in aos_rpc_get_ram_cap()",
+    failure RPC_GET_RAM_CAP_REMOTE_ERR "Got err from remote in aos_rpc_get_ram_cap()",
+    failure RPC_FREE_RAM_CAP       "Failure in aos_rpc_free_ram_cap()",
+    failure RPC_FREE_RAM_CAP_REMOTE_ERR "Got err from remote in aos_rpc_free_ram_cap()",
+    failure RPC_LMP_CALL           "Failure in aos_rpc_lmp_call()",
+    failure RPC_SPAWN_PROCESS      "Failure in aos_rpc_process_spawn()",
 };
 

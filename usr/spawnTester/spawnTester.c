@@ -22,7 +22,7 @@
 #include <spawn/spawn.h>
 #include <aos/aos_rpc.h>
 
-struct aos_rpc *init_rpc;
+struct aos_rpc *process_rpc;
 coreid_t my_core_id;
 
 /**
@@ -48,8 +48,8 @@ static char * utostr(uint8_t i) {
 int main(int argc, char *argv[]) {
     
     // get a channel to init
-    init_rpc = aos_rpc_get_init_channel();
-    if (!init_rpc) {
+    process_rpc = aos_rpc_get_process_channel();
+    if (!process_rpc) {
         DEBUG_PRINTF("init RPC channel NULL?\n");
         return EXIT_FAILURE;
     }
@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
             char cmdline[64];
             sprintf(cmdline, "spawnTester %s", utostr(level - 1));
             // spawn another spawnTester with the level decreased by 1 on the same core
-            err = aos_rpc_process_spawn(init_rpc, cmdline, my_core_id, &spawnTester_pid);
+            err = aos_rpc_process_spawn(process_rpc, cmdline, my_core_id, &spawnTester_pid);
             if (err_is_fail(err)) {
                 DEBUG_PRINTF("Starting spawnTester failed.\n");
                 return EXIT_FAILURE;

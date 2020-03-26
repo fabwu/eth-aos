@@ -224,11 +224,13 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
  * msg.words[1] == pid
  * msg.words[2] == success
  */
-static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *encoded_name) {
+static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *buf) {
     errval_t err;
 
     // FIXME: Pass large strings and core id
-    char *name = (char *)encoded_name;
+    // FIXME: Split name from command line arguments
+    char *name = (char *)buf;
+    DEBUG_PRINTF("Spawn: %s\n", name);
 
     struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
         sizeof(struct lmp_msg_holder));
