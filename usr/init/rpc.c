@@ -11,10 +11,13 @@ static void rpc_handler_send_closure(void *arg)
 {
     errval_t err;
     struct lmp_chan *chan = (struct lmp_chan *)arg;
+    debug_printf("chan->holder.words[1]: 0x%" PRIx64 "\n", chan->holder.words[1]);
+    debug_printf("chan->holder.words[2]: 0x%" PRIx64 "\n", chan->holder.words[2]);
+    debug_printf("chan->holder.words[3]: 0x%" PRIx64 "\n", chan->holder.words[3]);
     // Bump child that this channel is now ready
-    err = lmp_ep_send(chan->remote_cap, LMP_FLAG_SYNC, chan->holder.cap, 1,
-                      chan->holder.words[0], chan->holder.words[1], chan->holder.words[2],
-                      chan->holder.words[3]);
+    err = lmp_chan_send4(chan, LMP_SEND_FLAGS_DEFAULT, chan->holder.cap,
+                         chan->holder.words[0], chan->holder.words[1],
+                         chan->holder.words[2], chan->holder.words[3]);
 
 #if DEBUG_RPC_SETUP
     debug_printf("rpc_handler_send_closure called!\n");
@@ -115,7 +118,7 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 
     rpc_handler_send_closure(chan);
 
-    return SYS_ERR_OK;
+    return err;
 }
 
 /**
@@ -155,7 +158,10 @@ static void rpc_handler_recv_closure(void *arg)
             rpc_print_string(msg.words+1);
             break;
         case AOS_RPC_MSG_GET_RAM_CAP:
-            rpc_send_ram(chan, msg.words[1], msg.words[2]);
+            err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_send_ram failed");
+            }
             break;
         case AOS_RPC_MSG_PROCESS_SPAWN:
             // TODO: Handle string
