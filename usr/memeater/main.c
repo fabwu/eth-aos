@@ -136,12 +136,20 @@ static errval_t test_basic_rpc(void)
         return err;
     }
 
-    debug_printf("RPC: sending large string...\n");
-    err = aos_rpc_send_string(init_rpc, str);
+    debug_printf("RPC: sending nasty string...\n");
+    err = aos_rpc_send_string(init_rpc, "Hello init123456789abcd");
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "could not send a string\n");
         return err;
     }
+
+    // TODO send strings of arb. length
+    /*debug_printf("RPC: sending large string...\n");
+    err = aos_rpc_send_string(init_rpc, str);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "could not send a string\n");
+        return err;
+    }*/
 
     debug_printf("RPC: testing basic RPCs. SUCCESS\n");
 

@@ -17,6 +17,8 @@
 
 #include <aos/aos.h>
 
+#define AOS_RPC_BUFFER_SIZE             3*sizeof(uintptr_t)
+
 #define AOS_RPC_MSG_SEND_NUMBER          1
 #define AOS_RPC_MSG_SEND_STRING          2
 #define AOS_RPC_MSG_GET_RAM_CAP          3

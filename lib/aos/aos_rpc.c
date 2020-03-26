@@ -246,9 +246,20 @@ errval_t aos_rpc_send_number(struct aos_rpc *rpc, uintptr_t num)
 
 errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)
 {
-    // TODO: implement functionality to send a string over the given channel
-    // and wait for a response.
-    return SYS_ERR_OK;
+    size_t msg_len = strlen(string) + 1;
+
+    // TODO: send strings of arb. length
+    if (msg_len > AOS_RPC_BUFFER_SIZE) {
+        return LIB_ERR_NOT_IMPLEMENTED;
+    }
+
+    assert(msg_len <= AOS_RPC_BUFFER_SIZE);
+
+    uintptr_t buf[3];
+    memcpy(buf, string, msg_len);
+    memset(buf + msg_len, 0, AOS_RPC_BUFFER_SIZE - msg_len);
+
+    return aos_rpc_lmp_send3(&rpc->chan, AOS_RPC_MSG_SEND_STRING, buf[0], buf[1], buf[2]);
 }
 
 errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment,

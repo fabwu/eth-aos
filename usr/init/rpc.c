@@ -48,8 +48,34 @@ static void rpc_handler_send_closure(void *arg)
  * msg.words[2] == not used
  * msg.words[3] == not used
  */
-static errval_t rpc_print_number(uintptr_t number) {
+static errval_t rpc_print_number(uintptr_t number)
+{
     debug_printf("init received the following number: %d\n", number);
+
+    // has to be called for grading see chapter 5.10
+    grading_rpc_handle_number(number);
+
+    return SYS_ERR_OK;
+}
+
+/**
+ * Receives a string
+ * msg.words[0] == AOS_RPC_MSG_SEND_STRING
+ * msg.words[1] == buffer 1
+ * msg.words[2] == buffer 2
+ * msg.words[3] == buffer 3
+ */
+static errval_t rpc_print_string(uintptr_t *buf)
+{
+    char string[AOS_RPC_BUFFER_SIZE];
+
+    memcpy(string, buf, AOS_RPC_BUFFER_SIZE);
+
+    debug_printf("init received the following string: %s\n", string);
+
+    // has to be called for grading see chapter 5.10
+    grading_rpc_handler_string(string);
+
     return SYS_ERR_OK;
 }
 
@@ -124,6 +150,9 @@ static void rpc_handler_recv_closure(void *arg)
         switch (message_type) {
         case AOS_RPC_MSG_SEND_NUMBER:
             rpc_print_number(msg.words[1]);
+            break;
+        case AOS_RPC_MSG_SEND_STRING:
+            rpc_print_string(msg.words+1);
             break;
         case AOS_RPC_MSG_GET_RAM_CAP:
             rpc_send_ram(chan, msg.words[1], msg.words[2]);

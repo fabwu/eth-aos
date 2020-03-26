@@ -16,6 +16,7 @@
 #include <aos/aos.h>
 #include <aos/core_state.h>
 #include <aos/aos_rpc.h>
+#include <grading.h>
 
 errval_t rpc_initialize_lmp(struct lmp_state *lmp_state);
 errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap);
