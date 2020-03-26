@@ -256,7 +256,7 @@ __attribute__((unused)) static errval_t pt_alloc_l3(struct paging_state *st,
  * \param st The struct to be initialized, must not be NULL.
  * \param start_vaddr Virtual address allocation should start at
  *        this address.
- * \param pdir Reference to the cap of the L1 VNode.
+ * \param pdir Reference to the cap of the L0 VNode.
  * \param ca The slot_allocator to be used by the paging state.
  * \return Either SYS_ERR_OK if no error occured or an error
  * indicating what went wrong otherwise.
@@ -305,7 +305,7 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
  * \param st The struct to be initialized, must not be NULL.
  * \param start_vaddr Virtual address allocation should start at
  *        this address.
- * \param pdir Reference to the cap of the L1 VNode.
+ * \param pdir Reference to the cap of the L0 VNode.
  * \param ca The slot_allocator to be used by the paging state.
  * \return Either SYS_ERR_OK if no error occured or an error
  * indicating what went wrong otherwise.
