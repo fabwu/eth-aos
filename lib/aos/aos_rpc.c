@@ -38,6 +38,8 @@ static errval_t aos_rpc_lmp_send(struct lmp_chan *chan, uint8_t message_type,
 
 #define aos_rpc_lmp_send_cap(chan, msg_type, send_cap)                                   \
     aos_rpc_lmp_send((chan), (msg_type), (send_cap), 0, 0, 0)
+#define aos_rpc_lmp_send0(chan, msg_type)                                                \
+    aos_rpc_lmp_send((chan), (msg_type), NULL_CAP, 0, 0, 0)
 #define aos_rpc_lmp_send1(chan, msg_type, arg1)                                          \
     aos_rpc_lmp_send((chan), (msg_type), NULL_CAP, (arg1), 0, 0)
 #define aos_rpc_lmp_send2(chan, msg_type, arg1, arg2)                                    \
@@ -199,7 +201,6 @@ static errval_t aos_rpc_lmp_call(struct lmp_chan *chan, uint8_t message_type,
 
     struct waitset *default_ws = get_default_waitset();
     while (!state->done) {
-        debug_printf("loop call\n");
         err = event_dispatch(default_ws);
         if (err_is_fail(err)) {
             err = err_push(err, LIB_ERR_EVENT_DISPATCH);
@@ -250,7 +251,7 @@ errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)
 
     // TODO: send strings of arb. length
     if (msg_len > AOS_RPC_BUFFER_SIZE) {
-        return LIB_ERR_NOT_IMPLEMENTED;
+        msg_len = AOS_RPC_BUFFER_SIZE;
     }
 
     assert(msg_len <= AOS_RPC_BUFFER_SIZE);
@@ -285,10 +286,6 @@ errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment
         return AOS_ERR_RPC_GET_RAM_CAP_REMOTE_ERR;
     }
 
-    char buf[256];
-    debug_print_cap_at_capref(buf, 256, *ret_cap);
-
-    DEBUG_PRINTF("ANSWER >>> bytes: %d %s\n", *ret_bytes, buf);
     return SYS_ERR_OK;
 }
 
@@ -320,17 +317,13 @@ errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr)
 
 errval_t aos_rpc_serial_getchar(struct aos_rpc *rpc, char *retc)
 {
-    // TODO implement functionality to request a character from
-    // the serial driver.
-    return SYS_ERR_OK;
+    return aos_rpc_lmp_send0(&rpc->chan, AOS_RPC_MSG_SERIAL_GETCHAR);
 }
 
 
 errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c)
 {
-    // TODO implement functionality to send a character to the
-    // serial port.
-    return SYS_ERR_OK;
+    return aos_rpc_lmp_send1(&rpc->chan, AOS_RPC_MSG_SERIAL_PUTCHAR, c);
 }
 
 errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core,
@@ -396,9 +389,6 @@ struct aos_rpc *aos_rpc_get_process_channel(void)
  */
 struct aos_rpc *aos_rpc_get_serial_channel(void)
 {
-    // TODO: Return channel to talk to serial driver/terminal process (whoever
-    // implements print/read functionality)
-    debug_printf("aos_rpc_get_serial_channel NYI\n");
-    return NULL;
+    return &rpc_init;
 }
 

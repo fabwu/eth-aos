@@ -85,7 +85,6 @@ static int bsp_main(int argc, char *argv[])
     // Hang around
     struct waitset *default_ws = get_default_waitset();
     while (true) {
-        debug_printf("loop main\n");
         err = event_dispatch(default_ws);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "in event_dispatch");

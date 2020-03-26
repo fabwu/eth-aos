@@ -80,6 +80,25 @@ __attribute__((__used__)) static size_t dummy_terminal_read(char *buf, size_t le
     return len;
 }
 
+static size_t aos_terminal_write(const char *buf, size_t len)
+{
+    if (len) {
+        errval_t err;
+        struct aos_rpc *chan = aos_rpc_get_serial_channel();
+
+        assert(chan);
+
+        while (--len) {
+            err = aos_rpc_serial_putchar(chan, *buf++);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Couldn't send chararcter");
+                return err;
+            }
+        }
+    }
+    return 0;
+}
+
 /* Set libc function pointers */
 void barrelfish_libc_glue_init(void)
 {
@@ -88,7 +107,11 @@ void barrelfish_libc_glue_init(void)
     // TODO: change these to use the user-space serial driver if possible
     // TODO: set these functions
     _libc_terminal_read_func = dummy_terminal_read;
-    _libc_terminal_write_func = syscall_terminal_write;
+    if (init_domain) {
+        _libc_terminal_write_func = syscall_terminal_write;
+    } else {
+        _libc_terminal_write_func = aos_terminal_write;
+    }
     _libc_exit_func = libc_exit;
     _libc_assert_func = libc_assert;
     /* morecore func is setup by morecore_init() */
@@ -101,22 +124,32 @@ void barrelfish_libc_glue_init(void)
 
 static int got_pong;
 
+#define DEBUG_INIT_SETUP_RPC 0
+
 static void barrelfish_recv_init_closure(void *arg)
 {
     errval_t err;
     struct lmp_chan *lc = (struct lmp_chan *)arg;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     err = lmp_chan_recv(lc, &msg, NULL);
-    debug_printf("recv init called!\n");
+
+#if DEBUG_INIT_SETUP_RPC
+    DEBUG_PRINTF("recv init called!\n");
+#endif
+
     // Got message
     if (!err_is_fail(err)) {
-        debug_printf("recv init success!\n");
+#if DEBUG_INIT_SETUP_RPC
+        DEBUG_PRINTF("recv init success!\n");
+#endif
 
         got_pong = 1;
 
         return;
     } else if (lmp_err_is_transient(err)) {
-        debug_printf("recv init retry!\n");
+#if DEBUG_INIT_SETUP_RPC
+        DEBUG_PRINTF("recv init retry!\n");
+#endif
         // Want to receive further messages
         err = lmp_chan_register_recv(lc, get_default_waitset(),
                                      MKCLOSURE(barrelfish_recv_init_closure, arg));

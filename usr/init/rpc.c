@@ -51,8 +51,6 @@ static void rpc_handler_send_closure(void *arg)
  */
 static errval_t rpc_print_number(uintptr_t number)
 {
-    debug_printf("init received the following number: %d\n", number);
-
     // has to be called for grading see chapter 5.10
     grading_rpc_handle_number(number);
 
@@ -72,8 +70,6 @@ static errval_t rpc_print_string(uintptr_t *buf)
 
     memcpy(string, buf, AOS_RPC_BUFFER_SIZE);
 
-    debug_printf("init received the following string: %s\n", string);
-
     // has to be called for grading see chapter 5.10
     grading_rpc_handler_string(string);
 
@@ -90,6 +86,9 @@ static errval_t rpc_print_string(uintptr_t *buf)
 static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignment)
 {
     errval_t err = SYS_ERR_OK;
+
+    // has to be called for grading see chapter 5.10
+    grading_rpc_handler_ram_cap(size, alignment);
 
     struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
         sizeof(struct lmp_msg_holder));
@@ -160,6 +159,41 @@ static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
 }
 
 /**
+ * Receives a char from the serial line
+ * msg.words[0] == AOS_RPC_MSG_SERIAL_PUTCHAR
+ */
+static errval_t rpc_serial_getchar(void)
+{
+    // just call the grading function
+    //
+    // we didn't go for the extra challenge
+    grading_rpc_handler_serial_getchar();
+
+    return SYS_ERR_OK;
+}
+
+/**
+ * Puts a char on the serial line
+ * msg.words[0] == AOS_RPC_MSG_SERIAL_PUTCHAR
+ * msg.words[1] == character
+ */
+static errval_t rpc_serial_putchar(uintptr_t arg1)
+{
+    char c = (char)arg1;
+
+    // XXX Here we would call serial_put_char or similar
+    char str[2];
+    str[0] = c;
+    str[1] = '\0';
+
+    sys_print(str, 2);
+
+    grading_rpc_handler_serial_putchar(c);
+
+    return SYS_ERR_OK;
+}
+
+/**
  * Spawns process
  * msg.words[0] == AOS_RPC_MSG_PROCESS_SPAWN
  * msg.words[1] == pid
@@ -207,7 +241,19 @@ static void rpc_handler_recv_closure(void *arg)
                 DEBUG_ERR(err, "rpc_free_ram failed");
             }
             break;
-        case AOS_RPC_MSG_PROCESS_SPAWN:
+        case AOS_RPC_MSG_SERIAL_GETCHAR:
+            err = rpc_serial_getchar();
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_serial_getchar failed");
+            }
+            break;
+         case AOS_RPC_MSG_SERIAL_PUTCHAR:
+            err = rpc_serial_putchar(msg.words[1]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_serial_putchar failed");
+            }
+            break;
+         case AOS_RPC_MSG_PROCESS_SPAWN:
             // TODO: Handle string
             rpc_spawn_process(chan, "hello");
             break;
