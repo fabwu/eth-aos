@@ -7,6 +7,28 @@
 
 #define DEBUG_RPC_SETUP 0
 
+
+errval_t init_spawn(char *name) {
+    errval_t err;
+    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+
+    //FIXME use explicit argument to pass initep to spawn.c
+    err = rpc_create_child_channel_to_init(&si->initep);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_PREPARE_SPAWN);
+    }
+
+    err = spawn_load_by_name(name, si, NULL);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_SPAWN);
+    }
+
+    free(si);
+
+    return SYS_ERR_OK;
+}
+
+
 static void rpc_handler_send_closure(void *arg)
 {
     errval_t err;
@@ -35,6 +57,7 @@ static void rpc_handler_send_closure(void *arg)
         err = lmp_chan_register_send(holder->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_handler_send_closure, arg));
         if (err_is_ok(err)) {
+            free(holder);
             return;
         }
     }
@@ -115,6 +138,8 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
         holder->cap = ram_cap;
         holder->words[3] = 1;
     }
+
+    grading_rpc_handler_ram_cap(size, alignment);
 
     rpc_handler_send_closure(holder);
 
@@ -199,8 +224,35 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
  * msg.words[1] == pid
  * msg.words[2] == success
  */
-// TODO: Transfer string
-static void rpc_spawn_process(struct lmp_chan *chan, char *name) {}
+static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *encoded_name) {
+    errval_t err;
+
+    // FIXME: Pass large strings and core id
+    char *name = (char *)encoded_name;
+
+    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
+        sizeof(struct lmp_msg_holder));
+    if (holder == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    err = init_spawn(name);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    holder->cap = NULL_CAP;
+    holder->words[0] = AOS_RPC_MSG_PROCESS_SPAWN;
+    holder->words[1] = 0; // FIXME: pid
+    holder->words[2] = err_is_ok(err);
+    holder->chan = chan;
+
+    grading_rpc_handler_process_spawn(name, disp_get_core_id());
+
+    rpc_handler_send_closure(holder);
+
+    return SYS_ERR_OK;
+}
 
 /**
  * Handles messages from different child channels
@@ -253,9 +305,12 @@ static void rpc_handler_recv_closure(void *arg)
                 DEBUG_ERR(err, "rpc_serial_putchar failed");
             }
             break;
-         case AOS_RPC_MSG_PROCESS_SPAWN:
-            // TODO: Handle string
-            rpc_spawn_process(chan, "hello");
+        case AOS_RPC_MSG_PROCESS_SPAWN:
+            // TODO: Handle large string
+            err = rpc_spawn_process(chan, msg.words + 1);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed to spawn process in rpc_spawn_process()");
+            }
             break;
         default:
             debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);

@@ -121,14 +121,14 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
     si->child_dispatcher.slot = TASKCN_SLOT_DISPATCHER;
     err = cap_copy(si->child_dispatcher, si->dispatcher);
     if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+        return err_push(err, SPAWN_ERR_CREATE_DISPATCHER);
     }
 
     si->child_dispframe.cnode = si->task_cnode_ref;
     si->child_dispframe.slot = TASKCN_SLOT_DISPFRAME;
     err = cap_copy(si->child_dispframe, si->dispframe);
     if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+        return err_push(err, SPAWN_ERR_CREATE_DISPATCHER_FRAME);
     }
 
     struct cnoderef alloc_0_cnode_ref;
@@ -192,14 +192,11 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
 
 static errval_t spawn_child_cspace_set_initep(struct spawninfo *si)
 {
-    errval_t err;
     struct capref task_cnode_cap;
     task_cnode_cap.cnode = si->task_cnode_ref;
     task_cnode_cap.slot = TASKCN_SLOT_INITEP;
 
-    struct capref init_ep_cap;
-    init_ep_cap = si->initep;
-    err = cap_copy(task_cnode_cap, init_ep_cap);
+    errval_t err = cap_copy(task_cnode_cap, si->initep);
     if (err_is_fail(err)) {
         return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
     }

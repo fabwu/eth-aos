@@ -599,27 +599,27 @@ errors spawn SPAWN_ERR_ {
     failure SETUP_ARGS          "Failure in spawn_setup_args",
     failure SETUP_ENV           "Failure in spawn_setup_env",
     failure UNKNOWN_TARGET_ARCH "Unknown target architecture type",
-    failure UNSUPPORTED_TARGET_ARCH     "Unsupported target architecture type",
+    failure UNSUPPORTED_TARGET_ARCH "Unsupported target architecture type",
 
-    failure OUT_OF_PIDS     "Failure allocating a pid",
+    failure OUT_OF_PIDS         "Failure allocating a pid",
 
-    failure CREATE_CHILD_CSPACE    "Failure in spawn_create_child_cspace",
-    failure CREATE_CHILD_VSPACE     "Failure in spawn_create_child_vspace",
-    failure CHILD_CSPACE_SET_INITEP    "Failure in spawn_child_cspace_set_initep",
-    failure ADD_DISPATCHER    "Failure in add_dispatcher",
-    failure COPY_CHILD_VSPACE     "Failure in spawn_copy_child_vspace",
-    failure DETERMINE_CPUTYPE    "Failure in spawn_determine_cputype",
-    failure SETUP_DISPATCHER     "Failure in spawn_setup_dispatcher",
+    failure CREATE_CHILD_CSPACE "Failure in spawn_create_child_cspace",
+    failure CREATE_CHILD_VSPACE "Failure in spawn_create_child_vspace",
+    failure CHILD_CSPACE_SET_INITEP "Failure in spawn_child_cspace_set_initep",
+    failure ADD_DISPATCHER      "Failure in add_dispatcher",
+    failure COPY_CHILD_VSPACE   "Failure in spawn_copy_child_vspace",
+    failure DETERMINE_CPUTYPE   "Failure in spawn_determine_cputype",
+    failure SETUP_DISPATCHER    "Failure in spawn_setup_dispatcher",
     failure DISPATCH            "Failure in spawn_dispatch",
-    failure ELF_MAP         "Failure in spawn_elf_map",
-    failure ELF_LOAD         "Failure in spawn_elf_load",
-    failure LOCATE_ELF_BINARY         "Failure in spawn_locat_elf_binary",
-    failure LOAD_ARGV         "Failure in spawn_load_argv",
+    failure ELF_MAP             "Failure in spawn_elf_map",
+    failure ELF_LOAD            "Failure in spawn_elf_load",
+    failure LOCATE_ELF_BINARY   "Failure in spawn_locat_elf_binary",
+    failure LOAD_ARGV           "Failure in spawn_load_argv",
 
-    failure SET_CAPS         "Failure in set_special_caps",
-    failure MONEP_SLOT_ALLOC "Failure allocating a slot for monitor EP",
-    failure MONITOR_CLIENT         "Failure in monitor_client_setup",
-    failure FREE             "Failure in spawn_free",
+    failure SET_CAPS            "Failure in set_special_caps",
+    failure MONEP_SLOT_ALLOC    "Failure allocating a slot for monitor EP",
+    failure MONITOR_CLIENT      "Failure in monitor_client_setup",
+    failure FREE                "Failure in spawn_free",
 
 	failure CREATE_ELF_FRAME	"Failure creating ELF frame",
 
@@ -791,6 +791,8 @@ errors init INIT_ERR_ {
     failure COPY_IO_CAP         "Failed to copy IO cap to monitor",
     failure COPY_UMP_CAP        "Failed to copy UMP cap to monitor",
     failure NO_MATCHING_RAM_CAP "No suitably-sized RAM cap found when initialising local memory allocator",
+    failure PREPARE_SPAWN       "Failed to prepare RPC for new process",
+    failure SPAWN               "Failed to spawn process",
 };
 
 //errors in continuation management

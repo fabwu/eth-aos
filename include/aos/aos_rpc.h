@@ -17,18 +17,18 @@
 
 #include <aos/aos.h>
 
-#define AOS_RPC_BUFFER_SIZE             3*sizeof(uintptr_t)
+#define AOS_RPC_BUFFER_SIZE              3*sizeof(uintptr_t)
 
-#define AOS_RPC_MSG_SEND_NUMBER          1
-#define AOS_RPC_MSG_SEND_STRING          2
-#define AOS_RPC_MSG_GET_RAM_CAP          3
-#define AOS_RPC_MSG_FREE_RAM_CAP          4
-#define AOS_RPC_MSG_SERIAL_GETCHAR       5
-#define AOS_RPC_MSG_SERIAL_PUTCHAR       6
-#define AOS_RPC_MSG_PROCESS_SPAWN        7
-#define AOS_RPC_MSG_PROCESS_GET_NAME     8
-#define AOS_RPC_MSG_PROCESS_GET_ALL_PIDS 9
-#define AOS_RPC_MSG_GET_DEVICE_CAP       10
+#define AOS_RPC_MSG_SEND_NUMBER          0x01
+#define AOS_RPC_MSG_SEND_STRING          0x02
+#define AOS_RPC_MSG_GET_RAM_CAP          0x03
+#define AOS_RPC_MSG_FREE_RAM_CAP         0x04
+#define AOS_RPC_MSG_SERIAL_GETCHAR       0x05
+#define AOS_RPC_MSG_SERIAL_PUTCHAR       0x06
+#define AOS_RPC_MSG_PROCESS_SPAWN        0x07
+#define AOS_RPC_MSG_PROCESS_GET_NAME     0x08
+#define AOS_RPC_MSG_PROCESS_GET_ALL_PIDS 0x09
+#define AOS_RPC_MSG_GET_DEVICE_CAP       0x0a
 
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {

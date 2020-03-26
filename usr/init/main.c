@@ -28,6 +28,9 @@
 #include "mem_alloc.h"
 #include "rpc.h"
 
+#define INIT_EXECUTE_MEMORYTEST 0
+#define INIT_EXECUTE_SPAWNTEST 1
+
 struct bootinfo *bi;
 
 coreid_t my_core_id;
@@ -60,21 +63,13 @@ static int bsp_main(int argc, char *argv[])
     // Grading
     grading_test_early();
 
-    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-
-    //FIXME use explicit argument to pass initep to spawn.c
-    err = rpc_create_child_channel_to_init(&si->initep);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "couldn't create init ep for child");
-        return -1;
+    if (INIT_EXECUTE_MEMORYTEST) {
+        init_spawn("memeater");
     }
 
-    err = spawn_load_by_name("memeater", si, NULL);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't spawn memeater");
+    if (INIT_EXECUTE_SPAWNTEST) {
+        init_spawn("spawnTester");
     }
-
-    free(si);
 
     // TODO: Spawn system processes, boot second core etc. here
 
