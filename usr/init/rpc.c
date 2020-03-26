@@ -87,11 +87,26 @@ static errval_t rpc_print_number(uintptr_t number)
  * msg.words[2] == buffer 2
  * msg.words[3] == buffer 3
  */
-static errval_t rpc_print_string(uintptr_t *buf)
+static errval_t rpc_print_string(struct lmp_chan *chan, uintptr_t *buf)
 {
-    char string[AOS_RPC_BUFFER_SIZE];
-
+    const int MAX_SIZE = 1 << 12;
+    char string[1 << 12];
     memcpy(string, buf, AOS_RPC_BUFFER_SIZE);
+
+    bool finished = false;
+    for (int i = 0; i < AOS_RPC_BUFFER_SIZE; ++i) {
+        if (string[i] == '\0') {
+            finished = true;
+        }
+    }
+
+    if (!finished) {
+        errval_t err = aos_rpc_recv_string(chan, MAX_SIZE - AOS_RPC_BUFFER_SIZE, NULL,
+                                           string + AOS_RPC_BUFFER_SIZE);
+        if (err_is_fail(err)) {
+            return err;
+        }
+    }
 
     // has to be called for grading see chapter 5.10
     grading_rpc_handler_string(string);
@@ -120,7 +135,7 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
     }
 
     holder->cap = NULL_CAP;
-    holder->words[0] = 1;
+    holder->words[0] = AOS_RPC_MSG_GET_RAM_CAP;
     holder->words[1] = size;
     holder->words[2] = alignment;
     holder->words[3] = 0;
@@ -146,7 +161,7 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 
 /**
  * Allocates ram, sends capability to child
- * msg.words[0] == AOS_RPC_MSG_GET_RAM_CAP
+ * msg.words[0] == AOS_RPC_MSG_FREE_RAM_CAP
  * msg.words[1] == size
  * msg.words[2] == alignment
  * msg.words[3] == success
@@ -164,7 +179,7 @@ static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
     }
 
     holder->cap = NULL_CAP;
-    holder->words[0] = 1;
+    holder->words[0] = AOS_RPC_MSG_FREE_RAM_CAP;
     holder->words[1] = addr;
     holder->words[2] = 0;
     holder->chan = chan;
@@ -200,6 +215,8 @@ static errval_t rpc_serial_getchar(void)
  * msg.words[0] == AOS_RPC_MSG_SERIAL_PUTCHAR
  * msg.words[1] == character
  */
+// FIXME: Add line buffer, so the output of different processes does not get mixed and
+// sys_print() only gets called once per line.
 static errval_t rpc_serial_putchar(uintptr_t arg1)
 {
     char c = (char)arg1;
@@ -287,7 +304,7 @@ static void rpc_handler_recv_closure(void *arg)
             rpc_print_number(msg.words[1]);
             break;
         case AOS_RPC_MSG_SEND_STRING:
-            rpc_print_string(msg.words + 1);
+            rpc_print_string(chan, msg.words + 1);
             break;
         case AOS_RPC_MSG_GET_RAM_CAP:
             err = rpc_send_ram(chan, msg.words[1], msg.words[2]);

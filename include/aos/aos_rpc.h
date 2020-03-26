@@ -61,6 +61,11 @@ errval_t aos_rpc_send_number(struct aos_rpc *chan, uintptr_t val);
  */
 errval_t aos_rpc_send_string(struct aos_rpc *chan, const char *string);
 
+/**
+ * \brief Receive a string.
+ */
+errval_t aos_rpc_recv_string(struct lmp_chan *chan, size_t max_size, size_t *ret_size,
+                             char *string);
 
 /**
  * \brief Request a RAM capability with >= request_bits of size over the given

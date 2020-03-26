@@ -219,7 +219,8 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
         /* set remote endpoint to init's endpoint */
         chan_to_init.remote_cap = cap_initep;
 
-        // FIXME: Shouldn't be necessary
+        // Registers initial slot (in aos_rpc another slot is reserved as soon as this
+        // slot is used up)
         err = lmp_chan_alloc_recv_slot(&chan_to_init);
         if (err_is_fail(err)) {
             return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);

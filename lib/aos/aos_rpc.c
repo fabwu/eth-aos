@@ -60,6 +60,23 @@ static errval_t aos_rpc_lmp_call(struct lmp_chan *chan, uint8_t message_type,
                                  uintptr_t *ret_arg3);
 // TODO How to deal with ret values in macro?
 
+
+/**
+ * \brief Dispatch on the default waitset until the given ready bit is set.
+ */
+static errval_t aos_rpc_dispatch_until_set(bool *ready_bit) {
+    struct waitset *default_ws = get_default_waitset();
+    while (!(*ready_bit)) {
+        errval_t err = event_dispatch(default_ws);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_EVENT_DISPATCH);
+        }
+    }
+
+    return SYS_ERR_OK;
+}
+
+// TODO: Remove code duplication (there is a rpc_handler_send_closure in usr/init/rpc.c too)
 static void aos_rpc_send_closure(void *arg)
 {
     errval_t err;
@@ -100,19 +117,9 @@ static errval_t aos_rpc_lmp_send(struct lmp_chan *chan, uint8_t message_type,
     state->done = false;
 
     aos_rpc_send_closure(state);
-
-    struct waitset *default_ws = get_default_waitset();
-    while (!state->done) {
-        debug_printf("loop call\n");
-        err = event_dispatch(default_ws);
-        if (err_is_fail(err)) {
-            err = err_push(err, LIB_ERR_EVENT_DISPATCH);
-            goto out;
-        }
-    }
-
-out:
+    err = aos_rpc_dispatch_until_set(&state->done);
     free(state);
+
     return err;
 }
 
@@ -126,6 +133,7 @@ static void aos_rpc_call_recv_closure(void *arg)
     err = lmp_chan_recv(st->chan, &msg, st->ret_cap);
 
     if (err_is_ok(err)) {
+        assert(msg.words[0] == st->message_type);
         if (st->ret_cap != NULL && !capref_is_null(*st->ret_cap)) {
             err = lmp_chan_alloc_recv_slot(st->chan);
             if (err_is_fail(err)) {
@@ -158,32 +166,6 @@ static void aos_rpc_call_recv_closure(void *arg)
     DEBUG_ERR(err, "recv_closure failed hard");
 }
 
-static void aos_rpc_call_send_closure(void *arg)
-{
-    errval_t err;
-
-    struct lmp_msg_state *st = (struct lmp_msg_state *)arg;
-
-    err = lmp_chan_send4(st->chan, LMP_SEND_FLAGS_DEFAULT, st->cap, st->message_type,
-                         st->arg1, st->arg2, st->arg3);
-
-    if (err_is_ok(err)) {
-        err = lmp_chan_register_recv(st->chan, get_default_waitset(),
-                                     MKCLOSURE(aos_rpc_call_recv_closure, arg));
-        if (err_is_ok(err)) {
-            return;
-        }
-    } else if (lmp_err_is_transient(err)) {
-        err = lmp_chan_register_send(st->chan, get_default_waitset(),
-                                     MKCLOSURE(aos_rpc_call_send_closure, arg));
-        if (err_is_ok(err)) {
-            return;
-        }
-    }
-
-    DEBUG_ERR(err, "send_closure failed hard");
-}
-
 static errval_t aos_rpc_lmp_call(struct lmp_chan *chan, uint8_t message_type,
                                  struct capref cap, uintptr_t arg1, uintptr_t arg2,
                                  uintptr_t arg3, struct capref *ret_cap,
@@ -206,16 +188,19 @@ static errval_t aos_rpc_lmp_call(struct lmp_chan *chan, uint8_t message_type,
     state->ret_arg3 = ret_arg3;
     state->done = false;
 
-    aos_rpc_call_send_closure(state);
-
-    struct waitset *default_ws = get_default_waitset();
-    while (!state->done) {
-        err = event_dispatch(default_ws);
-        if (err_is_fail(err)) {
-            err = err_push(err, LIB_ERR_EVENT_DISPATCH);
-            goto out;
-        }
+    aos_rpc_send_closure(state);
+    err = aos_rpc_dispatch_until_set(&state->done);
+    if (err_is_fail(err)) {
+        goto out;
     }
+
+    state->done = false;
+    err = lmp_chan_register_recv(state->chan, get_default_waitset(),
+                                 MKCLOSURE(aos_rpc_call_recv_closure, state));
+    if(err_is_fail(err)) {
+        goto out;
+    }
+    err = aos_rpc_dispatch_until_set(&state->done);
 
 out:
     free(state);
@@ -258,18 +243,76 @@ errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)
 {
     size_t msg_len = strlen(string) + 1;
 
-    // TODO: send strings of arb. length
-    if (msg_len > AOS_RPC_BUFFER_SIZE) {
-        msg_len = AOS_RPC_BUFFER_SIZE;
+    uintptr_t buf[3];
+    size_t offset = 0;
+
+    while (offset < msg_len) {
+        size_t len = MIN(msg_len - offset, AOS_RPC_BUFFER_SIZE);
+        memcpy(buf, string + offset, len);
+        memset(buf + len, 0, AOS_RPC_BUFFER_SIZE - len);
+        offset += len;
+
+        errval_t err = aos_rpc_lmp_send3(&rpc->chan, AOS_RPC_MSG_SEND_STRING, buf[0],
+                                         buf[1], buf[2]);
+        if (err_is_fail(err)) {
+            return err;
+        }
     }
 
-    assert(msg_len <= AOS_RPC_BUFFER_SIZE);
+    return SYS_ERR_OK;
+}
 
+errval_t aos_rpc_recv_string(struct lmp_chan *chan, size_t max_size, size_t *ret_size,
+                             char *string)
+{
+    errval_t err = SYS_ERR_OK;
+    struct lmp_msg_state *state = (struct lmp_msg_state *)malloc(
+        sizeof(struct lmp_msg_state));
     uintptr_t buf[3];
-    memcpy(buf, string, msg_len);
-    memset(buf + msg_len, 0, AOS_RPC_BUFFER_SIZE - msg_len);
+    char *char_buf = (char *)buf;
 
-    return aos_rpc_lmp_send3(&rpc->chan, AOS_RPC_MSG_SEND_STRING, buf[0], buf[1], buf[2]);
+    state->chan = chan;
+    state->message_type = AOS_RPC_MSG_SEND_STRING;
+    state->ret_cap = NULL;
+    state->ret_arg1 = buf;
+    state->ret_arg2 = buf + 1;
+    state->ret_arg3 = buf + 2;
+
+    size_t offset = 0;
+    while (true) {
+        state->done = false;
+        err = lmp_chan_register_recv(state->chan, get_default_waitset(),
+                                     MKCLOSURE(aos_rpc_call_recv_closure, state));
+        if (err_is_fail(err)) {
+            goto out;
+        }
+        err = aos_rpc_dispatch_until_set(&state->done);
+        if (err_is_fail(err)) {
+            goto out;
+        }
+
+        // Copy received chars to output
+        if (offset < max_size) {
+            size_t len = MIN(max_size - offset, AOS_RPC_BUFFER_SIZE);
+            memcpy(string + offset, buf, len);
+            offset += len;
+        }
+
+        // Check for terminating char
+        for (int i = 0; i < AOS_RPC_BUFFER_SIZE; ++i) {
+            if (char_buf[i] == '\0') {
+                goto out;
+            }
+        }
+    }
+
+    if (ret_size != NULL) {
+        *ret_size = offset;
+    }
+
+out:
+    free(state);
+    return err;
 }
 
 errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment,

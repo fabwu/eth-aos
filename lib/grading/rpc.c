@@ -22,7 +22,8 @@ void grading_rpc_handler_serial_getchar(void)
 
 void grading_rpc_handler_serial_putchar(char c)
 {
-    DEBUG_PRINTF("grading_rpc_handler_serial_putchar() called with c=%c\n", c);
+    // Don't call this for sanity sake
+    // DEBUG_PRINTF("grading_rpc_handler_serial_putchar() called with c=%c\n", c);
 }
 
 void grading_rpc_handler_ram_cap(size_t bytes, size_t alignment)

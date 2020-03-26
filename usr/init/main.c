@@ -28,8 +28,8 @@
 #include "mem_alloc.h"
 #include "rpc.h"
 
-#define INIT_EXECUTE_MEMORYTEST 0
-#define INIT_EXECUTE_SPAWNTEST 1
+#define INIT_EXECUTE_MEMORYTEST 1
+#define INIT_EXECUTE_SPAWNTEST 0
 
 struct bootinfo *bi;
 
