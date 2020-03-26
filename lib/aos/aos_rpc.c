@@ -254,13 +254,25 @@ errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)
 errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment,
                              struct capref *ret_cap, size_t *ret_bytes)
 {
-    // TODO: implement functionality to request a RAM capability over the
-    // given channel and wait until it is delivered.
+    errval_t err;
+    uintptr_t ret_alignment = 0;
+    uintptr_t ret_success = 0;
+    err = aos_rpc_lmp_call(&rpc->chan, AOS_RPC_MSG_GET_RAM_CAP, NULL_CAP, bytes,
+                           alignment, 0, ret_cap, ret_bytes, &ret_alignment, &ret_success);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_LMP_CALL);
+    }
 
-    uintptr_t arg2 = 0;
-    uintptr_t arg3 = 0;
-    aos_rpc_lmp_call(&rpc->chan, AOS_RPC_MSG_GET_RAM_CAP, NULL_CAP, bytes, alignment, 0,
-                     ret_cap, ret_bytes, &arg2, &arg3);
+    // get ram cap failed
+    if (!ret_success) {
+        return AOS_ERR_RPC_GET_RAM_CAP_REMOTE_ERR;
+    }
+
+    // Didn't get what I wanted
+    if (*ret_bytes != bytes) {
+        // TODO: call aos_rpc_return_ram_cap to clean up
+        return AOS_ERR_RPC_GET_RAM_CAP_REMOTE_ERR;
+    }
 
     char buf[256];
     debug_print_cap_at_capref(buf, 256, *ret_cap);
