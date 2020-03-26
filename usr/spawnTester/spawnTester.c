@@ -46,7 +46,6 @@ static char * utostr(uint8_t i) {
 } 
 
 int main(int argc, char *argv[]) {
-    printf("hi\n");
     // get a channel to init
     process_rpc = aos_rpc_get_process_channel();
     if (!process_rpc) {

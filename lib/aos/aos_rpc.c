@@ -387,21 +387,21 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
 
     // TODO (M5): Send request to correct core
 
-    size_t msg_len = strlen(cmdline) + 1;
-
-    // TODO: send strings of arb. length
-    if (msg_len > AOS_RPC_BUFFER_SIZE) {
-        return LIB_ERR_NOT_IMPLEMENTED;
+    err = aos_rpc_lmp_send0(&rpc->chan, AOS_RPC_MSG_PROCESS_SPAWN);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_LMP_CALL);
     }
 
-    assert(msg_len <= AOS_RPC_BUFFER_SIZE);
+    err = aos_rpc_send_string(rpc, cmdline);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_LMP_CALL);
+    }
 
-    uintptr_t buf[3];
-    memcpy(buf, cmdline, msg_len);
-    memset(buf + msg_len, 0, AOS_RPC_BUFFER_SIZE - msg_len);
-
-    err = aos_rpc_lmp_call(&rpc->chan, AOS_RPC_MSG_PROCESS_SPAWN, NULL_CAP, buf[0],
-                           buf[1], buf[2], NULL, &ret_pid, &ret_success, NULL);
+    // TODO: Could change to receive only instead of call
+    //       (Change on server side too if changing!)
+    // Get pid and success information
+    err = aos_rpc_lmp_call(&rpc->chan, AOS_RPC_MSG_PROCESS_SPAWN, NULL_CAP, 0,
+                           0, 0, NULL, &ret_pid, &ret_success, NULL);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_LMP_CALL);
     }

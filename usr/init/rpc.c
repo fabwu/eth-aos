@@ -88,7 +88,7 @@ static errval_t rpc_print_number(uintptr_t number)
 static errval_t rpc_print_string(struct lmp_chan *chan, uintptr_t *buf)
 {
     const int MAX_SIZE = 1 << 12;
-    char string[1 << 12];
+    char string[MAX_SIZE];
     memcpy(string, buf, AOS_RPC_BUFFER_SIZE);
 
     bool finished = false;
@@ -237,12 +237,19 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
  * msg.words[1] == pid
  * msg.words[2] == success
  */
-static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *buf) {
+static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     errval_t err;
 
     // FIXME: Pass large strings and core id
     // FIXME: Split name from command line arguments
-    char *name = (char *)buf;
+    const int MAX_SIZE = 512;
+    char cmdline[MAX_SIZE];
+    errval_t err = aos_rpc_recv_string(chan, MAX_SIZE, NULL, cmdline);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    char *name = cmdline;
     // HOTFIX
     for (int i = 1; i < AOS_RPC_BUFFER_SIZE; ++i) {
         if (name[i] == ' ') {
@@ -250,7 +257,8 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *buf) {
             break;
         }
     }
-    DEBUG_PRINTF("Spawn: %s\n", name);
+
+    grading_rpc_handler_process_spawn(name, disp_get_core_id());
 
     struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
         sizeof(struct lmp_msg_holder));
@@ -270,7 +278,6 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan, uintptr_t *buf) {
     holder->words[2] = err_is_ok(err);
     holder->chan = chan;
 
-    grading_rpc_handler_process_spawn(name, disp_get_core_id());
 
     rpc_handler_send_closure(holder);
 
@@ -329,7 +336,7 @@ static void rpc_handler_recv_closure(void *arg)
             break;
         case AOS_RPC_MSG_PROCESS_SPAWN:
             // TODO: Handle large string
-            err = rpc_spawn_process(chan, msg.words + 1);
+            err = rpc_spawn_process(chan);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Failed to spawn process in rpc_spawn_process()");
             }
