@@ -5,8 +5,11 @@
 
 #include "rpc.h"
 
-#define DEBUG_RPC_SETUP 0
-
+#if 0
+#    define DEBUG_RPC_SETUP(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_RPC_SETUP(fmt...) ((void)0)
+#endif
 
 errval_t init_spawn(char *name, domainid_t *pid) {
     errval_t err;
@@ -38,21 +41,17 @@ static void rpc_handler_send_closure(void *arg)
                          holder->words[0], holder->words[1], holder->words[2],
                          holder->words[3]);
 
-#if DEBUG_RPC_SETUP
-    debug_printf("rpc_handler_send_closure called!\n");
-#endif
+    DEBUG_RPC_SETUP("rpc_handler_send_closure called!\n");
 
     if (err_is_ok(err)) {
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_handler_send_closure success!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_handler_send_closure success!\n");
+
         free(holder);
 
         return;
     } else if (lmp_err_is_transient(err)) {
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_handler_send_closure retry!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_handler_send_closure retry!\n");
+
         // Want to receive further messages
         err = lmp_chan_register_send(holder->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_handler_send_closure, arg));
@@ -289,9 +288,8 @@ static void rpc_handler_recv_closure(void *arg)
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
     err = lmp_chan_recv(chan, &msg, &cap);
-#if DEBUG_RPC_SETUP
-    debug_printf("rpc_handler_recv_closure called!\n");
-#endif
+
+    DEBUG_RPC_SETUP("rpc_handler_recv_closure called!\n");
 
     if (err_is_ok(err)) {
         // cap.cnode == NULL_CNODE
@@ -348,9 +346,8 @@ static void rpc_handler_recv_closure(void *arg)
             goto fail;
         }
 
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_handler_recv_closure success!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_handler_recv_closure success!\n");
+
         return;
     } else if (lmp_err_is_transient(err)) {
         // Want to receive further messages
@@ -360,9 +357,8 @@ static void rpc_handler_recv_closure(void *arg)
             goto fail;
         }
 
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_handler_recv_closure retry!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_handler_recv_closure retry!\n");
+
         return;
     }
 
@@ -380,14 +376,10 @@ static void rpc_setup_send_closure(void *arg)
     // Bump child that this channel is now ready
     err = lmp_ep_send1(node->chan.remote_cap, LMP_SEND_FLAGS_DEFAULT, NULL_CAP, 0);
 
-#if DEBUG_RPC_SETUP
-    debug_printf("rpc_setup_send_closure called!\n");
-#endif
+    DEBUG_RPC_SETUP("rpc_setup_send_closure called!\n");
 
     if (err_is_ok(err)) {
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_setup_send_closure success!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_setup_send_closure success!\n");
 
         // Channel to child is setup, switch to child handler
         err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
@@ -396,9 +388,8 @@ static void rpc_setup_send_closure(void *arg)
             return;
         }
     } else if (lmp_err_is_transient(err)) {
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_setup_send_closure retry!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_setup_send_closure retry!\n");
+
         // Want to receive further messages
         err = lmp_chan_register_send(&node->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_setup_send_closure, arg));
@@ -423,9 +414,7 @@ static void rpc_setup_recv_closure(void *arg)
     struct capref cap;
     err = lmp_chan_recv(&node->chan, &msg, &cap);
 
-#if DEBUG_RPC_SETUP
-    debug_printf("rpc_setup_recv_closure called!\n");
-#endif
+    DEBUG_RPC_SETUP("rpc_setup_recv_closure called!\n");
 
     // Got message
     if (err_is_ok(err)) {
@@ -440,18 +429,14 @@ static void rpc_setup_recv_closure(void *arg)
             goto fail;
         }
 
-#if DEBUG_RPC_SETUP
-        // FIXME: shouldn't this loop in usr/init/main.c not also just execute a send close?
-        debug_printf("rpc_setup_recv_closure success!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_setup_recv_closure success!\n");
 
         rpc_setup_send_closure(arg);
 
         return;
     } else if (lmp_err_is_transient(err)) {
-#if DEBUG_RPC_SETUP
-        debug_printf("rpc_setup_recv_closure retry!\n");
-#endif
+        DEBUG_RPC_SETUP("rpc_setup_recv_closure retry!\n");
+
         // Want to receive further messages
         err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_setup_recv_closure, arg));

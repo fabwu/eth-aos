@@ -23,6 +23,25 @@
 
 // TODO: switch from slot_alloc to the slot alloc given by paging_init_state
 
+#if 0
+#    define DEBUG_ADDR_MGR(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_ADDR_MGR(fmt...) ((void)0)
+#endif
+
+#if 0
+#    define DEBUG_PAGING(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_PAGING(fmt...) ((void)0)
+#endif
+
+#if 0
+#    define DEBUG_PAGING_FINE(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_PAGING_FINE(fmt...) ((void)0)
+#endif
+
+
 static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
@@ -61,9 +80,8 @@ static void addr_mgr_add_node(struct addr_mgr_state *st, struct addr_mgr_node *p
 static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensize_t size,
                                gensize_t alignment)
 {
-#ifdef DEBUG_ADDR_MGR
-    debug_printf("addr_mgr_alloc begin\n");
-#endif
+    DEBUG_ADDR_MGR("addr_mgr_alloc begin\n");
+
     // TODO: Handle alignment
     assert(alignment == BASE_PAGE_SIZE);
     assert(size > 0);
@@ -107,9 +125,8 @@ static errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensi
             st->is_slabs_refilling = 0;
         }
 
-#ifdef DEBUG_ADDR_MGR
-        debug_printf("addr_mgr_alloc end\n");
-#endif
+        DEBUG_ADDR_MGR("addr_mgr_alloc end\n");
+
         return SYS_ERR_OK;
     } else {
         // Didn't get an address, free again
@@ -522,7 +539,8 @@ errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **ret
         return LIB_ERR_VSPACE_MMU_AWARE_NO_SPACE;
     }
 
-    errval_t err = paging_region_lazy_alloc(get_current_paging_state(), pr, pr->current_addr + *ret_size);
+    errval_t err = paging_region_lazy_alloc(get_current_paging_state(), pr,
+                                            pr->current_addr + *ret_size);
     if (err_is_fail(err)) {
         *retbuf = NULL;
         *ret_size = 0;
@@ -642,9 +660,8 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
                          int slot, struct paging_state *st, struct capref *frame,
                          size_t offset, int flags)
 {
-#ifdef DEBUG_PAGING
-    debug_printf("map_some begin\n");
-#endif
+    DEBUG_PAGING("map_some begin\n");
+
     errval_t err = 0;
     struct paging_node *node = find_some(*head, slot);
     if (node == NULL) {
@@ -700,9 +717,7 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
 
     *ret = node;
 
-#ifdef DEBUG_PAGING
-    debug_printf("map_some end\n");
-#endif
+    DEBUG_PAGING("map_some end\n");
 
     return SYS_ERR_OK;
 }
@@ -711,15 +726,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
                                           struct capref frame, size_t bytes,
                                           size_t offset, int flags)
 {
-#ifdef DEBUG_PAGING
-    debug_printf("paging_map_fixed_attr_one begin\n");
-#endif
-    /**
-     * \brief map a user provided frame at user provided VA.
-     * TODO(M1): Map a frame assuming all mappings will fit into one last level pt
-     * TODO(M2): General case
-     */
-
+    DEBUG_PAGING("paging_map_fixed_attr_one begin\n");
     errval_t err;
 
     // Only one page at the time
@@ -733,11 +740,10 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
-#ifdef DEBUG_PAGING_FINE
-    debug_printf("map l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: %" PRIu64 ""
-                 " addr: 0x%" PRIx64 "\n",
-                 l0_slot, l1_slot, l2_slot, l3_slot, vaddr);
-#endif
+
+    DEBUG_PAGING_FINE("map l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: %" PRIu64 ""
+                      " addr: 0x%" PRIx64 "\n",
+                      l0_slot, l1_slot, l2_slot, l3_slot, vaddr);
 
     struct paging_node *node_l1;
     err = map_some(&node_l1, &st->l0, NULL, 1, st->l0_pt, l0_slot, st, NULL, 0,
@@ -774,9 +780,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     assert(node_l3->child == node_l4);
     assert(node_l4->child == NULL);
 
-#ifdef DEBUG_PAGING
-    debug_printf("paging_map_fixed_attr_one middle\n");
-#endif
+    DEBUG_PAGING("paging_map_fixed_attr_one middle\n");
 
     // TODO: Needs to be member, my have multiple state
     static size_t is_refilling = 0;
@@ -795,9 +799,7 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     // Assumption: looking at two_level_alloc, slot_allocator underlying
     // slot_alloc seems already designed to not trigger a recursion
     // Search for two_level_allo, or generally look under lib/aos/slot_alloc
-#ifdef DEBUG_PAGING
-    debug_printf("paging_map_fixed_attr_one end\n");
-#endif
+    DEBUG_PAGING("paging_map_fixed_attr_one end\n");
 
     return SYS_ERR_OK;
 }
@@ -805,9 +807,8 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
                                struct capref frame, size_t bytes, int flags)
 {
-#ifdef DEBUG_PAGING
-    debug_printf("paging_map_fixed_attr begin\n");
-#endif
+    DEBUG_PAGING("paging_map_fixed_attr begin\n");
+
     // TODO: Inefficient, but correct
     errval_t err;
 
@@ -828,9 +829,7 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
             return err;
     }
 
-#ifdef DEBUG_PAGING
-    debug_printf("paging_map_fixed_attr end\n");
-#endif
+    DEBUG_PAGING("paging_map_fixed_attr end\n");
 
     return SYS_ERR_OK;
 }
@@ -847,11 +846,9 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
     uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
-#ifdef DEBUG_PAGING_FINE
-    debug_printf("unmap l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: "
-                 "%" PRIu64 " addr: 0x%" PRIx64 "\n",
-                 l0_slot, l1_slot, l2_slot, l3_slot);
-#endif
+    DEBUG_PAGING_FINE("unmap l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: "
+                      "%" PRIu64 " addr: 0x%" PRIx64 "\n",
+                      l0_slot, l1_slot, l2_slot, l3_slot);
 
     struct paging_node *node_l1 = find_some(st->l0, l0_slot);
     assert(node_l1 != NULL);

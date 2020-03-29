@@ -31,6 +31,12 @@
 #include "threads_priv.h"
 #include "init.h"
 
+#if 0
+#    define DEBUG_INIT_SETUP_RPC(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_INIT_SETUP_RPC(fmt...) ((void)0)
+#endif
+
 /// Are we the init domain (and thus need to take some special paths)?
 static bool init_domain;
 
@@ -124,8 +130,6 @@ void barrelfish_libc_glue_init(void)
 
 static int got_pong;
 
-#define DEBUG_INIT_SETUP_RPC 0
-
 static void barrelfish_recv_init_closure(void *arg)
 {
     errval_t err;
@@ -133,23 +137,18 @@ static void barrelfish_recv_init_closure(void *arg)
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     err = lmp_chan_recv(lc, &msg, NULL);
 
-#if DEBUG_INIT_SETUP_RPC
-    DEBUG_PRINTF("recv init called!\n");
-#endif
+    DEBUG_INIT_SETUP_RPC("recv init called!\n");
 
     // Got message
     if (err_is_ok(err)) {
-#if DEBUG_INIT_SETUP_RPC
-        DEBUG_PRINTF("recv init success!\n");
-#endif
+        DEBUG_INIT_SETUP_RPC("recv init success!\n");
 
         got_pong = 1;
 
         return;
     } else if (lmp_err_is_transient(err)) {
-#if DEBUG_INIT_SETUP_RPC
-        DEBUG_PRINTF("recv init retry!\n");
-#endif
+        DEBUG_INIT_SETUP_RPC("recv init retry!\n");
+
         // Want to receive further messages
         err = lmp_chan_register_recv(lc, get_default_waitset(),
                                      MKCLOSURE(barrelfish_recv_init_closure, arg));
