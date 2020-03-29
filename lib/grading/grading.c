@@ -407,6 +407,7 @@ static void test_rpc(void)
 
 #define TEST_PAGING 0
 #define TEST_PAGING_REGION 0
+#define TEST_PAGE_FAULT 0
 #define TEST_SPAWN 0
 
 void grading_test_early(void)
@@ -423,6 +424,12 @@ void grading_test_early(void)
         test_paging_region_default();
         test_paging_region_special_cases();
         DEBUG_PRINTF("End testing paging regions\n");
+    }
+
+    if (TEST_PAGE_FAULT) {
+        char *test = (char *)0x4000000;
+        //char *test = NULL;
+        DEBUG_PRINTF("%p\n", *test);
     }
 
     if (TEST_SPAWN) {

@@ -41,11 +41,13 @@
 #    define DEBUG_PAGING_FINE(fmt...) ((void)0)
 #endif
 
-
 static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
 static char addr_mgr_node_buf[sizeof(struct addr_mgr_node) * 64];
+
+#define EX_STACK_SIZE (1 << 14)
+static char ex_stack[EX_STACK_SIZE];
 
 static void addr_mgr_add_node(struct addr_mgr_state *st, struct addr_mgr_node *prev,
                               struct addr_mgr_node *new)
@@ -345,6 +347,13 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
                              addr_mgr_slabs);
 }
 
+static void exception_handler(enum exception_type type, int subtype, void *addr,
+                              arch_registers_state_t *regs)
+{
+    //FIXME Handle page fault
+    USER_PANIC("type %d subtype %d addr %p\n", type, subtype, addr);
+}
+
 /**
  * \brief This function initializes the paging for this domain
  * It is called once before main.
@@ -383,6 +392,11 @@ errval_t paging_init(void)
                       paging_slabs, addr_mgr_slabs);
 
     set_current_paging_state(&current);
+
+    static char *ex_stack_top = ex_stack + EX_STACK_SIZE;
+    thread_set_exception_handler(exception_handler, NULL, ex_stack, ex_stack_top, NULL,
+                                 NULL);
+
     return SYS_ERR_OK;
 }
 
