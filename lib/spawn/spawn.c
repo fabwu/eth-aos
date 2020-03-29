@@ -393,21 +393,19 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     struct capref frame_cap;
     void *ptr_frame, *ptr_frame_child;
     struct spawn_domain_params *params;
+    struct paging_state *st = get_current_paging_state();
     errval_t err;
 
     /* allocate args page */
     err = frame_alloc(&frame_cap, BASE_PAGE_SIZE, NULL);
     if (err_is_fail(err)) {
-        return err;
+        return err_push(err, LIB_ERR_FRAME_ALLOC);
     }
 
-    // TODO: unmap from our space again
-
     /* map args page into our vspace so we can write to it */
-    err = paging_map_frame(get_current_paging_state(), &ptr_frame, BASE_PAGE_SIZE,
-                           frame_cap, NULL, NULL);
+    err = paging_map_frame(st, &ptr_frame, BASE_PAGE_SIZE, frame_cap, NULL, NULL);
     if (err_is_fail(err)) {
-        return err;
+        return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
     }
 
     /* set up child's cap to args page */
@@ -422,7 +420,7 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     err = paging_map_frame_attr(&si->paging, &ptr_frame_child, BASE_PAGE_SIZE, frame_cap,
                                 VREGION_FLAGS_READ, NULL, NULL);
     if (err_is_fail(err)) {
-        return err;
+        return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
     }
     si->child_args_addr = (lvaddr_t)ptr_frame_child;
 
@@ -453,7 +451,11 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
         *strp += offset;
     }
 
-    // TODO better error handling
+    /* unmap args page from our vspace */
+    err = paging_unmap(st, (lvaddr_t)ptr_frame, frame_cap, BASE_PAGE_SIZE);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_UNMAP);
+    }
 
     return SYS_ERR_OK;
 }
