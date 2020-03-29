@@ -56,7 +56,6 @@ static void rpc_handler_send_closure(void *arg)
         err = lmp_chan_register_send(holder->chan, get_default_waitset(),
                                      MKCLOSURE(rpc_handler_send_closure, arg));
         if (err_is_ok(err)) {
-            free(holder);
             return;
         }
     }
