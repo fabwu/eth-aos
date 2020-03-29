@@ -704,6 +704,8 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
         return err_push(err, LIB_ERR_PAGING_UNMAP);
     }
 
+    free_argv(argv, argv_str);
+
     return SYS_ERR_OK;
 }
 

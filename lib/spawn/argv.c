@@ -89,3 +89,11 @@ char ** make_argv(const char *cmdline, int *_argc, char **buf) {
     *_argc= argc;
     return argv;
 }
+
+/**
+ * \brief Free memory allocated by make_argv
+ */
+void free_argv(char **argv, char *buf) {
+    free(argv);
+    free(buf);
+}

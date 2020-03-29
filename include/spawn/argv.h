@@ -5,4 +5,6 @@
 // Returns a (modified) copy of cmdline in *buf.
 char **make_argv(const char *cmdline, int *_argc, char **buf);
 
+void free_argv(char **argv, char *buf);
+
 #endif /* __SPAWN_ARGV_H */
