@@ -26,9 +26,6 @@ struct spawninfo {
     // Information about the binary
     char *binary_name;  // Name of the binary
 
-    char *argv_str;
-    size_t argv_str_len;
-
     void *module_base;
     size_t module_size;
 

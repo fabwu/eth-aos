@@ -393,8 +393,6 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     struct capref frame_cap;
     void *ptr_frame, *ptr_frame_child;
     struct spawn_domain_params *params;
-    int argv_array_size = MAX_CMDLINE_ARGS + 1;
-    int64_t offset;
     errval_t err;
 
     /* allocate args page */
@@ -439,16 +437,21 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     params->pagesize = BASE_PAGE_SIZE;
 
     /* put argument strings after struct */
-    void *argv_str_base = ptr_frame + sizeof(*params);
-    void *argv_str_base_child = ptr_frame_child + sizeof(*params);
-    memcpy(argv_str_base, si->argv_str, si->argv_str_len);
-
-    /* fill argv */
-    offset = argv_str_base_child - (void *)si->argv_str;
+    void *argv_str = ptr_frame + sizeof(*params);
     for (char **strp = argv; *strp; strp++) {
+        size_t str_len = strlen(*strp) + 1;
+        assert(argv_str + str_len <= ptr_frame + BASE_PAGE_SIZE);
+        memcpy(argv_str, *strp, str_len);
+        argv_str += str_len;
+    }
+
+    /* fill argv, offseting pointers into child vspace */
+    void *argv_str_child = ptr_frame_child + sizeof(*params);
+    ssize_t offset = argv_str_child - (void *)argv[0];
+    memcpy(params->argv, argv, MAX_CMDLINE_ARGS * sizeof(char *));
+    for (const char **strp = params->argv; *strp; strp++) {
         *strp += offset;
     }
-    memcpy(params->argv, argv, argv_array_size);
 
     // TODO better error handling
 
@@ -666,10 +669,6 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     if (argv == NULL) {
         return SPAWN_ERR_GET_CMDLINE_ARGS;
     }
-
-    // TODO Build string in argv
-    si->argv_str = argv_str;
-    si->argv_str_len = strnlen(args, PATH_MAX + 1) + 1;  // see make_argv
 
     assert(argc > 0);
 
