@@ -49,22 +49,30 @@ errval_t lmp_protocol_recv(struct lmp_chan *chan, uint16_t message_type,
 
 errval_t lmp_protocol_send_bytes_cap(struct lmp_chan *chan, uint16_t message_type,
                                      struct capref cap, size_t size, const uint8_t *bytes);
-errval_t lmp_protocol_recv_bytes_cap(struct lmp_chan *chan, uint16_t message_type,
-                                     struct capref *ret_cap, size_t *ret_size,
-                                     uint8_t **ret_bytes);
+errval_t lmp_protocol_recv_bytes_cap_la(struct lmp_chan *chan, uint16_t message_type,
+                                        struct capref *ret_cap, size_t *ret_size,
+                                        uint8_t **ret_bytes,
+                                        struct lmp_recv_msg *lookahead);
 #define lmp_protocol_send_bytes(chan, msg_type, size, bytes)                             \
     lmp_protocol_send_bytes_cap((chan), (msg_type), NULL_CAP, (size), (bytes))
+#define lmp_protocol_recv_bytes_cap(chan, msg_type, ret_cap, ret_size, ret_bytes)        \
+    lmp_protocol_recv_bytes_cap_la((chan), (msg_type), (ret_cap), (ret_size),            \
+                                   (ret_bytes), NULL)
 #define lmp_protocol_recv_bytes(chan, msg_type, ret_size, ret_bytes)                     \
-    lmp_protocol_recv_bytes_cap((chan), (msg_type), NULL, (ret_size), (ret_bytes))
+    lmp_protocol_recv_bytes_cap_la((chan), (msg_type), NULL, (ret_size), (ret_bytes),    \
+                                   NULL)
 
 errval_t lmp_protocol_send_string_cap(struct lmp_chan *chan, uint16_t message_type,
                                       struct capref cap, const char *string);
-errval_t lmp_protocol_recv_string_cap(struct lmp_chan *chan, uint16_t message_type,
-                                      struct capref *ret_cap, char **ret_string);
+errval_t lmp_protocol_recv_string_cap_la(struct lmp_chan *chan, uint16_t message_type,
+                                         struct capref *ret_cap, char **ret_string,
+                                         struct lmp_recv_msg *lookahead);
 #define lmp_protocol_send_string(chan, msg_type, string)                                 \
     lmp_protocol_send_string_cap((chan), (msg_type), NULL_CAP, (string))
+#define lmp_protocol_recv_string_cap(chan, msg_type, ret_cap, ret_string)                \
+    lmp_protocol_recv_string_cap_la((chan), (msg_type), (ret_cap), (ret_string), NULL)
 #define lmp_protocol_recv_string(chan, msg_type, ret_string)                             \
-    lmp_protocol_recv_string_cap((chan), (msg_type), NULL, (ret_string))
+    lmp_protocol_recv_string_cap_la((chan), (msg_type), NULL, (ret_string), NULL)
 
 
 #endif

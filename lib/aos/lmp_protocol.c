@@ -27,6 +27,7 @@ static struct lmp_msg_state make_lmp_msg_state(struct lmp_chan *chan,
     struct lmp_msg_state state;
     state.chan = chan;
     state.message_type = message_type;
+    state.cap = cap;
     state.data[0] = arg1;
     state.data[1] = arg2;
     state.data[2] = arg3;
@@ -245,7 +246,6 @@ errval_t lmp_protocol_send_bytes_cap(struct lmp_chan *chan, uint16_t message_typ
         }
     }
 
-    assert(offset == size);
     return SYS_ERR_OK;
 }
 
@@ -256,19 +256,30 @@ errval_t lmp_protocol_send_bytes_cap(struct lmp_chan *chan, uint16_t message_typ
  * protocol described there. The returned array is allocated using malloc and has to be
  * freed by the client after it is no longer used.
  */
-errval_t lmp_protocol_recv_bytes_cap(struct lmp_chan *chan, uint16_t message_type,
-                                     struct capref *ret_cap, size_t *ret_size,
-                                     uint8_t **ret_bytes)
+errval_t lmp_protocol_recv_bytes_cap_la(struct lmp_chan *chan, uint16_t message_type,
+                                        struct capref *ret_cap, size_t *ret_size,
+                                        uint8_t **ret_bytes,
+                                        struct lmp_recv_msg *lookahead)
 {
+    errval_t err;
+
     assert((message_type & 0xff00) && (message_type & 0xff));
     assert(ret_bytes != NULL);
     struct lmp_msg_state state;
     state.chan = chan;
     state.message_type = message_type;
 
-    errval_t err = lmp_protocol_recv_state(&state);
-    if (err_is_fail(err)) {
-        return err;
+    if (lookahead != NULL) {
+        // Use lookahead message instead of receiving a new message
+        assert(message_type == lookahead->words[0]);
+        state.data[0] = lookahead->words[1];
+        state.data[1] = lookahead->words[2];
+        state.data[2] = lookahead->words[3];
+    } else {
+        err = lmp_protocol_recv_state(&state);
+        if (err_is_fail(err)) {
+            return err;
+        }
     }
 
     if (ret_cap != NULL) {
@@ -288,6 +299,7 @@ errval_t lmp_protocol_recv_bytes_cap(struct lmp_chan *chan, uint16_t message_typ
     while (offset < size) {
         err = lmp_protocol_recv_state(&state);
         if (err_is_fail(err)) {
+            free(*ret_bytes);
             return err;
         }
 
@@ -296,7 +308,6 @@ errval_t lmp_protocol_recv_bytes_cap(struct lmp_chan *chan, uint16_t message_typ
         offset += recv_size;
     }
 
-    assert(offset == size);
     return SYS_ERR_OK;
 }
 
@@ -317,9 +328,10 @@ errval_t lmp_protocol_send_string_cap(struct lmp_chan *chan, uint16_t message_ty
  * The returned string is allocated using malloc and has to be freed by the client after
  * it is no longer used.
  */
-errval_t lmp_protocol_recv_string_cap(struct lmp_chan *chan, uint16_t message_type,
-                                      struct capref *ret_cap, char **ret_string)
+errval_t lmp_protocol_recv_string_cap_la(struct lmp_chan *chan, uint16_t message_type,
+                                         struct capref *ret_cap, char **ret_string,
+                                         struct lmp_recv_msg *lookahead)
 {
-    return lmp_protocol_recv_bytes_cap(chan, message_type, ret_cap, NULL,
-                                       (uint8_t **)ret_string);
+    return lmp_protocol_recv_bytes_cap_la(chan, message_type, ret_cap, NULL,
+                                          (uint8_t **)ret_string, lookahead);
 }

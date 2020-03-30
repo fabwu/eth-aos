@@ -4,6 +4,8 @@
  */
 
 #include "rpc.h"
+#include <aos/lmp_protocol.h>
+#include <spawn/argv.h>
 
 #if 0
 #    define DEBUG_RPC_SETUP(fmt...) debug_printf(fmt);
@@ -31,38 +33,6 @@ errval_t init_spawn(char *name, domainid_t *pid) {
     return SYS_ERR_OK;
 }
 
-
-static void rpc_handler_send_closure(void *arg)
-{
-    errval_t err;
-    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)arg;
-    // Bump child that this channel is now ready
-    err = lmp_chan_send4(holder->chan, LMP_SEND_FLAGS_DEFAULT, holder->cap,
-                         holder->words[0], holder->words[1], holder->words[2],
-                         holder->words[3]);
-
-    DEBUG_RPC_SETUP("rpc_handler_send_closure called!\n");
-
-    if (err_is_ok(err)) {
-        DEBUG_RPC_SETUP("rpc_handler_send_closure success!\n");
-
-        free(holder);
-
-        return;
-    } else if (lmp_err_is_transient(err)) {
-        DEBUG_RPC_SETUP("rpc_handler_send_closure retry!\n");
-
-        // Want to receive further messages
-        err = lmp_chan_register_send(holder->chan, get_default_waitset(),
-                                     MKCLOSURE(rpc_handler_send_closure, arg));
-        if (err_is_ok(err)) {
-            return;
-        }
-    }
-
-    DEBUG_ERR(err, "rpc_handler_send_closure failed hard!\n");
-}
-
 /**
  * Receives a number
  * msg.words[0] == AOS_RPC_MSG_SEND_NUMBER
@@ -85,30 +55,19 @@ static errval_t rpc_print_number(uintptr_t number)
  * msg.words[2] == buffer 2
  * msg.words[3] == buffer 3
  */
-static errval_t rpc_print_string(struct lmp_chan *chan, uintptr_t *buf)
+static errval_t rpc_print_string(struct lmp_chan *chan, struct lmp_recv_msg *lookahead)
 {
-    const int MAX_SIZE = 1 << 12;
-    char string[MAX_SIZE];
-    memcpy(string, buf, AOS_RPC_BUFFER_SIZE);
-
-    bool finished = false;
-    for (int i = 0; i < AOS_RPC_BUFFER_SIZE; ++i) {
-        if (string[i] == '\0') {
-            finished = true;
-        }
-    }
-
-    if (!finished) {
-        errval_t err = aos_rpc_recv_string(chan, MAX_SIZE - AOS_RPC_BUFFER_SIZE, NULL,
-                                           string + AOS_RPC_BUFFER_SIZE);
-        if (err_is_fail(err)) {
-            return err;
-        }
+    char *string;
+    errval_t err = lmp_protocol_recv_string_cap_la(chan, AOS_RPC_SEND_STRING, NULL,
+                                                   &string, lookahead);
+    if (err_is_fail(err)) {
+        return err;
     }
 
     // has to be called for grading see chapter 5.10
     grading_rpc_handler_string(string);
 
+    free(string);
     return SYS_ERR_OK;
 }
 
@@ -121,77 +80,54 @@ static errval_t rpc_print_string(struct lmp_chan *chan, uintptr_t *buf)
  */
 static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignment)
 {
-    errval_t err = SYS_ERR_OK;
+    errval_t err;
 
     // has to be called for grading see chapter 5.10
     grading_rpc_handler_ram_cap(size, alignment);
-
-    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
-        sizeof(struct lmp_msg_holder));
-    if (holder == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
-
-    holder->cap = NULL_CAP;
-    holder->words[0] = AOS_RPC_MSG_GET_RAM_CAP;
-    holder->words[1] = size;
-    holder->words[2] = alignment;
-    holder->words[3] = 0;
-    holder->chan = chan;
 
     struct capref ram_cap;
     err = slot_alloc(&ram_cap);
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_SLOT_ALLOC);
+        goto out;
     }
+
     err = ram_alloc_aligned(&ram_cap, size, alignment);
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_RAM_ALLOC_ALIGNED);
-    } else {
-        holder->cap = ram_cap;
-        holder->words[3] = 1;
+        goto out;
     }
 
-    rpc_handler_send_closure(holder);
-
-    return err;
+out:
+    if (err_is_ok(err)) {
+        lmp_protocol_send_cap3(chan, AOS_RPC_GET_RAM_CAP, ram_cap, size, alignment, true);
+        return SYS_ERR_OK;
+    } else {
+        lmp_protocol_send_cap3(chan, AOS_RPC_GET_RAM_CAP, NULL_CAP, 0, alignment, false);
+        return err;
+    }
 }
 
 /**
  * Allocates ram, sends capability to child
  * msg.words[0] == AOS_RPC_MSG_FREE_RAM_CAP
- * msg.words[1] == size
- * msg.words[2] == alignment
- * msg.words[3] == success
+ * msg.words[1] == addr
+ * msg.words[2] == success
  */
 // FIXME: Add mechanism so processes can only free their only ram, why we can't get the
 // capability here is because of fram_free
 static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
 {
-    errval_t err = SYS_ERR_OK;
-
-    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
-        sizeof(struct lmp_msg_holder));
-    if (holder == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
-
-    holder->cap = NULL_CAP;
-    holder->words[0] = AOS_RPC_MSG_FREE_RAM_CAP;
-    holder->words[1] = addr;
-    holder->words[2] = 0;
-    holder->chan = chan;
+    errval_t err;
 
     err = ram_free(addr);
-    if (err_is_fail(err)) {
-        err = err_push(err, LIB_ERR_RAM_FREE);
+    if (err_is_ok(err)) {
+        lmp_protocol_send2(chan, AOS_RPC_FREE_RAM_CAP, addr, true);
+        return SYS_ERR_OK;
     } else {
-        holder->words[2] = 1;
+        lmp_protocol_send2(chan, AOS_RPC_FREE_RAM_CAP, 0, false);
+        return err_push(err, LIB_ERR_RAM_FREE);
     }
-
-    rpc_handler_send_closure(holder);
-
-    return err;
 }
 
 /**
@@ -240,25 +176,25 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
 static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     errval_t err;
 
-    // FIXME: Pass large strings and core id
-    // FIXME: Split name from command line arguments
-    const int MAX_SIZE = 512;
-    char cmdline[MAX_SIZE];
-    errval_t err = aos_rpc_recv_string(chan, MAX_SIZE, NULL, cmdline);
+    // FIXME: Pass core id
+    char *cmdline;
+    err = lmp_protocol_recv_string(chan, AOS_RPC_PROCESS_SPAWN_CMD, &cmdline);
     if (err_is_fail(err)) {
         return err;
     }
 
-    char *name = cmdline;
-    // HOTFIX
-    for (int i = 1; i < AOS_RPC_BUFFER_SIZE; ++i) {
-        if (name[i] == ' ') {
-            name[i] = '\0';
-            break;
+    int argc;
+    char *buf;
+    char **argv = make_argv(cmdline, &argc, &buf);
+    if (argc < 1) {
+        err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, 0, false);
+        if (err_is_fail(err)) {
+            return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
         }
+        return AOS_ERR_RPC_SPAWN_PROCESS;
     }
 
-    grading_rpc_handler_process_spawn(name, disp_get_core_id());
+    grading_rpc_handler_process_spawn(argv[0], disp_get_core_id());
 
     struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
         sizeof(struct lmp_msg_holder));
@@ -266,20 +202,17 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan) {
         return LIB_ERR_MALLOC_FAIL;
     }
 
+    // FIXME: Pass arguments process spawn
     domainid_t pid;
-    err = init_spawn(name, &pid);
+    err = init_spawn(argv[0], &pid);
     if (err_is_fail(err)) {
         return err;
     }
 
-    holder->cap = NULL_CAP;
-    holder->words[0] = AOS_RPC_MSG_PROCESS_SPAWN;
-    holder->words[1] = pid;
-    holder->words[2] = err_is_ok(err);
-    holder->chan = chan;
-
-
-    rpc_handler_send_closure(holder);
+    err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, pid, true);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+    }
 
     return SYS_ERR_OK;
 }
@@ -304,37 +237,37 @@ static void rpc_handler_recv_closure(void *arg)
         }
         uintptr_t message_type = msg.words[0];
         switch (message_type) {
-        case AOS_RPC_MSG_SEND_NUMBER:
+        case AOS_RPC_SEND_NUMBER:
             rpc_print_number(msg.words[1]);
             break;
-        case AOS_RPC_MSG_SEND_STRING:
-            rpc_print_string(chan, msg.words + 1);
+        case AOS_RPC_SEND_STRING:
+            rpc_print_string(chan, &msg);
             break;
-        case AOS_RPC_MSG_GET_RAM_CAP:
+        case AOS_RPC_GET_RAM_CAP:
             err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_send_ram failed");
             }
             break;
-        case AOS_RPC_MSG_FREE_RAM_CAP:
+        case AOS_RPC_FREE_RAM_CAP:
             err = rpc_free_ram(chan, msg.words[1]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_free_ram failed");
             }
             break;
-        case AOS_RPC_MSG_SERIAL_GETCHAR:
+        case AOS_RPC_SERIAL_GETCHAR:
             err = rpc_serial_getchar();
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_serial_getchar failed");
             }
             break;
-         case AOS_RPC_MSG_SERIAL_PUTCHAR:
+         case AOS_RPC_SERIAL_PUTCHAR:
             err = rpc_serial_putchar(msg.words[1]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_serial_putchar failed");
             }
             break;
-        case AOS_RPC_MSG_PROCESS_SPAWN:
+        case AOS_RPC_PROCESS_SPAWN:
             // TODO: Handle large string
             err = rpc_spawn_process(chan);
             if (err_is_fail(err)) {

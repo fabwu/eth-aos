@@ -80,7 +80,7 @@ errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr)
     errval_t err;
 
     // Try freeing RAM
-    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_GET_RAM_CAP, addr);
+    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_FREE_RAM_CAP, addr);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_FREE_RAM_CAP);
     }
