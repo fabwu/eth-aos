@@ -27,7 +27,7 @@ extern morecore_free_func_t sys_morecore_free;
 // this define makes morecore use an implementation that just has a static
 // 16MB heap.
 // TODO (M4): use a dynamic heap instead,
-#define USE_STATIC_HEAP
+//#define USE_STATIC_HEAP
 
 #ifdef USE_STATIC_HEAP
 
@@ -101,8 +101,19 @@ errval_t morecore_reinit(void)
  */
 static void *morecore_alloc(size_t bytes, size_t *retbytes)
 {
-    USER_PANIC("NYI \n");
-    return NULL;
+    struct paging_state *st = get_current_paging_state();
+    errval_t err;
+    void *addr;
+
+    // TODO paging region?
+    size_t bytes_pages = ROUND_UP(bytes, BASE_PAGE_SIZE);
+    err = paging_alloc(st, &addr, bytes_pages, BASE_PAGE_SIZE);
+    if (err_is_fail(err)) {
+        return NULL;
+    }
+
+    *retbytes = bytes_pages;
+    return addr;
 }
 
 static void morecore_free(void *base, size_t bytes)
@@ -112,9 +123,15 @@ static void morecore_free(void *base, size_t bytes)
 
 errval_t morecore_init(size_t alignment)
 {
+    struct morecore_state *state = get_morecore_state();
+
     debug_printf("initializing dynamic heap\n");
 
-    USER_PANIC("NYI \n");
+    thread_mutex_init(&state->mutex);
+
+    sys_morecore_alloc = morecore_alloc;
+    sys_morecore_free = morecore_free;
+
     return SYS_ERR_OK;
 }
 

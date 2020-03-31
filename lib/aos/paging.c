@@ -350,8 +350,24 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
 static void exception_handler(enum exception_type type, int subtype, void *addr,
                               arch_registers_state_t *regs)
 {
-    //FIXME Handle page fault
-    USER_PANIC("type %d subtype %d addr %p\n", type, subtype, addr);
+    struct paging_state *st = get_current_paging_state();
+    errval_t err;
+
+    debug_printf("Exception type %d subtype %d addr %p\n", type, subtype, addr);
+
+    struct capref frame;
+    err = frame_alloc(&frame, BASE_PAGE_SIZE, NULL);
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Unable to handle page fault\n");
+    }
+
+    // TODO if access could overlap two pages, then need to map second page too?
+    lvaddr_t addr_aligned = ((lvaddr_t)addr) & ~(BASE_PAGE_SIZE - 1);
+    err = paging_map_fixed_attr(st, addr_aligned, frame, BASE_PAGE_SIZE,
+                                VREGION_FLAGS_READ_WRITE);
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Unable to handle page fault\n");
+    }
 }
 
 /**
@@ -406,7 +422,10 @@ errval_t paging_init(void)
  */
 void paging_init_onthread(struct thread *t)
 {
-    // TODO (M4): setup exception handler for thread `t'.
+    // TODO can there be multiple threads? also, is it safe to use the same stack as bootstrap_thread?
+    t->exception_handler = exception_handler;
+    t->exception_stack = ex_stack;
+    t->exception_stack_top = ex_stack + EX_STACK_SIZE;
 }
 
 /**
@@ -594,21 +613,18 @@ errval_t paging_region_unmap(struct paging_region *pr, lvaddr_t base, size_t byt
  */
 errval_t paging_alloc(struct paging_state *st, void **buf, size_t bytes, size_t alignment)
 {
+    genvaddr_t addr;
     errval_t err;
-    struct capref cap;
-    size_t retbytes;
-    // TODO: Support alignment
-    assert(alignment <= BASE_PAGE_SIZE);
-    err = frame_alloc(&cap, bytes, &retbytes);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_FRAME_ALLOC);
-    }
-    assert(retbytes == bytes);
 
-    err = paging_map_frame(st, buf, bytes, cap, NULL, NULL);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
+    if (bytes % BASE_PAGE_SIZE || alignment != BASE_PAGE_SIZE) {
+        return LIB_ERR_PAGING_ALLOC_FAIL;
     }
+
+    err = addr_mgr_alloc(&st->addr_mgr_state, &addr, bytes, alignment);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_ADDR_MGR_ALLOC);
+    }
+    *buf = (void *)addr;
 
     return SYS_ERR_OK;
 }

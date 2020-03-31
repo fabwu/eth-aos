@@ -427,7 +427,7 @@ void grading_test_early(void)
     }
 
     if (TEST_PAGE_FAULT) {
-        char *test = (char *)0x4000000;
+        char *test = (char *)0x800000000000;
         //char *test = NULL;
         DEBUG_PRINTF("%p\n", *test);
     }
