@@ -19,10 +19,9 @@
 /// RPC channel to init
 static struct aos_rpc rpc_init;
 
-errval_t aos_rpc_set_init_channel(struct lmp_chan chan)
+void aos_rpc_set_init_channel(struct lmp_chan chan)
 {
     rpc_init.chan = chan;
-    return SYS_ERR_OK;
 }
 
 errval_t aos_rpc_send_number(struct aos_rpc *rpc, uintptr_t num)

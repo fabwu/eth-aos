@@ -27,6 +27,7 @@
 #include <barrelfish_kpi/domain_params.h>
 #include <aos/waitset.h>
 #include <aos/aos_rpc.h>
+#include <aos/lmp_protocol.h>
 
 #include "threads_priv.h"
 #include "init.h"
@@ -128,38 +129,6 @@ void barrelfish_libc_glue_init(void)
     setvbuf(stdout, buf, _IOLBF, sizeof(buf));
 }
 
-static int got_pong;
-
-static void barrelfish_recv_init_closure(void *arg)
-{
-    errval_t err;
-    struct lmp_chan *lc = (struct lmp_chan *)arg;
-    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
-    err = lmp_chan_recv(lc, &msg, NULL);
-
-    DEBUG_INIT_SETUP_RPC("recv init called!\n");
-
-    // Got message
-    if (err_is_ok(err)) {
-        DEBUG_INIT_SETUP_RPC("recv init success!\n");
-
-        got_pong = 1;
-
-        return;
-    } else if (lmp_err_is_transient(err)) {
-        DEBUG_INIT_SETUP_RPC("recv init retry!\n");
-
-        // Want to receive further messages
-        err = lmp_chan_register_recv(lc, get_default_waitset(),
-                                     MKCLOSURE(barrelfish_recv_init_closure, arg));
-        if (err_is_ok(err)) {
-            return;
-        }
-    }
-
-    DEBUG_ERR(err, "recv_init_closure failed hard");
-}
-
 /** \brief Initialise libbarrelfish.
  *
  * This runs on a thread in every domain, after the dispatcher is setup but
@@ -225,39 +194,22 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
             return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
         }
 
-        /* set receive handler */
-        lmp_chan_register_recv(&chan_to_init, default_ws,
-                               MKCLOSURE(barrelfish_recv_init_closure, &chan_to_init));
-
         /* send local ep to init */
-        // TODO: Document protocol
-        // If arg1 is 0, this means it is a child cap
-        do {
-            err = lmp_ep_send1(cap_initep, LMP_SEND_FLAGS_DEFAULT, chan_to_init.local_cap, 0);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Had err while sending");
-            }
-            // FIXME: on which errors do we need to retry??
-        } while (err_is_fail(err) && lmp_err_is_transient(err));
+        err = lmp_protocol_send_cap(&chan_to_init, AOS_RPC_SETUP, chan_to_init.local_cap);
+        if (err_is_fail(err)) {
+            return err_push(err, AOS_ERR_INIT_SETUP_INITEP);
+        }
 
-        got_pong = 0;
-
-        /* wait for init to acknowledge receiving the endpoint */
-        while (!got_pong) {
-            debug_printf("loop child\n");
-            err = event_dispatch(default_ws);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "in event_dispatch");
-                abort();
-            }
+        /* Wait for init to acknowledge receiving the endpoint */
+        err = lmp_protocol_recv0(&chan_to_init, AOS_RPC_SETUP);
+        if (err_is_fail(err)) {
+            return err_push(err, AOS_ERR_INIT_SETUP_INITEP);
         }
 
         /* initialize init RPC client with lmp channel */
         /* set init RPC client in our program state */
         aos_rpc_set_init_channel(chan_to_init);
 
-        /* TODO MILESTONE 3: now we should have a channel with init set up and can
-         * use it for the ram allocator */
         // Get ram_alloc to use remote allocator
         ram_alloc_set(NULL);
         ram_free_set(NULL);

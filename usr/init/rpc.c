@@ -306,41 +306,6 @@ fail:
 }
 
 /**
- * Notify child that channel is ready
- */
-static void rpc_setup_send_closure(void *arg)
-{
-    errval_t err;
-    struct dispatcher_node *node = (struct dispatcher_node *)arg;
-    // Bump child that this channel is now ready
-    err = lmp_ep_send1(node->chan.remote_cap, LMP_SEND_FLAGS_DEFAULT, NULL_CAP, 0);
-
-    DEBUG_RPC_SETUP("rpc_setup_send_closure called!\n");
-
-    if (err_is_ok(err)) {
-        DEBUG_RPC_SETUP("rpc_setup_send_closure success!\n");
-
-        // Channel to child is setup, switch to child handler
-        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
-                                     MKCLOSURE(rpc_handler_recv_closure, arg));
-        if (err_is_ok(err)) {
-            return;
-        }
-    } else if (lmp_err_is_transient(err)) {
-        DEBUG_RPC_SETUP("rpc_setup_send_closure retry!\n");
-
-        // Want to receive further messages
-        err = lmp_chan_register_send(&node->chan, get_default_waitset(),
-                                     MKCLOSURE(rpc_setup_send_closure, arg));
-        if (err_is_ok(err)) {
-            return;
-        }
-    }
-
-    DEBUG_ERR(err, "rpc_setup_send_closure failed hard!\n");
-}
-
-/**
  * Receives a child endpoint cap, saves it in the channel and notify the child
  * that channel is ready
  */
@@ -358,7 +323,7 @@ static void rpc_setup_recv_closure(void *arg)
     // Got message
     if (err_is_ok(err)) {
         // Check if setup message
-        assert(msg.words[0] == 0);  // FIXME: Replace 0 with constant
+        assert(msg.words[0] == AOS_RPC_SETUP);
 
         node->chan.remote_cap = cap;
         node->state = DISPATCHER_CONNECTED;
@@ -370,7 +335,17 @@ static void rpc_setup_recv_closure(void *arg)
 
         DEBUG_RPC_SETUP("rpc_setup_recv_closure success!\n");
 
-        rpc_setup_send_closure(arg);
+        err = lmp_protocol_send0(&node->chan, AOS_RPC_SETUP);
+        if (err_is_fail(err)) {
+            goto fail;
+        }
+
+        // Channel to child is setup, switch to child handler
+        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
+                                     MKCLOSURE(rpc_handler_recv_closure, arg));
+        if (err_is_fail(err)) {
+            goto fail;
+        }
 
         return;
     } else if (lmp_err_is_transient(err)) {
@@ -385,6 +360,7 @@ static void rpc_setup_recv_closure(void *arg)
     }
 
 fail:
+    // FIXME: Handle error case better
     DEBUG_ERR(err, "rpc_setup_recv_closure failed hard!\n");
 }
 
@@ -393,8 +369,9 @@ fail:
  */
 errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
 {
-    // FIXME: cleanup upon err
-    errval_t err;
+    errval_t err = SYS_ERR_OK;
+
+    assert(ret_init_ep_cap != NULL);
     struct lmp_state *st = get_current_lmp_state();
     assert(st != NULL);
 
@@ -408,19 +385,24 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
 
     err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &node->chan.local_cap, &node->chan.endpoint);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_ENDPOINT_CREATE);
+        err = err_push(err, LIB_ERR_ENDPOINT_CREATE);
+        goto out;
     }
 
-    // FIXME: Shouldn't be necessary
+    // Preallocate first receive slot
+    // lmp_protocol will preallocate new slots when the current slot is used up
     err = lmp_chan_alloc_recv_slot(&node->chan);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
+        err = err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
+        goto out;
     }
 
+    // Needs to be non-blocking, so lmp_protocol is not used here
     err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
                                  MKCLOSURE(rpc_setup_recv_closure, node));
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
+        err = err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
+        goto out;
     }
 
     // Add node to dispatcher list
@@ -431,7 +413,15 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
     assert(!capref_is_null(node->chan.local_cap));
     *ret_init_ep_cap = node->chan.local_cap;
 
-    return SYS_ERR_OK;
+out:
+    if (err_is_fail(err)) {
+        if (!capref_is_null(node->chan.endpoint->recv_slot)) {
+            cap_destroy(node->chan.endpoint->recv_slot);
+        }
+        lmp_chan_destroy(&node->chan);
+        slab_free(&st->slabs, node);
+    }
+    return err;
 }
 
 errval_t rpc_initialize_lmp(struct lmp_state *st)

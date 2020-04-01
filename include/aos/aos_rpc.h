@@ -31,6 +31,8 @@
 #define AOS_RPC_MSG_PROCESS_GET_ALL_PIDS 0x09
 #define AOS_RPC_MSG_GET_DEVICE_CAP       0x0a
 
+#define AOS_RPC_MSG_SETUP                0x10
+
 // Message subtypes
 
 #define AOS_RPC_CMB(msg, submsg) ((((msg) & 0xff) << 8) | ((submsg) & 0xff))
@@ -49,7 +51,8 @@
 #define AOS_RPC_PROCESS_GET_NAME     AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_NAME, AOS_RPC_SUBMSG_DEFAULT)
 #define AOS_RPC_PROCESS_GET_ALL_PIDS AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_ALL_PIDS, AOS_RPC_SUBMSG_DEFAULT)
 #define AOS_RPC_GET_DEVICE_CAP       AOS_RPC_CMB(AOS_RPC_MSG_GET_DEVICE_CAP, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_SUBMSG_PROCESS_SPAWN_ 0
+
+#define AOS_RPC_SETUP                AOS_RPC_CMB(AOS_RPC_MSG_SETUP, AOS_RPC_SUBMSG_DEFAULT)
 
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {
@@ -64,7 +67,7 @@ errval_t aos_rpc_init(struct aos_rpc *rpc);
 /**
  * \brief Set channel to init
  */
-errval_t aos_rpc_set_init_channel(struct lmp_chan chan);
+void aos_rpc_set_init_channel(struct lmp_chan chan);
 
 /**
  * \brief Send a number.
