@@ -355,10 +355,18 @@ static void exception_handler(enum exception_type type, int subtype, void *addr,
 
     debug_printf("Exception type %d subtype %d addr %p\n", type, subtype, addr);
 
+    if (type != EXCEPT_PAGEFAULT) {
+        return;
+    }
+
+    if ((lvaddr_t)addr < BASE_PAGE_SIZE) {
+        USER_PANIC("Unable to handle NULL pointer dereference");
+    }
+
     struct capref frame;
     err = frame_alloc(&frame, BASE_PAGE_SIZE, NULL);
     if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Unable to handle page fault\n");
+        USER_PANIC_ERR(err, "Unable to handle page fault");
     }
 
     // TODO if access could overlap two pages, then need to map second page too?
@@ -366,7 +374,7 @@ static void exception_handler(enum exception_type type, int subtype, void *addr,
     err = paging_map_fixed_attr(st, addr_aligned, frame, BASE_PAGE_SIZE,
                                 VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Unable to handle page fault\n");
+        USER_PANIC_ERR(err, "Unable to handle page fault");
     }
 }
 
