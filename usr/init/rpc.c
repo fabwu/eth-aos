@@ -238,8 +238,7 @@ static void rpc_handler_recv_closure(void *arg)
     DEBUG_RPC_SETUP("rpc_handler_recv_closure called!\n");
 
     if (err_is_ok(err)) {
-        // cap.cnode == NULL_CNODE
-        if (cap.cnode.croot == 0 && cap.cnode.cnode == 0) {
+        if (!capref_is_null(cap)) {
             lmp_chan_alloc_recv_slot(chan);
         }
         uintptr_t message_type = msg.words[0];
