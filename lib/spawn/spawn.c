@@ -389,14 +389,12 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
 
 static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
 {
-    struct capref task_cnode_cap;
-    struct capref frame_cap;
     void *ptr_frame, *ptr_frame_child;
-    struct spawn_domain_params *params;
     struct paging_state *st = get_current_paging_state();
     errval_t err;
 
     /* allocate args page */
+    struct capref frame_cap;
     err = frame_alloc(&frame_cap, BASE_PAGE_SIZE, NULL);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_FRAME_ALLOC);
@@ -409,8 +407,8 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     }
 
     /* set up child's cap to args page */
-    task_cnode_cap.cnode = si->task_cnode_ref;
-    task_cnode_cap.slot = TASKCN_SLOT_ARGSPAGE;
+    struct capref task_cnode_cap = { .cnode = si->task_cnode_ref,
+                                     .slot = TASKCN_SLOT_ARGSPAGE };
     err = cap_copy(task_cnode_cap, frame_cap);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_CAP_COPY);
@@ -425,30 +423,30 @@ static errval_t spawn_setup_args(struct spawninfo *si, int argc, char *argv[])
     si->child_args_addr = (lvaddr_t)ptr_frame_child;
 
     /* zero args page */
-    // TODO does the kernel already zero every new frame?
     memset(ptr_frame, 0, BASE_PAGE_SIZE);
 
     /* set up args struct at beginning of args page */
-    params = ptr_frame;
+    struct spawn_domain_params *params = ptr_frame;
     params->argc = argc;
     params->envp[0] = NULL;
     params->pagesize = BASE_PAGE_SIZE;
+    memcpy(params->argv, argv, MAX_CMDLINE_ARGS * sizeof(char *));
 
     /* put argument strings after struct */
+    // Copy all argument string contiguously right after the params struct
+    // and update all params->argv pointers to point to the correct string.
     void *argv_str = ptr_frame + sizeof(*params);
-    for (char **strp = argv; *strp; strp++) {
-        size_t str_len = strlen(*strp) + 1;
-        assert(argv_str + str_len <= ptr_frame + BASE_PAGE_SIZE);
-        memcpy(argv_str, *strp, str_len);
-        argv_str += str_len;
-    }
+    lvaddr_t argv_str_child = si->child_args_addr + sizeof(*params);
+    size_t offset = 0;
+    for (int i = 0; argv[i]; ++i) {
+        // Copy argument i
+        size_t str_len = strlen(argv[i]) + 1;
+        assert(argv_str + offset + str_len <= ptr_frame + BASE_PAGE_SIZE);
+        memcpy(argv_str + offset, argv[i], str_len);
+        // Update params->argv pointer for child VA
+        params->argv[i] = (char *)(argv_str_child + offset);
 
-    /* fill argv, offseting pointers into child vspace */
-    void *argv_str_child = ptr_frame_child + sizeof(*params);
-    ssize_t offset = argv_str_child - (void *)argv[0];
-    memcpy(params->argv, argv, MAX_CMDLINE_ARGS * sizeof(char *));
-    for (const char **strp = params->argv; *strp; strp++) {
-        *strp += offset;
+        offset += str_len;
     }
 
     /* unmap args page from our vspace */
@@ -700,8 +698,7 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     }
 
     // Free ELF
-    err = paging_unmap(st, (lvaddr_t)si->module_base, module_frame,
-                       ROUND_UP(si->module_size, BASE_PAGE_SIZE));
+    err = paging_unmap(st, (lvaddr_t)si->module_base, module_frame, aligned_size);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_UNMAP);
     }

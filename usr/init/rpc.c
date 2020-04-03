@@ -17,7 +17,6 @@ errval_t init_spawn(char *name, domainid_t *pid) {
     errval_t err;
     struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
 
-    //FIXME use explicit argument to pass initep to spawn.c
     err = rpc_create_child_channel_to_init(&si->initep);
     if (err_is_fail(err)) {
         return err_push(err, INIT_ERR_PREPARE_SPAWN);
@@ -192,8 +191,10 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan) {
 
     int argc;
     char *buf;
+    // FIXME: Free argv and buf
     char **argv = make_argv(cmdline, &argc, &buf);
-    if (argc < 1) {
+    free(cmdline);
+    if (argc < 1 || argv == NULL) {
         err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, 0, false);
         if (err_is_fail(err)) {
             return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
@@ -202,12 +203,6 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     }
 
     grading_rpc_handler_process_spawn(argv[0], disp_get_core_id());
-
-    struct lmp_msg_holder *holder = (struct lmp_msg_holder *)malloc(
-        sizeof(struct lmp_msg_holder));
-    if (holder == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
 
     // FIXME: Pass arguments process spawn
     domainid_t pid;
