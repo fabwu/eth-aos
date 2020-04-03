@@ -37,6 +37,30 @@ coreid_t my_core_id;
 
 struct lmp_state lmp_state;
 
+static errval_t init_spawn(char *name, domainid_t *pid) {
+    errval_t err = SYS_ERR_OK;
+    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+    if (si == NULL) {
+        return INIT_ERR_PREPARE_SPAWN;
+    }
+
+    err = rpc_create_child_channel_to_init(&si->initep);
+    if (err_is_fail(err)) {
+        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
+        goto out;
+    }
+
+    err = spawn_load_by_name(name, si, pid);
+    if (err_is_fail(err)) {
+        err = err_push(err, INIT_ERR_SPAWN);
+        goto out;
+    }
+
+out:
+    free(si);
+    return err;
+}
+
 static int bsp_main(int argc, char *argv[])
 {
     errval_t err;

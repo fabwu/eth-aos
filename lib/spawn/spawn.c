@@ -637,40 +637,12 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
     return SYS_ERR_OK;
 }
 
-/**
- * \brief Spawn a new dispatcher executing 'binary_name'
- *
- * \param binary_name The name of the binary.
- * \param si A pointer to a spawninfo struct that will be
- * filled out by spawn_load_by_name. Must not be NULL.
- * \param pid A pointer to a domainid_t that will be
- * filled out by spawn_load_by_name. Must not be NULL.
- *
- * \return Either SYS_ERR_OK if no error occured or an error
- * indicating what went wrong otherwise.
- */
-errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t *pid)
+static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char *argv[],
+                                       struct spawninfo *si, domainid_t *pid)
 {
     errval_t err;
-
-    // find multiboot image
-    struct mem_region *module = multiboot_find_module(bi, binary_name);
-    if (module == NULL) {
-        return SPAWN_ERR_FIND_MODULE;
-    }
-
-    // parse args
-    int argc = 0;
-    char **argv;
-    char *argv_str;
-
-    const char *args = multiboot_module_opts(module);
-    argv = make_argv(args, &argc, &argv_str);
-    if (argv == NULL) {
-        return SPAWN_ERR_GET_CMDLINE_ARGS;
-    }
-
     assert(argc > 0);
+    assert(module != NULL);
 
     // map elf binary into current vspace
     si->module_size = module->mrmod_size;
@@ -703,8 +675,72 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
         return err_push(err, LIB_ERR_PAGING_UNMAP);
     }
 
+    return SYS_ERR_OK;
+}
+
+/**
+ * \brief Spawn a new dispatcher executing 'binary_name'
+ *
+ * \param binary_name The name of the binary.
+ * \param argc The number of command line arguments. Must be > 0.
+ * \param argv An array storing 'argc' command line arguments.
+ * \param si A pointer to a spawninfo struct that will be
+ * filled out by spawn_load_by_name. Must not be NULL.
+ * \param pid A pointer to a domainid_t that will be
+ * filled out by spawn_load_by_name. Must not be NULL.
+ *
+ * \return Either SYS_ERR_OK if no error occured or an error
+ * indicating what went wrong otherwise.
+ */
+errval_t spawn_load_by_name_argv(char *binary_name, int argc, char *argv[],
+                                 struct spawninfo *si, domainid_t *pid)
+{
+    // find multiboot image
+    struct mem_region *module = multiboot_find_module(bi, binary_name);
+    if (module == NULL) {
+        return SPAWN_ERR_FIND_MODULE;
+    }
+
+    return spawn_load_module_argv(module, argc, argv, si, pid);
+}
+
+/**
+ * \brief Spawn a new dispatcher executing 'binary_name'
+ *
+ * \param binary_name The name of the binary.
+ * \param si A pointer to a spawninfo struct that will be
+ * filled out by spawn_load_by_name. Must not be NULL.
+ * \param pid A pointer to a domainid_t that will be
+ * filled out by spawn_load_by_name. Must not be NULL.
+ *
+ * \return Either SYS_ERR_OK if no error occured or an error
+ * indicating what went wrong otherwise.
+ */
+errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t *pid)
+{
+    errval_t err = SYS_ERR_OK;
+
+    // find multiboot image
+    struct mem_region *module = multiboot_find_module(bi, binary_name);
+    if (module == NULL) {
+        return SPAWN_ERR_FIND_MODULE;
+    }
+
+    // parse args
+    int argc = 0;
+    char **argv;
+    char *argv_str;
+
+    const char *args = multiboot_module_opts(module);
+    argv = make_argv(args, &argc, &argv_str);
+    if (argv == NULL) {
+        return SPAWN_ERR_GET_CMDLINE_ARGS;
+    }
+
+    err = spawn_load_module_argv(module, argc, argv, si, pid);
+
     free_argv(argv, argv_str);
 
-    return SYS_ERR_OK;
+    return err;
 }
 

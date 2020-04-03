@@ -13,25 +13,6 @@
 #    define DEBUG_RPC_SETUP(fmt...) ((void)0)
 #endif
 
-errval_t init_spawn(char *name, domainid_t *pid) {
-    errval_t err;
-    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-
-    err = rpc_create_child_channel_to_init(&si->initep);
-    if (err_is_fail(err)) {
-        return err_push(err, INIT_ERR_PREPARE_SPAWN);
-    }
-
-    err = spawn_load_by_name(name, si, pid);
-    if (err_is_fail(err)) {
-        return err_push(err, INIT_ERR_SPAWN);
-    }
-
-    free(si);
-
-    return SYS_ERR_OK;
-}
-
 /**
  * Receives a number
  * msg.words[0] == AOS_RPC_MSG_SEND_NUMBER
@@ -180,7 +161,8 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
  * msg.words[2] == success
  */
 static errval_t rpc_spawn_process(struct lmp_chan *chan) {
-    errval_t err;
+    errval_t err = SYS_ERR_OK;
+    struct spawninfo *si = NULL;
 
     // FIXME: Pass core id
     char *cmdline;
@@ -191,32 +173,55 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan) {
 
     int argc;
     char *buf;
-    // FIXME: Free argv and buf
     char **argv = make_argv(cmdline, &argc, &buf);
     free(cmdline);
     if (argc < 1 || argv == NULL) {
-        err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, 0, false);
-        if (err_is_fail(err)) {
-            return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
-        }
-        return AOS_ERR_RPC_SPAWN_PROCESS;
+        err = AOS_ERR_RPC_SPAWN_PROCESS;
+        goto out;
     }
 
-    grading_rpc_handler_process_spawn(argv[0], disp_get_core_id());
+    grading_rpc_handler_process_spawn(argv[0], disp_get_core_id()); // FIXME core id
 
-    // FIXME: Pass arguments process spawn
+    si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+    if (si == NULL) {
+        err = INIT_ERR_PREPARE_SPAWN;
+        goto out;
+    }
+
+    err = rpc_create_child_channel_to_init(&si->initep);
+    if (err_is_fail(err)) {
+        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
+        goto out;
+    }
+
     domainid_t pid;
-    err = init_spawn(argv[0], &pid);
+    err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
     if (err_is_fail(err)) {
-        return err;
+        err = err_push(err, INIT_ERR_SPAWN);
+        goto out;
     }
 
-    err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, pid, true);
-    if (err_is_fail(err)) {
-        return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+out:
+    if (si != NULL) {
+        free(si);
+    }
+    if (argv != NULL) {
+        free_argv(argv, buf);
     }
 
-    return SYS_ERR_OK;
+    if (err_is_fail(err)) {
+        errval_t inner_err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, 0, false);
+        if (err_is_fail(inner_err)) {
+            DEBUG_ERR(inner_err, "Could not report failed process spawn");
+        }
+    } else {
+        err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, pid, true);
+        if (err_is_fail(err)) {
+            err = err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+        }
+    }
+
+    return err;
 }
 
 /**
