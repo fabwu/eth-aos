@@ -1,7 +1,7 @@
 #include <aos/aos.h>
 #include <aos/avl.h>
 
-#if 1
+#if 0
 #    define DEBUG_AVL(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_AVL(fmt...) ((void)0)
@@ -10,6 +10,7 @@
 static errval_t aos_avl_find_parent(struct aos_avl_node *root, uint64_t key,
                                     struct aos_avl_node **parent)
 {
+    // FIXME: need to support this case
     assert(root != NULL);
 
     while (root != NULL) {
@@ -22,6 +23,33 @@ static errval_t aos_avl_find_parent(struct aos_avl_node *root, uint64_t key,
             root = (*parent)->left;
         }
     }
+
+    return SYS_ERR_OK;
+}
+
+errval_t aos_avl_find_ge(struct aos_avl_node *root, uint64_t key, void **value)
+{
+    struct aos_avl_node *parent = NULL;
+    while (root != NULL) {
+        parent = root;
+        if (parent->key == key) {
+            break;
+        } else if (parent->key < key) {
+            root = parent->right;
+        } else {
+            // Found smallest key that is larger than key
+            if (parent->left != NULL && parent->left->key < key) {
+                break;
+            }
+            root = parent->left;
+        }
+    }
+
+    if (parent == NULL || parent->key < key) {
+        return LIB_ERR_AVL_FIND_GE_NOT_FOUND;
+    }
+
+    *value = parent->value;
 
     return SYS_ERR_OK;
 }
@@ -422,16 +450,18 @@ errval_t aos_avl_remove_fast(struct aos_avl_node **root, struct aos_avl_node *no
 errval_t aos_avl_find(struct aos_avl_node *root, uint64_t key, void **value)
 {
     errval_t err;
-    assert(root != NULL);
+    // Empty tree
+    if (root == NULL) {
+        return LIB_ERR_AVL_FIND_NOT_FOUND;
+    }
 
     struct aos_avl_node *parent;
     err = aos_avl_find_parent(root, key, &parent);
     assert(err_is_ok(err));
 
-    // Follows from the fact root is not NULL, some parent must exist
-    assert(parent != NULL);
-
-    assert(parent->key == key);
+    if (parent == NULL || parent->key != key) {
+        return LIB_ERR_AVL_FIND_NOT_FOUND;
+    }
 
     *value = parent->value;
 
@@ -454,6 +484,13 @@ errval_t aos_avl_traverse(struct aos_avl_node *root, int level)
     if (root->right != NULL) {
         aos_avl_traverse(root->right, level + 1);
     }
+
+    return SYS_ERR_OK;
+}
+
+errval_t aos_avl_change_value(void *value, struct aos_avl_node *node)
+{
+    node->value = value;
 
     return SYS_ERR_OK;
 }

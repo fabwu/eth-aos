@@ -20,6 +20,7 @@
 #include <aos/types.h>
 #include <aos/capabilities.h>
 #include <aos/slab.h>
+#include <aos/avl.h>
 
 __BEGIN_DECLS
 
@@ -28,30 +29,31 @@ enum nodetype {
     NodeType_Allocated  ///< This region exists and is allocated
 };
 
-struct capinfo {
+struct bi_node {
+    struct bi_node *prev;
+    struct bi_node *next;
     struct capref cap;
     genpaddr_t base;
     gensize_t size;
 };
 
-struct capnode {
-    struct capinfo cap;
-    struct capnode *prev;
-    struct capnode *next;
+struct mm_node {
+    // all double linked list
+    struct mm_node *prev;
+    struct mm_node *next;
+
+    struct bi_node *origin;
+
+    struct aos_avl_node *avl;
+    
+    // free with same size double linked list
+    struct mm_node *free_prev;
+    struct mm_node *free_next;
+
     genpaddr_t base;
     gensize_t size;
-};
 
-/**
- * \brief Node in Memory manager
- */
-struct mmnode {
-    enum nodetype type;    ///< Type of `this` node.
-    struct capnode *capnode;
-    struct mmnode *prev;   ///< Previous node in the list.
-    struct mmnode *next;   ///< Next node in the list.
-    genpaddr_t base;       ///< Base address of this region
-    gensize_t size;        ///< Size of this free region in cap
+    enum nodetype type;
 };
 
 /**
@@ -61,14 +63,22 @@ struct mmnode {
  * them to allocate its memory, we declare it in the public header.
  */
 struct mm {
-    struct slab_allocator capnode_slab;
-    struct slab_allocator mmnode_slab;
-    struct capnode *capnode_head;
-    struct mmnode *mmnode_head;
+    struct slab_allocator bi_node_slab;
+    struct slab_allocator mm_node_slab;
+    struct slab_allocator avl_node_slab;
+
+    struct bi_node *bi;
+
+    struct mm_node *all;
+    struct aos_avl_node *free;
+    struct aos_avl_node *allocated;
 
     /* statistics */
     gensize_t stats_bytes_max;
     gensize_t stats_bytes_available;
+
+    char mm_node_slab_refilling;
+    char avl_node_slab_refilling;
 };
 
 errval_t mm_init(struct mm *mm);

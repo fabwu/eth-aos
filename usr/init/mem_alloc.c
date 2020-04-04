@@ -34,12 +34,16 @@ errval_t initialize_ram_alloc(void)
         USER_PANIC_ERR(err, "Can't initalize the memory manager.");
     }
 
+    // FIXME: shouldn't need to know so much about the internals of mm
     // Give aos_mm a bit of memory for the initialization
-    static char capnode_buf[sizeof(struct capnode)*32];
-    slab_grow(&aos_mm.capnode_slab, capnode_buf, sizeof(capnode_buf));
+    static char bi_node_buf[sizeof(struct bi_node)*32];
+    slab_grow(&aos_mm.bi_node_slab, bi_node_buf, sizeof(bi_node_buf));
 
-    static char mmnode_buf[sizeof(struct mmnode)*64];
-    slab_grow(&aos_mm.mmnode_slab, mmnode_buf, sizeof(mmnode_buf));
+    static char mm_node_buf[sizeof(struct mm_node)*64];
+    slab_grow(&aos_mm.mm_node_slab, mm_node_buf, sizeof(mm_node_buf));
+
+    static char avl_node_buf[sizeof(struct aos_avl_node)*64];
+    slab_grow(&aos_mm.avl_node_slab, avl_node_buf, sizeof(avl_node_buf));
 
     assert(bi->regions_length <= 32);
 
