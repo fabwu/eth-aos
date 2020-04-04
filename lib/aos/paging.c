@@ -333,16 +333,23 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
                                    lvaddr_t max_vaddr, struct capref pdir,
                                    struct slot_allocator *ca)
 {
+    errval_t err;
     // TODO (M2): Implement state struct initialization
     // TODO (M4): Implement page fault handler that installs frames when a page fault
     // occurs and keeps track of the virtual address space.
     struct slab_allocator paging_slabs;
     slab_init(&paging_slabs, sizeof(struct paging_node), NULL);
-    slab_default_refill(&paging_slabs);
+    err = slab_default_refill(&paging_slabs);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLAB_REFILL);
+    }
 
     struct slab_allocator addr_mgr_slabs;
     slab_init(&addr_mgr_slabs, sizeof(struct addr_mgr_node), NULL);
-    slab_default_refill(&addr_mgr_slabs);
+    err = slab_default_refill(&addr_mgr_slabs);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLAB_REFILL);
+    }
     return paging_init_state(st, start_vaddr, max_vaddr, pdir, ca, paging_slabs,
                              addr_mgr_slabs);
 }
@@ -430,7 +437,8 @@ errval_t paging_init(void)
  */
 void paging_init_onthread(struct thread *t)
 {
-    // TODO can there be multiple threads? also, is it safe to use the same stack as bootstrap_thread?
+    // TODO can there be multiple threads? also, is it safe to use the same stack as
+    // bootstrap_thread?
     t->exception_handler = exception_handler;
     t->exception_stack = ex_stack;
     t->exception_stack_top = ex_stack + EX_STACK_SIZE;
