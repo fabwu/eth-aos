@@ -4,6 +4,7 @@
 #include <aos/capabilities.h>
 #include <aos/ram_alloc.h>
 #include <aos/aos_rpc.h>
+#include <aos/avl.h>
 #include <grading.h>
 #include <spawn/spawn.h>
 
@@ -405,6 +406,44 @@ static void test_rpc(void)
     free(si);
 }
 
+static void test_avl(void)
+{
+    errval_t err;
+    struct slab_allocator avl_node_slabs;
+    slab_init(&avl_node_slabs, sizeof(struct aos_avl_node), slab_default_refill);
+
+    struct aos_avl_node *root = NULL;
+
+    for (int i = 0; i < 8; ++i) {
+        struct aos_avl_node *node = (struct aos_avl_node *)slab_alloc(&avl_node_slabs);
+        err = aos_avl_insert(&root, i, NULL, node);
+        assert(err_is_ok(err));
+    }
+    for (int i = 0; i < 8; ++i) {
+        void *pointer;
+        err = aos_avl_find(root, i, &pointer);
+        assert(err_is_ok(err));
+        assert(pointer == NULL);
+    }
+    for (int i = 0; i < 8; ++i) {
+        aos_avl_traverse(root, 0);
+        struct aos_avl_node *node;
+        void *pointer;
+        err = aos_avl_remove(&root, i, &pointer, &node);
+        assert(err_is_ok(err));
+        assert(pointer == NULL);
+        assert(node != NULL);
+        if (i != 7) {
+            assert(root != NULL);
+        } else {
+            assert(root == NULL);
+        }
+
+        slab_free(&avl_node_slabs, (void *)node);
+    }
+}
+
+#define TEST_AVL 1
 #define TEST_PAGING 0
 #define TEST_PAGING_REGION 0
 #define TEST_PAGE_FAULT 0
@@ -428,12 +467,16 @@ void grading_test_early(void)
 
     if (TEST_PAGE_FAULT) {
         char *test = (char *)0x800000000000;
-        //char *test = NULL;
+        // char *test = NULL;
         DEBUG_PRINTF("%p\n", *test);
     }
 
     if (TEST_SPAWN) {
         test_spawn();
+    }
+
+    if (TEST_AVL) {
+        test_avl();
     }
 }
 
