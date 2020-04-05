@@ -8,6 +8,8 @@
 #include <grading.h>
 #include <spawn/spawn.h>
 
+#include "paging.h"
+
 // #define DEBUG_TEST_EASY
 
 void grading_setup_bsp_init(int argc, char **argv) {}
@@ -526,7 +528,7 @@ static void test_avl(void)
 #define TEST_MEM 0
 #define TEST_PAGING 0
 #define TEST_PAGING_REGION 0
-#define TEST_PAGE_FAULT 0
+#define TEST_DEMAND_PAGING 0
 #define TEST_SPAWN 0
 
 void grading_test_early(void)
@@ -553,10 +555,8 @@ void grading_test_early(void)
         DEBUG_PRINTF("TEST_PAGING_REGION end\n");
     }
 
-    if (TEST_PAGE_FAULT) {
-        char *test = (char *)0x800000000000;
-        // char *test = NULL;
-        DEBUG_PRINTF("%p\n", *test);
+    if (TEST_DEMAND_PAGING) {
+        grading_test_demand_paging();
     }
 
     if (TEST_SPAWN) {
