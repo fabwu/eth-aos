@@ -80,7 +80,7 @@ static errval_t rpc_print_string(struct lmp_chan *chan, struct lmp_recv_msg *loo
  */
 static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignment)
 {
-    errval_t err = SYS_ERR_OK;
+    errval_t err;
 
     // has to be called for grading see chapter 5.10
     grading_rpc_handler_ram_cap(size, alignment);
@@ -101,13 +101,18 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 out:
     if (err_is_ok(err)) {
         lmp_protocol_send_cap3(chan, AOS_RPC_GET_RAM_CAP, ram_cap, size, alignment, true);
+
+        // we have to destroy cap here otw. child cannot free ram later
+        err = cap_destroy(ram_cap);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_CAP_DESTROY);
+        }
+
+        return SYS_ERR_OK;
     } else {
         lmp_protocol_send_cap3(chan, AOS_RPC_GET_RAM_CAP, NULL_CAP, 0, alignment, false);
+        return err;
     }
-
-    // we have to destroy cap here otw. child cannot free ram later
-    cap_destroy(ram_cap);
-    return err;
 }
 
 /**
