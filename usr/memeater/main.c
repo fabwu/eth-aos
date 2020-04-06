@@ -167,6 +167,44 @@ static errval_t test_basic_rpc(void)
     return SYS_ERR_OK;
 }
 
+static errval_t test_demand_paging(void) {
+    errval_t err;
+    // simple
+    DEBUG_PRINTF("testing demand paging...\n");
+    DEBUG_PRINTF("Allocating 64 MB of memory...\n");
+    char *base_pointer = (char *)malloc(64*1024*1024);
+
+    if(base_pointer == NULL) {
+        err = LIB_ERR_MALLOC_FAIL;
+        DEBUG_ERR(err, "Couldn't allocate memory");
+        return err;
+    }
+
+    char *mid_pointer = base_pointer+42*1024;
+
+    *mid_pointer = 'A';
+    assert(*mid_pointer == 'A');
+    free(base_pointer);
+
+    // with write
+    DEBUG_PRINTF("Allocating 64 MB of memory successful...\n");
+
+    DEBUG_PRINTF("Allocating 64 MB of memory and write to it...\n");
+    base_pointer = (char *)malloc(64*1024*1024);
+    int num_bytes = 64*1024*1024;
+    //FIXME This test stops at address 0x8000d92000
+    while(num_bytes) {
+        *base_pointer = 'a' + (rand() % 26);
+        //printf("%c ", *base_pointer);
+        base_pointer++;
+        num_bytes--;
+    }
+    DEBUG_PRINTF("Allocating 64 MB of memory and write to it successfull...\n");
+
+    DEBUG_PRINTF("testing demand paging successful...\n");
+
+    return SYS_ERR_OK;
+}
 
 int main(int argc, char *argv[])
 {
@@ -198,6 +236,13 @@ int main(int argc, char *argv[])
     debug_printf("testing terminal printf function...\n");
 
     printf("Hello world using terminal service\n");
+
+    debug_printf("Demand Paging: testing allocating 64 MB in child\n");
+    
+    err = test_demand_paging();
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "failure in testing demand paging\n");
+    }
 
     debug_printf("memeater terminated....\n");
 
