@@ -519,7 +519,7 @@ static void test_avl(void)
         slab_free(&avl_node_slabs, (void *)node);
     }
 
-    assert(0);
+    DEBUG_PRINTF("\033[92mSuccess\033[0m Test AVL tree\n");
 }
 
 #define TEST_AVL 0

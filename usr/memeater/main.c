@@ -87,7 +87,7 @@ static errval_t request_and_map_memory(void)
     struct capref cap2;
     err = frame_alloc(&cap2, LARGE_PAGE_SIZE, &bytes);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "could not get BASE_PAGE_SIZE cap\n");
+        DEBUG_ERR(err, "could not get LARGE_PAGE_SIZE cap\n");
         return err;
     }
 
@@ -106,14 +106,19 @@ static errval_t request_and_map_memory(void)
     debug_printf("performing memset.\n");
     memset(buf2, 0x00, LARGE_PAGE_SIZE);
 
+    debug_printf("testing frame_free...\n");
     struct capref cap3;
     err = frame_alloc(&cap3, LARGE_PAGE_SIZE, &bytes);
     assert(err_is_ok(err));
     err = frame_free(cap3, bytes);
     assert(err_is_ok(err));
+    err = frame_alloc(&cap3, LARGE_PAGE_SIZE, &bytes);
+    assert(err_is_ok(err));
+    err = frame_free(cap3, bytes);
+    assert(err_is_ok(err));
+    debug_printf("testing frame_free successful...\n");
 
     return SYS_ERR_OK;
-
 }
 
 static errval_t test_basic_rpc(void)
