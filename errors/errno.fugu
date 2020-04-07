@@ -281,6 +281,8 @@ errors libaos LIB_ERR_ {
     failure PAGING_LEVEL  "Failure in map_some()",
     failure PAGING_COPY_CAPABILITIES  "Failure in paging_copy_capabilities()",
     failure PAGING_COPY_CAPABILITIES_TOO_MANY  "Too many paging capabilities to fit into cnode",
+    failure PAGING_HANDLE_PAGEFAULT_NULL_POINTER "Unable to handle NULL pointer dereference",
+    failure PAGING_HANDLE_PAGEFAULT_ADDR_NOT_FOUND "The faulting address not found in the address manager",
 
     // vspace
     failure VSPACE_CURRENT_INIT "Failure in vspace_current_init()",

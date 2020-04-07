@@ -159,6 +159,35 @@ static struct addr_mgr_node *addr_mgr_find_prev(struct addr_mgr_state *st, genva
 }
 
 /**
+ * \brief returns the allocated node for a given address or NULL if no region
+ * was allocated for this address.
+ */
+static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *st, genvaddr_t addr) {
+    struct addr_mgr_node *cur_node = st->head;
+    while(cur_node != NULL) {
+        genvaddr_t region_start = cur_node->base;
+        genvaddr_t region_end = region_start + cur_node->size;
+
+        // assume start and end are page aligned
+        assert(region_start % BASE_PAGE_SIZE == 0);
+        assert(region_end % BASE_PAGE_SIZE == 0);
+
+        if(addr >= region_start && addr <= region_end) {
+            return cur_node;
+        }
+
+        cur_node = cur_node->next;
+    }
+
+    // couldn't find node for addr
+    return NULL;
+}
+
+static bool addr_mgr_is_addr_allocated(struct addr_mgr_state *st, genvaddr_t addr) {
+    return addr_mgr_find_node_for_addr(st, addr) != NULL;
+}
+
+/**
  * \brief allocs a range from the addr mgr at given base addr
  */
 static errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base,
@@ -365,10 +394,15 @@ static errval_t handle_pagefault(lvaddr_t addr) {
 
     // handle null pointer
     if(addr < BASE_PAGE_SIZE) {
-        USER_PANIC("Unable to handle NULL pointer dereference");
+        return LIB_ERR_PAGING_HANDLE_PAGEFAULT_NULL_POINTER;
     }
 
-    //TODO check if addr is allocated in addrmgr
+    struct paging_state *st = get_current_paging_state();
+
+    // check if address was allocated in address manager
+    if(!addr_mgr_is_addr_allocated(&st->addr_mgr_state, (genvaddr_t) addr)) {
+        return LIB_ERR_PAGING_HANDLE_PAGEFAULT_ADDR_NOT_FOUND;
+    }
 
     // allocate frame for this address
     struct capref frame;
@@ -379,7 +413,6 @@ static errval_t handle_pagefault(lvaddr_t addr) {
     }
     assert(allocated_bytes == BASE_PAGE_SIZE);
 
-    struct paging_state *st = get_current_paging_state();
     lvaddr_t addr_aligned = ROUND_DOWN(addr, BASE_PAGE_SIZE);
     err = paging_map_fixed_attr(st, addr_aligned, frame, BASE_PAGE_SIZE,
                                 VREGION_FLAGS_READ_WRITE);
@@ -400,7 +433,7 @@ static void exception_handler(enum exception_type type, int subtype, void *addr,
     if(type == EXCEPT_PAGEFAULT) {
         err = handle_pagefault((lvaddr_t) addr);
         if(err_is_fail(err)) {
-            USER_PANIC_ERR(err, "Couldn't handle pagefault");
+            USER_PANIC_ERR(err, "Couldn't handle pagefault at addr %p", addr);
         }
     } else {
         USER_PANIC("Couldn't handle exception type %d subtype %d addr %p\n", type, subtype, addr);

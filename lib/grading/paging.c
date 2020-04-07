@@ -66,8 +66,20 @@ static void test_null_pointer(void) {
     DEBUG_PRINTF("%p\n", *null_pointer);
 }
 
+static void test_address_out_of_range_high_addr(void) {
+    char *out_of_range = (char *)0x8100000000;
+    DEBUG_PRINTF("%c\n", *out_of_range);
+}
+
+static void test_address_out_of_range_low_addr(void) {
+    char *out_of_range = (char *)0x40000;
+    DEBUG_PRINTF("%c\n", *out_of_range);
+}
+
 #define TEST_MALLOC 0
 #define TEST_NULL_POINTER 0
+#define TEST_ADDRESS_OUT_OF_RANGE_HIGH 0
+#define TEST_ADDRESS_OUT_OF_RANGE_LOW 0
 
 void grading_test_demand_paging(void) {
     if(TEST_MALLOC) {
@@ -78,5 +90,14 @@ void grading_test_demand_paging(void) {
 
     if(TEST_NULL_POINTER) {
         test_null_pointer();
+    }
+
+    if(TEST_ADDRESS_OUT_OF_RANGE_HIGH) {
+        test_address_out_of_range_high_addr();
+    }
+
+    if(TEST_ADDRESS_OUT_OF_RANGE_LOW) {
+        //FIXME This test should fail
+        test_address_out_of_range_low_addr();
     }
 }
