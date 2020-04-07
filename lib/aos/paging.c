@@ -41,6 +41,12 @@
 #    define DEBUG_PAGING_FINE(fmt...) ((void)0)
 #endif
 
+#if 0
+#    define DEBUG_EXCEPTION_HANDLER(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_EXCEPTION_HANDLER(fmt...) ((void)0)
+#endif
+
 static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
@@ -354,35 +360,52 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
                              addr_mgr_slabs);
 }
 
-static void exception_handler(enum exception_type type, int subtype, void *addr,
-                              arch_registers_state_t *regs)
-{
-    struct paging_state *st = get_current_paging_state();
+static errval_t handle_pagefault(lvaddr_t addr) {
     errval_t err;
 
-    debug_printf("Exception type %d subtype %d addr %p\n", type, subtype, addr);
-
-    if (type != EXCEPT_PAGEFAULT) {
-        return;
-    }
-
-    if ((lvaddr_t)addr < BASE_PAGE_SIZE) {
+    // handle null pointer
+    if(addr < BASE_PAGE_SIZE) {
         USER_PANIC("Unable to handle NULL pointer dereference");
     }
 
-    struct capref frame;
-    err = frame_alloc(&frame, BASE_PAGE_SIZE, NULL);
-    if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Unable to handle page fault");
-    }
+    //TODO check if addr is allocated in addrmgr
 
-    // TODO if access could overlap two pages, then need to map second page too?
-    lvaddr_t addr_aligned = ((lvaddr_t)addr) & ~(BASE_PAGE_SIZE - 1);
+    // allocate frame for this address
+    struct capref frame;
+    size_t allocated_bytes;
+    err = frame_alloc(&frame, BASE_PAGE_SIZE, &allocated_bytes);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_FRAME_ALLOC);
+    }
+    assert(allocated_bytes == BASE_PAGE_SIZE);
+
+    struct paging_state *st = get_current_paging_state();
+    lvaddr_t addr_aligned = ROUND_DOWN(addr, BASE_PAGE_SIZE);
     err = paging_map_fixed_attr(st, addr_aligned, frame, BASE_PAGE_SIZE,
                                 VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Unable to handle page fault");
+        return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
     }
+
+    return SYS_ERR_OK;
+}
+
+static void exception_handler(enum exception_type type, int subtype, void *addr,
+                              arch_registers_state_t *regs)
+{
+    errval_t err;
+
+    DEBUG_EXCEPTION_HANDLER("Exception type %d subtype %d addr %p\n", type, subtype, addr);
+
+    if(type == EXCEPT_PAGEFAULT) {
+        err = handle_pagefault((lvaddr_t) addr);
+        if(err_is_fail(err)) {
+            USER_PANIC_ERR(err, "Couldn't handle pagefault");
+        }
+    } else {
+        USER_PANIC("Couldn't handle exception type %d subtype %d addr %p\n", type, subtype, addr);
+    }
+    return;
 }
 
 /**
