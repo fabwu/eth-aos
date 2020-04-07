@@ -14,6 +14,21 @@ static void test_malloc_simple(void) {
     free(pointer);
 }
 
+#define MB 1024*1024
+
+static void test_malloc_64MB(void) {
+    DEBUG_PRINTF("Allocating 64 MB of memory and write to it...\n");
+    int num_bytes = 64*MB;
+    char *base_pointer = (char *)malloc(num_bytes);
+    while(num_bytes) {
+        *base_pointer = 'a' + (rand() % 26);
+        //printf("%c ", *base_pointer);
+        base_pointer++;
+        num_bytes--;
+    }
+    DEBUG_PRINTF("Allocating 64 MB of memory and write to it successfull...\n");
+}
+
 #define NUM_THREADS 10
 #define NUM_RUNS 100
 
@@ -51,12 +66,13 @@ static void test_null_pointer(void) {
     DEBUG_PRINTF("%p\n", *null_pointer);
 }
 
-#define TEST_MALLOC 1
+#define TEST_MALLOC 0
 #define TEST_NULL_POINTER 0
 
 void grading_test_demand_paging(void) {
     if(TEST_MALLOC) {
         test_malloc_simple();
+        test_malloc_64MB();
         test_malloc_threads();
     }
 
