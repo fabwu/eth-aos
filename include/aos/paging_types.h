@@ -79,9 +79,7 @@ struct paging_node {
     struct capref mapping;
     struct capref table;
     struct paging_node *parent;
-    struct paging_node *child;
-    struct paging_node *next;
-    struct paging_node *previous;
+    struct aos_avl_node *child;
     // Level of table capability
     int level;
     int slot;
@@ -89,14 +87,12 @@ struct paging_node {
 
 // struct to store the paging status of a process
 struct paging_state {
-    // TODO: Don't think we need this, don't have any fancy
-    // ROOTCN_SLOT_SLOT_ALLOC to initialize it either way...
-    // Might lead to recursion (pag -> slot -> mm -> slab  -> pag -> slot ..)
-    // struct slot_allocator *slot_alloc;
     struct slab_allocator slabs;
-    struct capref l0_pt;
-    struct paging_node *l0;
+    struct slab_allocator avl_slabs;
+    struct paging_node l0;
     struct addr_mgr_state addr_mgr_state;
+    char slab_refilling;
+    char avl_slab_refilling;
 };
 
 

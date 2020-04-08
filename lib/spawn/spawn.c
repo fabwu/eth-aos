@@ -243,89 +243,6 @@ static errval_t spawn_create_child_vspace(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
-static errval_t paging_cap_copy(struct capref l1_node, size_t *next_l1_slot,
-                                struct cnoderef **current_l2_node, size_t *slot,
-                                struct capref src)
-{
-    errval_t err;
-
-#if SPAWN_DEBUG_COPY_CAPS
-    DEBUG_PRINTF("copy into l2 %d slot %d\n", (*current_l2_node)->cnode, *slot);
-#endif
-
-    struct capref cap;
-    cap.cnode = **current_l2_node;
-    cap.slot = *slot;
-    err = cap_copy(cap, src);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_CAP_COPY);
-    }
-    ++*slot;
-
-    if (*slot >= L2_CNODE_SLOTS) {
-        // create new l2 node
-        err = cnode_create_foreign_l2(l1_node, *next_l1_slot, *current_l2_node);
-        if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_CNODE_CREATE_FOREIGN_L2);
-        }
-
-#if SPAWN_DEBUG_COPY_CAPS
-        DEBUG_PRINTF("create new l2 node %d in l1 slot %d\n", (*current_l2_node)->cnode,
-                     *next_l1_slot);
-#endif
-
-        ++*next_l1_slot;
-        *slot = 0;
-    }
-
-    return SYS_ERR_OK;
-}
-/**
- * \brief copies capabilites into child
- */
-static errval_t spawn_copy_child_vspace(struct spawninfo *si)
-{
-    errval_t err;
-    struct paging_state *st = &si->paging;
-    struct capref l1_node = si->cspace;
-    size_t next_l1_slot = L1_NODE_SLOT_OFFSET;
-    struct cnoderef page_cnode_ref = si->page_cnode_ref;
-    struct cnoderef *current_l2_cnode = &page_cnode_ref;
-    size_t current_slot = 1;
-
-    assert(st->l0);
-
-    struct paging_node *l1_pt = st->l0->child;
-    while (l1_pt != NULL) {
-        struct paging_node *l2_pt = l1_pt->child;
-        while (l2_pt != NULL) {
-            struct paging_node *l3_pt = l2_pt->child;
-            while (l3_pt != NULL) {
-                err = paging_cap_copy(l1_node, &next_l1_slot, &current_l2_cnode,
-                                      &current_slot, l3_pt->table);
-                if (err_is_fail(err)) {
-                    return err;
-                }
-                l3_pt = l3_pt->next;
-            }
-            err = paging_cap_copy(l1_node, &next_l1_slot, &current_l2_cnode,
-                                  &current_slot, l2_pt->table);
-            if (err_is_fail(err)) {
-                return err;
-            }
-            l2_pt = l2_pt->next;
-        }
-        err = paging_cap_copy(l1_node, &next_l1_slot, &current_l2_cnode, &current_slot,
-                              l1_pt->table);
-        if (err_is_fail(err)) {
-            return err;
-        }
-        l1_pt = l1_pt->next;
-    }
-
-    return SYS_ERR_OK;
-}
-
 static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t flags,
                           void **ret)
 {
@@ -508,12 +425,7 @@ static errval_t spawn_dispatch(struct spawninfo *si, domainid_t pid)
         dump_dispatcher(disp);
     }
 
-    err = spawn_copy_child_vspace(si);
-    if (err_is_fail(err)) {
-        return err_push(err, SPAWN_ERR_COPY_CHILD_VSPACE);
-    }
-
-    struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
+        struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
     err = invoke_dispatcher(si->dispatcher, cap_dispatcher, si->cspace, vspace,
                             si->child_dispframe, true);
     if (err_is_fail(err)) {

@@ -19,6 +19,7 @@
 #include <errors/errno.h>
 #include <aos/capabilities.h>
 #include <aos/slab.h>
+#include <aos/avl.h>
 #include <barrelfish_kpi/paging_arch.h>
 #include <aos/paging_types.h>
 
@@ -30,6 +31,7 @@ struct thread;
 errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
                            lvaddr_t max_addr, struct capref pdir,
                            struct slot_allocator *ca, struct slab_allocator paging_slabs,
+                           struct slab_allocator paging_avl_slabs,
                            struct slab_allocator addr_mgr_slabs);
 errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr,
                                    lvaddr_t max_addr, struct capref pdir,
@@ -53,8 +55,8 @@ errval_t paging_region_init_aligned(struct paging_state *st, struct paging_regio
 errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **retbuf,
                            size_t *ret_size);
 
-errval_t paging_region_map_foreign(struct paging_state *si, struct paging_region *pr, size_t req_size, void **retbuf,
-                           size_t *ret_size);
+errval_t paging_region_map_foreign(struct paging_state *si, struct paging_region *pr,
+                                   size_t req_size, void **retbuf, size_t *ret_size);
 /**
  * \brief free a bit of the paging region `pr`.
  * This function gets used in some of the code that is responsible

@@ -272,6 +272,7 @@ errors libaos LIB_ERR_ {
 
     // paging
     failure PAGING_MAP_FRAME "paging_map_frame() returned error",
+    failure PAGING_MAPPING_EXISTS "a mapping at given addr already exists",
     failure PAGING_MAP_FIXED_ATTR "paging_map_fixed_attr() returned error",
     failure PAGING_UNMAP "paging_unmap() returned error",
     failure PAGING_REGION_INIT_FAIL "paging_region_init() returned error",
@@ -616,7 +617,6 @@ errors spawn SPAWN_ERR_ {
     failure CREATE_CHILD_VSPACE "Failure in spawn_create_child_vspace",
     failure CHILD_CSPACE_SET_INITEP "Failure in spawn_child_cspace_set_initep",
     failure ADD_DISPATCHER      "Failure in add_dispatcher",
-    failure COPY_CHILD_VSPACE   "Failure in spawn_copy_child_vspace",
     failure DETERMINE_CPUTYPE   "Failure in spawn_determine_cputype",
     failure SETUP_DISPATCHER    "Failure in spawn_setup_dispatcher",
     failure DISPATCH            "Failure in spawn_dispatch",

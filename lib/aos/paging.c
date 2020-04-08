@@ -54,6 +54,7 @@ static char ex_stack_first[EX_STACK_SIZE];
 static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
+static char paging_avl_node_buf[sizeof(struct aos_avl_node) * 64];
 static char addr_mgr_node_buf[sizeof(struct addr_mgr_node) * 64];
 
 static void addr_mgr_add_node(struct addr_mgr_state *st, struct addr_mgr_node *prev,
@@ -322,13 +323,17 @@ __attribute__((unused)) static errval_t pt_alloc_l3(struct paging_state *st,
 errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
                            lvaddr_t max_vaddr, struct capref pdir,
                            struct slot_allocator *ca, struct slab_allocator paging_slabs,
+                           struct slab_allocator paging_avl_slabs,
                            struct slab_allocator addr_mgr_slabs)
 {
     // TODO (M2): Implement state struct initialization
     // TODO (M4): Implement page fault handler that installs frames when a page fault
     // occurs and keeps track of the virtual address space.
-    st->l0_pt = pdir;
-    st->l0 = NULL;
+    st->l0.table = pdir;
+    st->l0.parent = NULL;
+    st->l0.child = NULL;
+    st->l0.level = 0;
+    st->l0.slot = 0;
 
     st->addr_mgr_state.head = NULL;
     st->addr_mgr_state.tail = NULL;
@@ -337,6 +342,9 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->addr_mgr_state.max_addr = max_vaddr;
 
     st->slabs = paging_slabs;
+    st->slab_refilling = 0;
+    st->avl_slabs = paging_avl_slabs;
+    st->avl_slab_refilling = 0;
     st->addr_mgr_state.slabs = addr_mgr_slabs;
 
     if (start_vaddr > 0) {
@@ -383,6 +391,13 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
         return err_push(err, LIB_ERR_SLAB_REFILL);
     }
 
+    struct slab_allocator paging_avl_slabs;
+    slab_init(&paging_avl_slabs, sizeof(struct aos_avl_node), NULL);
+    err = slab_default_refill(&paging_avl_slabs);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLAB_REFILL);
+    }
+
     struct slab_allocator addr_mgr_slabs;
     slab_init(&addr_mgr_slabs, sizeof(struct addr_mgr_node), NULL);
     err = slab_default_refill(&addr_mgr_slabs);
@@ -390,7 +405,7 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
         return err_push(err, LIB_ERR_SLAB_REFILL);
     }
     return paging_init_state(st, start_vaddr, max_vaddr, pdir, ca, paging_slabs,
-                             addr_mgr_slabs);
+                             paging_avl_slabs, addr_mgr_slabs);
 }
 
 static errval_t handle_pagefault(lvaddr_t addr)
@@ -466,6 +481,10 @@ errval_t paging_init(void)
     slab_init(&paging_slabs, sizeof(struct paging_node), NULL);
     slab_grow(&paging_slabs, paging_node_buf, sizeof(paging_node_buf));
 
+    struct slab_allocator paging_avl_slabs;
+    slab_init(&paging_avl_slabs, sizeof(struct aos_avl_node), NULL);
+    slab_grow(&paging_avl_slabs, paging_avl_node_buf, sizeof(paging_avl_node_buf));
+
     struct slab_allocator addr_mgr_slabs;
     slab_init(&addr_mgr_slabs, sizeof(struct addr_mgr_node), NULL);
     slab_grow(&addr_mgr_slabs, addr_mgr_node_buf, sizeof(addr_mgr_node_buf));
@@ -482,13 +501,13 @@ errval_t paging_init(void)
     genvaddr_t start_addr = addr << VMSAv8_64_L0_BITS;
 
     paging_init_state(&current, start_addr, max_addr, pdir, get_default_slot_allocator(),
-                      paging_slabs, addr_mgr_slabs);
+                      paging_slabs, paging_avl_slabs, addr_mgr_slabs);
 
     void *ex_stack_top = ex_stack_first + EX_STACK_SIZE;
     ex_stack_top = ex_stack_top - (lvaddr_t)ex_stack_top % STACK_ALIGNMENT;
 
-    thread_set_exception_handler(exception_handler, NULL, ex_stack_first, ex_stack_top, NULL,
-                                 NULL);
+    thread_set_exception_handler(exception_handler, NULL, ex_stack_first, ex_stack_top,
+                                 NULL, NULL);
 
     set_current_paging_state(&current);
 
@@ -506,7 +525,7 @@ void paging_init_onthread(struct thread *t)
 
     struct capref cap;
     size_t retbytes;
-    err = slot_alloc(&cap); 
+    err = slot_alloc(&cap);
     assert(err_is_ok(err));
 
     err = frame_alloc(&cap, EX_STACK_SIZE, &retbytes);
@@ -514,7 +533,8 @@ void paging_init_onthread(struct thread *t)
     assert(retbytes == EX_STACK_SIZE);
 
     void *ex_stack;
-    err = paging_map_frame(get_current_paging_state(), &ex_stack, EX_STACK_SIZE, cap, NULL, NULL);
+    err = paging_map_frame(get_current_paging_state(), &ex_stack, EX_STACK_SIZE, cap,
+                           NULL, NULL);
     assert(err_is_ok(err));
 
     t->exception_handler = exception_handler;
@@ -770,25 +790,17 @@ errval_t slab_refill_no_pagefault(struct slab_allocator *slabs, struct capref fr
     return SYS_ERR_OK;
 }
 
-static struct paging_node *find_some(struct paging_node *head, int slot)
-{
-    while (head != NULL && head->slot != slot) {
-        head = head->next;
-    }
-
-    return head;
-}
-
-static errval_t map_some(struct paging_node **ret, struct paging_node **head,
-                         struct paging_node *parent, int level, struct capref pt_cpr,
-                         int slot, struct paging_state *st, struct capref *frame,
-                         size_t offset, int flags)
+static errval_t paging_map_some(struct paging_node **ret, struct aos_avl_node **root,
+                                struct paging_node *parent, int level,
+                                struct capref pt_cpr, int slot, struct paging_state *st,
+                                struct capref *frame, size_t offset, int flags)
 {
     DEBUG_PAGING("map_some begin\n");
 
     errval_t err = 0;
-    struct paging_node *node = find_some(*head, slot);
-    if (node == NULL) {
+    struct paging_node *node;
+    err = aos_avl_find(*root, slot, (void **)&node);
+    if (err_is_fail(err) && err_no(err) == LIB_ERR_AVL_FIND_NOT_FOUND) {
         struct capref lower_pt_cpr;
         struct capref higher_lower_map;
 
@@ -827,16 +839,21 @@ static errval_t map_some(struct paging_node **ret, struct paging_node **head,
         node->table = lower_pt_cpr;
         node->parent = parent;
         node->child = NULL;
-        if (*head != NULL) {
-            (*head)->previous = node;
-            node->next = *head;
-        } else {
-            node->next = NULL;
-        }
-        *head = node;
-        node->previous = NULL;
+
+        struct aos_avl_node *avl_node = slab_alloc(&st->avl_slabs);
+        assert(avl_node != NULL);
+
+        err = aos_avl_insert(root, slot, (void *)node, avl_node);
+        assert(err_is_ok(err));
+
         node->level = level;
         node->slot = slot;
+    } else if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_AVL_FIND);
+    } else if (level == 4) {
+        // We do not expect there to be an existing mapping for the frame cap we want to
+        // map, so this is an error
+        return LIB_ERR_PAGING_MAPPING_EXISTS;
     }
 
     *ret = node;
@@ -870,52 +887,58 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
                       l0_slot, l1_slot, l2_slot, l3_slot, vaddr);
 
     struct paging_node *node_l1;
-    err = map_some(&node_l1, &st->l0, NULL, 1, st->l0_pt, l0_slot, st, NULL, 0,
-                   VREGION_FLAGS_READ_WRITE);
+    err = paging_map_some(&node_l1, &st->l0.child, NULL, 1, st->l0.table, l0_slot, st,
+                          NULL, 0, VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l1 != NULL);
 
     struct paging_node *node_l2;
-    err = map_some(&node_l2, &node_l1->child, node_l1, 2, node_l1->table, l1_slot, st,
-                   NULL, 0, VREGION_FLAGS_READ_WRITE);
+    err = paging_map_some(&node_l2, &node_l1->child, node_l1, 2, node_l1->table, l1_slot,
+                          st, NULL, 0, VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l2 != NULL);
 
     struct paging_node *node_l3;
-    err = map_some(&node_l3, &node_l2->child, node_l2, 3, node_l2->table, l2_slot, st,
-                   NULL, 0, VREGION_FLAGS_READ_WRITE);
+    err = paging_map_some(&node_l3, &node_l2->child, node_l2, 3, node_l2->table, l2_slot,
+                          st, NULL, 0, VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l3 != NULL);
 
     struct paging_node *node_l4;
-    err = map_some(&node_l4, &node_l3->child, node_l3, 4, node_l3->table, l3_slot, st,
-                   &frame, offset, flags);
+    err = paging_map_some(&node_l4, &node_l3->child, node_l3, 4, node_l3->table, l3_slot,
+                          st, &frame, offset, flags);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l4 != NULL);
-    // Virtual address is only allowed to be mapped once!
-    assert(node_l3->child == node_l4);
     assert(node_l4->child == NULL);
 
     DEBUG_PAGING("paging_map_fixed_attr_one middle\n");
 
-    // TODO: Needs to be member, my have multiple state
-    static size_t is_refilling = 0;
     // TODO: Hope we do not run out of slabs in between
-    if (slab_freecount(&st->slabs) < 64 && !is_refilling) {
-        is_refilling = 1;
+    if (slab_freecount(&st->slabs) < 64 && !st->slab_refilling) {
+        st->slab_refilling = 1;
         err = slab_default_refill(&st->slabs);
         if (err_is_fail(err)) {
             return err_push(err, LIB_ERR_SLAB_REFILL);
         }
-        is_refilling = 0;
+        st->slab_refilling = 0;
+    }
+
+    // TODO: Hope we do not run out of slabs in between
+    if (slab_freecount(&st->avl_slabs) < 64 && !st->avl_slab_refilling) {
+        st->avl_slab_refilling = 1;
+        err = slab_default_refill(&st->avl_slabs);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_SLAB_REFILL);
+        }
+        st->avl_slab_refilling = 0;
     }
 
     // TODO: Also refill slot_alloc, as slabs might get refilled through
@@ -958,10 +981,39 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
     return SYS_ERR_OK;
 }
 
+static errval_t paging_delete_level(struct paging_state *st, struct paging_node *node)
+{
+    errval_t err;
+    if (node->level != 4) {
+        err = cap_destroy(node->table);
+        assert(err_is_ok(err));
+    }
+    err = cap_destroy(node->mapping);
+    assert(err_is_ok(err));
+
+    struct paging_node *parent = node->parent;
+    struct aos_avl_node *avl_node;
+    err = aos_avl_remove(&node->parent->child, node->slot, (void **)&node, &avl_node);
+    assert(err_is_ok(err));
+    slab_free(&st->avl_slabs, avl_node);
+    slab_free(&st->slabs, node);
+
+    if (parent->child == NULL) {
+        if (node->level != 0) {
+            return paging_delete_level(st, parent);
+        } else {
+            return SYS_ERR_OK;
+        }
+    } else {
+        return SYS_ERR_OK;
+    }
+}
+
 static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                                  struct capref frame, size_t bytes)
 {
     assert(bytes <= BASE_PAGE_SIZE);
+    errval_t err;
 
     // First 9 bits
     uint64_t mask = 0x1FF;
@@ -974,92 +1026,23 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
                       "%" PRIu64 " addr: 0x%" PRIx64 "\n",
                       l0_slot, l1_slot, l2_slot, l3_slot);
 
-    struct paging_node *node_l1 = find_some(st->l0, l0_slot);
-    assert(node_l1 != NULL);
+    struct paging_node *node_l1;
+    err = aos_avl_find(st->l0.child, l0_slot, (void **)&node_l1);
+    assert(err_is_ok(err));
 
-    struct paging_node *node_l2 = find_some(node_l1->child, l1_slot);
-    assert(node_l2 != NULL);
+    struct paging_node *node_l2;
+    err = aos_avl_find(node_l1->child, l1_slot, (void **)&node_l2);
+    assert(err_is_ok(err));
 
-    struct paging_node *node_l3 = find_some(node_l2->child, l2_slot);
-    assert(node_l3 != NULL);
+    struct paging_node *node_l3;
+    err = aos_avl_find(node_l2->child, l2_slot, (void **)&node_l3);
+    assert(err_is_ok(err));
 
-    struct paging_node *node_l4 = find_some(node_l3->child, l3_slot);
-    assert(node_l4 != NULL);
+    struct paging_node *node_l4;
+    err = aos_avl_find(node_l3->child, l3_slot, (void **)&node_l4);
+    assert(err_is_ok(err));
 
-    // TODO: Refactor
-    // Delete mapping
-    cap_destroy(node_l4->mapping);
-    // Was the only child of L3
-    if (node_l4->previous == NULL && node_l4->next == NULL) {
-        // Delete L3 mapping
-        cap_destroy(node_l3->mapping);
-        // Delete L3 pt
-        cap_destroy(node_l3->table);
-
-        // Was the only child of L2
-        if (node_l3->previous == NULL && node_l3->next == NULL) {
-            // Delete L2 mapping
-            cap_destroy(node_l2->mapping);
-            // Delete L2 pt
-            cap_destroy(node_l2->table);
-
-            if (node_l2->previous == NULL && node_l2->next == NULL) {
-                // Delete L1 mapping
-                cap_destroy(node_l1->mapping);
-                // Delete L1 table
-                cap_destroy(node_l1->table);
-
-                // Won't ever delete L0, or we are toast
-
-                slab_free(&st->slabs, node_l1);
-
-                st->l0->child = NULL;
-            } else {
-                if (node_l2->previous != NULL) {
-                    if (node_l2->next != NULL) {
-                        node_l2->next->previous = node_l2->previous;
-                    }
-                    node_l2->previous->next = node_l2->next;
-                } else {
-                    node_l1->child = node_l2->next;
-                    if (node_l2->next != NULL) {
-                        node_l2->next->previous = NULL;
-                    }
-                }
-            }
-            slab_free(&st->slabs, node_l2);
-        } else {
-            if (node_l3->previous != NULL) {
-                if (node_l3->next != NULL) {
-                    node_l3->next->previous = node_l3->previous;
-                }
-                node_l3->previous->next = node_l3->next;
-            } else {
-                node_l2->child = node_l3->next;
-                if (node_l3->next != NULL) {
-                    node_l3->next->previous = NULL;
-                }
-            }
-        }
-
-        slab_free(&st->slabs, node_l3);
-    } else {
-        if (node_l4->previous != NULL) {
-            if (node_l4->next != NULL) {
-                node_l4->next->previous = node_l4->previous;
-            }
-            node_l4->previous->next = node_l4->next;
-        } else {
-            node_l3->child = node_l4->next;
-            if (node_l4->next != NULL) {
-                node_l4->next->previous = NULL;
-            }
-        }
-    }
-
-    slab_free(&st->slabs, node_l4);
-
-    return SYS_ERR_OK;
+    return paging_delete_level(st, node_l4);
 }
 
 /**
