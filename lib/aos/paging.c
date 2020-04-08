@@ -16,10 +16,14 @@
 #include <aos/paging.h>
 #include <aos/except.h>
 #include <aos/slab.h>
+#include "arch/threads.h"
 #include "threads_priv.h"
 
 #include <stdio.h>
 #include <string.h>
+
+#define EX_STACK_SIZE (1 << 14)
+static char ex_stack_first[EX_STACK_SIZE];
 
 // TODO: switch from slot_alloc to the slot alloc given by paging_init_state
 
@@ -51,9 +55,6 @@ static struct paging_state current;
 
 static char paging_node_buf[sizeof(struct paging_node) * 64];
 static char addr_mgr_node_buf[sizeof(struct addr_mgr_node) * 64];
-
-#define EX_STACK_SIZE (1 << 14)
-static char ex_stack[EX_STACK_SIZE];
 
 static void addr_mgr_add_node(struct addr_mgr_state *st, struct addr_mgr_node *prev,
                               struct addr_mgr_node *new)
@@ -162,9 +163,11 @@ static struct addr_mgr_node *addr_mgr_find_prev(struct addr_mgr_state *st, genva
  * \brief returns the allocated node for a given address or NULL if no region
  * was allocated for this address.
  */
-static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *st, genvaddr_t addr) {
+static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *st,
+                                                         genvaddr_t addr)
+{
     struct addr_mgr_node *cur_node = st->head;
-    while(cur_node != NULL) {
+    while (cur_node != NULL) {
         genvaddr_t region_start = cur_node->base;
         genvaddr_t region_end = region_start + cur_node->size;
 
@@ -172,7 +175,7 @@ static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *
         assert(region_start % BASE_PAGE_SIZE == 0);
         assert(region_end % BASE_PAGE_SIZE == 0);
 
-        if(addr >= region_start && addr <= region_end) {
+        if (addr >= region_start && addr <= region_end) {
             return cur_node;
         }
 
@@ -183,7 +186,8 @@ static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *
     return NULL;
 }
 
-static bool addr_mgr_is_addr_allocated(struct addr_mgr_state *st, genvaddr_t addr) {
+static bool addr_mgr_is_addr_allocated(struct addr_mgr_state *st, genvaddr_t addr)
+{
     return addr_mgr_find_node_for_addr(st, addr) != NULL;
 }
 
@@ -389,18 +393,19 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
                              addr_mgr_slabs);
 }
 
-static errval_t handle_pagefault(lvaddr_t addr) {
+static errval_t handle_pagefault(lvaddr_t addr)
+{
     errval_t err;
 
     // handle null pointer
-    if(addr < BASE_PAGE_SIZE) {
+    if (addr < BASE_PAGE_SIZE) {
         return LIB_ERR_PAGING_HANDLE_PAGEFAULT_NULL_POINTER;
     }
 
     struct paging_state *st = get_current_paging_state();
 
     // check if address was allocated in address manager
-    if(!addr_mgr_is_addr_allocated(&st->addr_mgr_state, (genvaddr_t) addr)) {
+    if (!addr_mgr_is_addr_allocated(&st->addr_mgr_state, (genvaddr_t)addr)) {
         return LIB_ERR_PAGING_HANDLE_PAGEFAULT_ADDR_NOT_FOUND;
     }
 
@@ -430,13 +435,14 @@ static void exception_handler(enum exception_type type, int subtype, void *addr,
 
     DEBUG_EXCEPTION_HANDLER("Exception type %d subtype %d addr %p\n", type, subtype, addr);
 
-    if(type == EXCEPT_PAGEFAULT) {
-        err = handle_pagefault((lvaddr_t) addr);
-        if(err_is_fail(err)) {
+    if (type == EXCEPT_PAGEFAULT) {
+        err = handle_pagefault((lvaddr_t)addr);
+        if (err_is_fail(err)) {
             USER_PANIC_ERR(err, "Couldn't handle pagefault at addr %p", addr);
         }
     } else {
-        USER_PANIC("Couldn't handle exception type %d subtype %d addr %p\n", type, subtype, addr);
+        USER_PANIC("Couldn't handle exception type %d subtype %d addr %p\n", type,
+                   subtype, addr);
     }
     return;
 }
@@ -478,23 +484,39 @@ errval_t paging_init(void)
     paging_init_state(&current, start_addr, max_addr, pdir, get_default_slot_allocator(),
                       paging_slabs, addr_mgr_slabs);
 
-    set_current_paging_state(&current);
+    void *ex_stack_top = ex_stack_first + EX_STACK_SIZE;
+    ex_stack_top = ex_stack_top - (lvaddr_t)ex_stack_top % STACK_ALIGNMENT;
 
-    static char *ex_stack_top = ex_stack + EX_STACK_SIZE;
-    thread_set_exception_handler(exception_handler, NULL, ex_stack, ex_stack_top, NULL,
+    thread_set_exception_handler(exception_handler, NULL, ex_stack_first, ex_stack_top, NULL,
                                  NULL);
+
+    set_current_paging_state(&current);
 
     return SYS_ERR_OK;
 }
-
 
 /**
  * \brief Initialize per-thread paging state
  */
 void paging_init_onthread(struct thread *t)
 {
-    // TODO can there be multiple threads? also, is it safe to use the same stack as
-    // bootstrap_thread?
+    errval_t err;
+
+    assert(BASE_PAGE_SIZE % STACK_ALIGNMENT == 0);
+
+    struct capref cap;
+    size_t retbytes;
+    err = slot_alloc(&cap); 
+    assert(err_is_ok(err));
+
+    err = frame_alloc(&cap, EX_STACK_SIZE, &retbytes);
+    assert(err_is_ok(err));
+    assert(retbytes == EX_STACK_SIZE);
+
+    void *ex_stack;
+    err = paging_map_frame(get_current_paging_state(), &ex_stack, EX_STACK_SIZE, cap, NULL, NULL);
+    assert(err_is_ok(err));
+
     t->exception_handler = exception_handler;
     t->exception_stack = ex_stack;
     t->exception_stack_top = ex_stack + EX_STACK_SIZE;
