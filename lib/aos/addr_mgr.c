@@ -95,8 +95,8 @@ errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t 
     return SYS_ERR_OK;
 }
 
-static errval_t addr_mgr_alloc_internal(struct addr_mgr_state *st, genvaddr_t base, gensize_t size,
-                               struct addr_mgr_node *node)
+static errval_t addr_mgr_alloc_internal(struct addr_mgr_state *st, genvaddr_t base,
+                                        gensize_t size, struct addr_mgr_node *node)
 {
     DEBUG_ADDR_MGR("addr_mgr_alloc_internal begin\n");
 
@@ -280,7 +280,7 @@ static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *
         return NULL;
     }
 
-    if (node->base <= addr && addr < node->base + node->size) {
+    if (node->base <= base_addr && base_addr + BASE_PAGE_SIZE <= node->base + node->size) {
         return node;
     } else {
         return NULL;

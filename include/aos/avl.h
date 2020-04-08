@@ -58,4 +58,6 @@ errval_t aos_avl_change_value(void *value, struct aos_avl_node *node);
  */
 errval_t aos_avl_traverse(struct aos_avl_node *root, int level);
 
+size_t aos_avl_size(struct aos_avl_node *root);
+
 #endif

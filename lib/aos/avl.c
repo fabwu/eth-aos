@@ -29,57 +29,52 @@ static errval_t aos_avl_find_parent(struct aos_avl_node *root, uint64_t key,
 
 errval_t aos_avl_find_ge(struct aos_avl_node *root, uint64_t key, void **value)
 {
-    struct aos_avl_node *parent = NULL;
+    *value = NULL;
+
     while (root != NULL) {
-        parent = root;
-        if (parent->key == key) {
+        if (root->key == key) {
+            *value = root->value;
             break;
-        } else if (parent->key < key) {
-            root = parent->right;
+        } else if (root->key < key) {
+            root = root->right;
         } else {
-            // Found smallest key that is larger than key
-            if (parent->left != NULL && parent->left->key < key) {
-                break;
-            }
-            root = parent->left;
+            assert(root->value != NULL);
+            *value = root->value;
+            root = root->left;
         }
     }
 
-    if (parent == NULL || parent->key < key) {
+    if (*value == NULL) {
         return LIB_ERR_AVL_FIND_GE_NOT_FOUND;
     }
-
-    *value = parent->value;
 
     return SYS_ERR_OK;
 }
 
 errval_t aos_avl_find_le(struct aos_avl_node *root, uint64_t key, void **value)
 {
-    struct aos_avl_node *parent = NULL;
+    *value = NULL;
+
     while (root != NULL) {
-        parent = root;
-        if (parent->key == key) {
+        if (root->key == key) {
+            *value = root->value;
             break;
-        } else if (parent->key < key) {
-            root = parent->left;
+        } else if (root->key > key) {
+            root = root->left;
         } else {
-            // Found largest key that is smaller than key
-            if (parent->right != NULL && parent->right->key > key) {
-                break;
-            }
-            root = parent->right;
+            assert(root->value != NULL);
+            *value = root->value;
+            root = root->right;
         }
     }
 
-    if (parent == NULL || parent->key > key) {
+    if (*value == NULL) {
         return LIB_ERR_AVL_FIND_LE_NOT_FOUND;
     }
 
-    *value = parent->value;
-
     return SYS_ERR_OK;
 }
+
 static struct aos_avl_node *aos_avl_rotate_left(struct aos_avl_node *parent,
                                                 struct aos_avl_node *child)
 {
@@ -324,7 +319,7 @@ errval_t aos_avl_remove_fast(struct aos_avl_node **root, struct aos_avl_node *no
     DEBUG_AVL("aos_avl_remove_fast begin\n");
     assert(*root != NULL);
     assert(node != NULL);
-    DEBUG_AVL("aos_avl_remove_fast removing: 0x%"PRIx64"\n", node->key);
+    DEBUG_AVL("aos_avl_remove_fast removing: 0x%" PRIx64 "\n", node->key);
 
     if (node->right != NULL && node->right != NULL) {
         // Descend, replace
@@ -494,6 +489,19 @@ errval_t aos_avl_find(struct aos_avl_node *root, uint64_t key, void **value)
     *value = parent->value;
 
     return SYS_ERR_OK;
+}
+
+size_t aos_avl_size(struct aos_avl_node *root)
+{
+    size_t i = 1;
+    if (root->left != NULL) {
+        i += aos_avl_size(root->left);
+    }
+    if (root->right != NULL) {
+        i += aos_avl_size(root->right);
+    }
+
+    return i;
 }
 
 errval_t aos_avl_traverse(struct aos_avl_node *root, int level)
