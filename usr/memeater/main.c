@@ -154,7 +154,6 @@ static errval_t test_basic_rpc(void)
         return err;
     }
 
-    // TODO send strings of arb. length
     debug_printf("RPC: sending large string...\n");
     err = aos_rpc_send_string(init_rpc, str);
     if (err_is_fail(err)) {
@@ -237,11 +236,13 @@ int main(int argc, char *argv[])
 
     printf("Hello world using terminal service\n");
 
+    if(0) {
     debug_printf("Demand Paging: testing allocating 64 MB in child\n");
     
     err = test_demand_paging();
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "failure in testing demand paging\n");
+    }
     }
 
     debug_printf("memeater terminated....\n");
