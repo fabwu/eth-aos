@@ -118,17 +118,12 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->l0.level = 0;
     st->l0.slot = 0;
 
-    st->addr_mgr_state.head = NULL;
-    st->addr_mgr_state.tail = NULL;
-    st->addr_mgr_state.is_slabs_refilling = 0;
-    // FIXME: Make this exact
-    st->addr_mgr_state.max_addr = max_vaddr;
+    addr_mgr_init(&st->addr_mgr_state, max_vaddr, addr_mgr_slabs);
 
     st->slabs = paging_slabs;
     st->slab_refilling = 0;
     st->avl_slabs = paging_avl_slabs;
     st->avl_slab_refilling = 0;
-    st->addr_mgr_state.slabs = addr_mgr_slabs;
 
     if (start_vaddr > 0) {
         errval_t err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, start_vaddr);
@@ -348,7 +343,6 @@ static errval_t paging_region_init_base(struct paging_state *st, struct paging_r
 errval_t paging_region_init_fixed(struct paging_state *st, struct paging_region *pr,
                                   lvaddr_t base, size_t size, paging_flags_t flags)
 {
-    // TODO: Reserve space at addr_mgr
     errval_t err;
     err = addr_mgr_alloc_fixed(&st->addr_mgr_state, base, size);
     if (err_is_fail(err)) {

@@ -38,6 +38,19 @@ static void addr_mgr_add_node(struct addr_mgr_state *st, struct addr_mgr_node *p
     }
 }
 
+errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t max_addr,
+        struct slab_allocator slabs)
+{
+    st->head = NULL;
+    st->tail = NULL;
+    st->is_slabs_refilling = 0;
+    // FIXME: Make this exact
+    st->max_addr = max_addr;
+    st->slabs = slabs;
+
+    return SYS_ERR_OK;
+}
+
 /**
  * \brief allocs a range of size from the addr mgr at some base addr, returns
  * the base addr

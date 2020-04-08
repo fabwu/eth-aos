@@ -21,6 +21,9 @@ struct addr_mgr_state {
     genvaddr_t max_addr;
 };
 
+errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t max_addr,
+        struct slab_allocator slabs);
+
 errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensize_t size,
                                gensize_t alignment);
 
