@@ -275,16 +275,16 @@ static struct addr_mgr_node *addr_mgr_find_node_for_addr(struct addr_mgr_state *
 
     struct addr_mgr_node *node;
 
-    err = aos_avl_find(st->allocated, base_addr, (void **)&node);
-    if (err_is_ok(err)) {
-        return node;
-    } else if (err_no(err) == LIB_ERR_AVL_FIND_NOT_FOUND) {
+    err = aos_avl_find_le(st->allocated, base_addr, (void **)&node);
+    if (err_is_fail(err)) {
         return NULL;
     }
 
-    // TODO Better error handling
-    DEBUG_ERR(err, "Err in avl find");
-    return NULL;
+    if (node->base <= addr && addr < node->base + node->size) {
+        return node;
+    } else {
+        return NULL;
+    }
 }
 
 bool addr_mgr_is_addr_allocated(struct addr_mgr_state *st, genvaddr_t addr)
