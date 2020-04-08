@@ -90,7 +90,6 @@ errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t 
     new->size = max_addr - start_addr;
 
     err = addr_mgr_add_to_free(st, new);
-    aos_avl_traverse(st->address_free, 0);
 
     return SYS_ERR_OK;
 }

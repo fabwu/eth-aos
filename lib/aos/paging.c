@@ -194,6 +194,7 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
 
 static errval_t handle_pagefault(lvaddr_t addr)
 {
+    debug_printf("handle_pagefault begin\n");
     errval_t err;
 
     // handle null pointer
@@ -224,6 +225,7 @@ static errval_t handle_pagefault(lvaddr_t addr)
         return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
     }
 
+    debug_printf("handle_pagefault end\n");
     return SYS_ERR_OK;
 }
 
@@ -558,12 +560,8 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     genvaddr_t addr;
     err = addr_mgr_alloc(&st->addr_mgr_state, &addr, bytes, BASE_PAGE_SIZE);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "NOOOO");
         return err_push(err, LIB_ERR_ADDR_MGR_ALLOC);
     }
-    // aos_avl_traverse(st->addr_mgr_state.addr_root, 0);
-
-    //  DEBUG_PRINTF("ADDR: %p\n", addr);
 
     err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
     if (err_is_fail(err)) {
