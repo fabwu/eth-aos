@@ -587,7 +587,8 @@ static errval_t paging_map_some(struct paging_node **ret, struct aos_avl_node **
                                 struct capref pt_cpr, int slot, struct paging_state *st,
                                 struct capref *frame, size_t offset, int flags)
 {
-    DEBUG_PAGING("map_some begin\n");
+    DEBUG_PAGING("map_some begin level: 0x%" PRIx64 " slot: 0x%" PRIx64 "\n",
+                 (uint64_t)level, (uint64_t)slot);
 
     errval_t err = 0;
     struct paging_node *node;

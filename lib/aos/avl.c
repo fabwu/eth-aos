@@ -224,7 +224,9 @@ errval_t aos_avl_insert(struct aos_avl_node **root, uint64_t key, void *value,
         assert(err_is_ok(err));
 
         // TODO: handle this?
-        assert(parent->key != key);
+        if (parent->key == key) {
+            return LIB_ERR_AVL_INSERT;
+        }
 
         node->parent = parent;
 

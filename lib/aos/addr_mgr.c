@@ -6,7 +6,7 @@
 #include <aos/aos.h>
 #include <aos/addr_mgr.h>
 
-#if 1
+#if 0
 #    define DEBUG_ADDR_MGR(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_ADDR_MGR(fmt...) ((void)0)
@@ -98,7 +98,10 @@ errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t 
 static errval_t addr_mgr_alloc_internal(struct addr_mgr_state *st, genvaddr_t base, gensize_t size,
                                struct addr_mgr_node *node)
 {
+    DEBUG_ADDR_MGR("addr_mgr_alloc_internal begin\n");
+
     errval_t err;
+
     assert(node->free_size_avl != NULL);
     assert(node->free_address_avl != NULL);
 
@@ -216,7 +219,7 @@ static errval_t addr_mgr_alloc_internal(struct addr_mgr_state *st, genvaddr_t ba
         st->avl_slabs_refilling = 0;
     }
 
-    DEBUG_ADDR_MGR("addr_mgr_alloc end\n");
+    DEBUG_ADDR_MGR("addr_mgr_alloc_internal end\n");
 
     return SYS_ERR_OK;
 }
@@ -255,7 +258,7 @@ errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensize_t wa
 
     *ret = base;
 
-    DEBUG_ADDR_MGR("addr_mgr_alloc begin\n");
+    DEBUG_ADDR_MGR("addr_mgr_alloc end\n");
 
     return err;
 }
@@ -294,6 +297,7 @@ bool addr_mgr_is_addr_allocated(struct addr_mgr_state *st, genvaddr_t addr)
  */
 errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base, gensize_t size)
 {
+    DEBUG_ADDR_MGR("addr_mgr_alloc_fixed begin\n");
     DEBUG_ADDR_MGR("addr_mgr_alloc_fixed() called with base %p and size %d\n", base, size);
 
     // TODO: Handle alignment
@@ -318,7 +322,11 @@ errval_t addr_mgr_alloc_fixed(struct addr_mgr_state *st, genvaddr_t base, gensiz
         return LIB_ERR_ADDR_MGR_FULL;
     }
 
-    return addr_mgr_alloc_internal(st, base, size, free_node);
+    err = addr_mgr_alloc_internal(st, base, size, free_node);
+
+    DEBUG_ADDR_MGR("addr_mgr_alloc_fixed end\n");
+
+    return err;
 }
 
 static errval_t addr_mgr_remove_from_free(struct addr_mgr_state *st,
