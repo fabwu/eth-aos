@@ -50,6 +50,7 @@ static struct paging_state current;
 static char paging_node_buf[sizeof(struct paging_node) * 64];
 static char paging_avl_node_buf[sizeof(struct aos_avl_node) * 64];
 static char addr_mgr_node_buf[sizeof(struct addr_mgr_node) * 64];
+static char addr_mgr_avl_buf[sizeof(struct aos_avl_node) * 64];
 
 /**
  * \brief Helper function that allocates a slot and
@@ -107,7 +108,8 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
                            lvaddr_t max_vaddr, struct capref pdir,
                            struct slot_allocator *ca, struct slab_allocator paging_slabs,
                            struct slab_allocator paging_avl_slabs,
-                           struct slab_allocator addr_mgr_slabs)
+                           struct slab_allocator addr_mgr_slabs,
+                           struct slab_allocator addr_mgr_avl_slabs)
 {
     // TODO (M2): Implement state struct initialization
     // TODO (M4): Implement page fault handler that installs frames when a page fault
@@ -118,22 +120,18 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->l0.level = 0;
     st->l0.slot = 0;
 
-    addr_mgr_init(&st->addr_mgr_state, max_vaddr, addr_mgr_slabs);
+    addr_mgr_init(&st->addr_mgr_state, start_vaddr, max_vaddr, addr_mgr_slabs,
+                  addr_mgr_avl_slabs);
 
     st->slabs = paging_slabs;
     st->slab_refilling = 0;
     st->avl_slabs = paging_avl_slabs;
     st->avl_slab_refilling = 0;
 
-    if (start_vaddr > 0) {
-        errval_t err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, start_vaddr);
-        if (err_is_fail(err)) {
-            return LIB_ERR_ADDR_MGR_ALLOC_FIXED;
-        }
-    } else {
+    if (start_vaddr == 0) {
         errval_t err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, BASE_PAGE_SIZE);
         if (err_is_fail(err)) {
-            return LIB_ERR_ADDR_MGR_ALLOC_FIXED;
+            return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FIXED);
         }
     }
 
@@ -182,8 +180,16 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_SLAB_REFILL);
     }
+
+    struct slab_allocator addr_mgr_avl_slabs;
+    slab_init(&addr_mgr_avl_slabs, sizeof(struct aos_avl_node), NULL);
+    err = slab_default_refill(&addr_mgr_avl_slabs);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLAB_REFILL);
+    }
+
     return paging_init_state(st, start_vaddr, max_vaddr, pdir, ca, paging_slabs,
-                             paging_avl_slabs, addr_mgr_slabs);
+                             paging_avl_slabs, addr_mgr_slabs, addr_mgr_avl_slabs);
 }
 
 static errval_t handle_pagefault(lvaddr_t addr)
@@ -267,6 +273,10 @@ errval_t paging_init(void)
     slab_init(&addr_mgr_slabs, sizeof(struct addr_mgr_node), NULL);
     slab_grow(&addr_mgr_slabs, addr_mgr_node_buf, sizeof(addr_mgr_node_buf));
 
+    struct slab_allocator addr_mgr_avl_slabs;
+    slab_init(&addr_mgr_avl_slabs, sizeof(struct aos_avl_node), NULL);
+    slab_grow(&addr_mgr_avl_slabs, addr_mgr_avl_buf, sizeof(addr_mgr_avl_buf));
+
     struct capref pdir;
     // TODO: How to get existing mapping capabilities??
     pdir.cnode = cnode_page;
@@ -279,7 +289,7 @@ errval_t paging_init(void)
     genvaddr_t start_addr = addr << VMSAv8_64_L0_BITS;
 
     paging_init_state(&current, start_addr, max_addr, pdir, get_default_slot_allocator(),
-                      paging_slabs, paging_avl_slabs, addr_mgr_slabs);
+                      paging_slabs, paging_avl_slabs, addr_mgr_slabs, addr_mgr_avl_slabs);
 
     void *ex_stack_top = ex_stack_first + EX_STACK_SIZE;
     ex_stack_top = ex_stack_top - (lvaddr_t)ex_stack_top % STACK_ALIGNMENT;
@@ -548,8 +558,13 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     genvaddr_t addr;
     err = addr_mgr_alloc(&st->addr_mgr_state, &addr, bytes, BASE_PAGE_SIZE);
     if (err_is_fail(err)) {
+        DEBUG_ERR(err, "NOOOO");
         return err_push(err, LIB_ERR_ADDR_MGR_ALLOC);
     }
+    // aos_avl_traverse(st->addr_mgr_state.addr_root, 0);
+
+    //  DEBUG_PRINTF("ADDR: %p\n", addr);
+
     err = paging_map_fixed_attr(st, addr, frame, bytes, flags);
     if (err_is_fail(err)) {
         return err;

@@ -78,6 +78,23 @@ static int bsp_main(int argc, char *argv[])
         return -1;
     }
 
+    struct capref frame;
+    err = frame_alloc(&frame, BASE_PAGE_SIZE, NULL);
+    if(err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Föck");
+    }
+
+    char debug_buf[256];
+    debug_print_cap_at_capref(debug_buf, 256, frame);
+    DEBUG_PRINTF("%s\n", debug_buf);
+
+    void *buf;
+    err = paging_map_frame(get_current_paging_state(), &buf, BASE_PAGE_SIZE,
+            frame, NULL, NULL);
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "2Föck");
+    }
+
     err = rpc_initialize_lmp(&lmp_state);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_lmp failed");
@@ -88,7 +105,10 @@ static int bsp_main(int argc, char *argv[])
     grading_test_early();
 
     if (INIT_EXECUTE_MEMORYTEST) {
-        init_spawn("memeater", NULL);
+        err = init_spawn("memeater", NULL);
+        if(err_is_fail(err)) {
+            DEBUG_ERR(err, "Couldn't spawn memeater");
+        }
     }
 
     if (INIT_EXECUTE_SPAWNTEST) {

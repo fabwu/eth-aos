@@ -389,6 +389,8 @@ static errval_t spawn_dispatch(struct spawninfo *si, domainid_t pid)
 
     dispatcher_handle_t handle = (dispatcher_handle_t)si->dispbase;
 
+    DEBUG_PRINTF("HANDLE ADDR %p\n", handle);
+
     struct dispatcher_shared_generic *disp = get_dispatcher_shared_generic(handle);
     struct dispatcher_generic *disp_gen = get_dispatcher_generic(handle);
 

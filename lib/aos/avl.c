@@ -54,6 +54,32 @@ errval_t aos_avl_find_ge(struct aos_avl_node *root, uint64_t key, void **value)
     return SYS_ERR_OK;
 }
 
+errval_t aos_avl_find_le(struct aos_avl_node *root, uint64_t key, void **value)
+{
+    struct aos_avl_node *parent = NULL;
+    while (root != NULL) {
+        parent = root;
+        if (parent->key == key) {
+            break;
+        } else if (parent->key < key) {
+            root = parent->left;
+        } else {
+            // Found largest key that is smaller than key
+            if (parent->right != NULL && parent->right->key > key) {
+                break;
+            }
+            root = parent->right;
+        }
+    }
+
+    if (parent == NULL || parent->key > key) {
+        return LIB_ERR_AVL_FIND_LE_NOT_FOUND;
+    }
+
+    *value = parent->value;
+
+    return SYS_ERR_OK;
+}
 static struct aos_avl_node *aos_avl_rotate_left(struct aos_avl_node *parent,
                                                 struct aos_avl_node *child)
 {

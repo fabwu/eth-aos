@@ -472,7 +472,10 @@ errors libaos LIB_ERR_ {
     failure AVL_FIND "Failure aos_avl_find()",
     failure AVL_FIND_GE_NOT_FOUND "Couldn't find larger or equal key in aos_avl_find_ge()",
     failure AVL_FIND_GE "Failure aos_avl_find_ge()",
+    failure AVL_FIND_LE_NOT_FOUND "Couldn't find smaller or equal key in aos_avl_find_le()",
+    failure AVL_FIND_LE "Failure aos_avl_find_le()",
     failure AVL_INSERT "Failure aos_avl_insert()",
+    failure AVL_REMOVE "Failure aos_avl_remove()",
 };
 
 // errors in Flounder-generated bindings

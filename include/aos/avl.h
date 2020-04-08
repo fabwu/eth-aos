@@ -39,9 +39,14 @@ errval_t aos_avl_remove_fast(struct aos_avl_node **root, struct aos_avl_node *no
 errval_t aos_avl_find(struct aos_avl_node *root, uint64_t key, void **value);
 
 /**
- * \brieft finds value for key, such that found key is greater or equal, in tree root
+ * \brief finds value for key, such that found key is greater or equal, in tree root
  */
 errval_t aos_avl_find_ge(struct aos_avl_node *root, uint64_t key, void **value);
+
+/**
+ * \brief finds value for key, such that found key is less or equal, in tree root
+ */
+errval_t aos_avl_find_le(struct aos_avl_node *root, uint64_t key, void **value);
 
 /**
  * \brief change value of a node
