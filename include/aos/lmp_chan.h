@@ -38,6 +38,7 @@ struct lmp_chan {
     struct lmp_chan *next, *prev; ///< Next/prev in list of channels with send events
     struct capref local_cap, remote_cap;   ///< Capabilities to local/remote endpoints
     struct lmp_endpoint *endpoint;         ///< Incoming LMP endpoint (in dispatcher)
+    struct capref reserved_recv_slot;      ///< Slot for refilling slot allocator
 
     /// connection state
     enum {LMP_DISCONNECTED,     ///< Disconnected

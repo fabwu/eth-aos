@@ -202,8 +202,24 @@ void lmp_chan_migrate_send(struct lmp_chan *lc, struct waitset *ws)
 errval_t lmp_chan_alloc_recv_slot(struct lmp_chan *lc)
 {
     struct capref slot;
+    errval_t err;
 
-    errval_t err = slot_alloc(&slot);
+    struct slot_allocator *ca = get_default_slot_allocator();
+    if (ca->space == 1) {
+        /*
+         * Slot allocator is about to refill RAM via RPC. This requires a
+         * receive slot.
+         */
+        lmp_chan_set_recv_slot(lc, lc->reserved_recv_slot);
+
+        err = slot_alloc(&slot);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_SLOT_ALLOC);
+        }
+        lc->reserved_recv_slot = slot;
+    }
+
+    err = slot_alloc(&slot);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_SLOT_ALLOC);
     }

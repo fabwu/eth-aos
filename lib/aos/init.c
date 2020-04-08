@@ -194,6 +194,12 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
             return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
         }
 
+        /* allocate a receive slot to refill slot allocator via RPC */
+        err = slot_alloc(&chan_to_init.reserved_recv_slot);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_SLOT_ALLOC);
+        }
+
         /* send local ep to init */
         err = lmp_protocol_send_cap(&chan_to_init, AOS_RPC_SETUP, chan_to_init.local_cap);
         if (err_is_fail(err)) {
