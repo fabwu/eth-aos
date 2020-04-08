@@ -22,6 +22,7 @@
 #include <aos/avl.h>
 #include <barrelfish_kpi/paging_arch.h>
 #include <aos/paging_types.h>
+#include <aos/addr_mgr.h>
 
 struct paging_state;
 struct paging_region;

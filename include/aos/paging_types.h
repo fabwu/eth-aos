@@ -16,6 +16,7 @@
 #define PAGING_TYPES_H_ 1
 
 #include <aos/solution.h>
+#include <aos/addr_mgr.h>
 
 #define MCN_COUNT DIVIDE_ROUND_UP(PTABLE_ENTRIES, L2_CNODE_SLOTS)
 
@@ -56,21 +57,6 @@ struct paging_region {
     lvaddr_t current_addr;
     size_t region_size;
     paging_flags_t flags;
-};
-
-struct addr_mgr_node {
-    genvaddr_t base;
-    gensize_t size;
-    struct addr_mgr_node* prev;
-    struct addr_mgr_node* next;
-};
-
-struct addr_mgr_state {
-    struct slab_allocator slabs;
-    int is_slabs_refilling;
-    struct addr_mgr_node *head;
-    struct addr_mgr_node *tail;
-    genvaddr_t max_addr;
 };
 
 // TODO: Replace with a tree of some sort, linked list will be excrutiating slow
