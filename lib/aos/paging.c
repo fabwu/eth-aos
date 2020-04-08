@@ -194,7 +194,7 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
 
 static errval_t handle_pagefault(lvaddr_t addr)
 {
-    debug_printf("handle_pagefault begin\n");
+    DEBUG_PAGING("handle_pagefault begin\n");
     errval_t err;
 
     // handle null pointer
@@ -225,7 +225,7 @@ static errval_t handle_pagefault(lvaddr_t addr)
         return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
     }
 
-    debug_printf("handle_pagefault end\n");
+    DEBUG_PAGING("handle_pagefault end\n");
     return SYS_ERR_OK;
 }
 
