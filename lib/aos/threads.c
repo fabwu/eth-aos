@@ -355,10 +355,28 @@ static void free_thread(struct thread *thread)
 struct thread *thread_create_unrunnable(thread_func_t start_func, void *arg,
                                         size_t stacksize)
 {
+    struct paging_state *st = get_current_paging_state();
+    errval_t err;
+
     // allocate stack
     assert((stacksize % sizeof(uintptr_t)) == 0);
+#if 0
+    // Do not use a dynamic stack for now
     void *stack = malloc(stacksize);
     if (stack == NULL) {
+        return NULL;
+    }
+#endif
+    struct capref stackframe;
+    size_t ret_stacksize;
+    err = frame_alloc(&stackframe, stacksize, &ret_stacksize);
+    if (err_is_fail(err) || ret_stacksize != stacksize) {
+        return NULL;
+    }
+    void *stack;
+    err = paging_map_frame(st, &stack, stacksize, stackframe, NULL, NULL);
+    if (err_is_fail(err)) {
+        cap_destroy(stackframe);
         return NULL;
     }
 
@@ -370,7 +388,8 @@ struct thread *thread_create_unrunnable(thread_func_t start_func, void *arg,
     release_spinlock(&thread_slabs_spinlock);
     // thread_mutex_unlock(&thread_slabs_mutex);
     if (space == NULL) {
-        free(stack);
+        paging_unmap(st, (lvaddr_t)stack, stackframe, stacksize);
+        cap_destroy(stackframe);
         return NULL;
     }
 
@@ -409,7 +428,8 @@ struct thread *thread_create_unrunnable(thread_func_t start_func, void *arg,
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "error allocating LDT segment for new thread");
         free_thread(newthread);
-        free(stack);
+        paging_unmap(st, (lvaddr_t)stack, stackframe, stacksize);
+        cap_destroy(stackframe);
         return NULL;
     }
 #endif
