@@ -84,8 +84,8 @@ static void test_address_out_of_range_low_addr(void) {
 void grading_test_demand_paging(void) {
     if(TEST_MALLOC) {
         test_malloc_simple();
-        test_malloc_64MB();
         test_malloc_threads();
+        test_malloc_64MB();
     }
 
     if(TEST_NULL_POINTER) {
