@@ -265,6 +265,8 @@ errors libaos LIB_ERR_ {
 
     // addr_mgr
     failure ADDR_MGR_FULL "addr_mgr has not enough space to",
+    failure ADDR_MGR_ADD_TO_FREE "addr_mgr_add_to_free returned error",
+    failure ADDR_MGR_INIT "addr_mgr_init() returned error",
     failure ADDR_MGR_ALLOC "addr_mgr_alloc() returned error",
     failure ADDR_MGR_ALLOC_FIXED "addr_mgr_alloc_fixed() returned error",
     failure ADDR_MGR_FREE "addr_mgr_free() returned error",

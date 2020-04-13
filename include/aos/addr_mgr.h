@@ -48,8 +48,7 @@ struct addr_mgr_state {
     lvaddr_t max_addr;
 };
 
-errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t max_addr,
-        struct slab_allocator addr_mgr_slabs, struct slab_allocator avl_slabs);
+errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t max_addr);
 
 errval_t addr_mgr_alloc(struct addr_mgr_state *st, genvaddr_t *ret, gensize_t size,
                                gensize_t alignment);

@@ -64,17 +64,33 @@ static errval_t addr_mgr_add_to_free(struct addr_mgr_state *st, struct addr_mgr_
     return SYS_ERR_OK;
 }
 
-errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t max_addr,
-                       struct slab_allocator addr_mgr_slabs,
-                       struct slab_allocator avl_slabs)
+static char addr_mgr_node_buf[sizeof(struct addr_mgr_node) * 64];
+static char addr_mgr_avl_buf[sizeof(struct aos_avl_node) * 64];
+
+errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t max_addr)
 {
     errval_t err;
-    // TODO Init slabs in this function and refill them immediately (give buffer
-    // when we call it the first time to bootstrap paging)
-    st->addr_mgr_slabs = addr_mgr_slabs;
-    st->addr_mgr_slabs_refilling = 0;
 
-    st->avl_slabs = avl_slabs;
+    slab_init(&st->addr_mgr_slabs, sizeof(struct addr_mgr_node), NULL);
+    slab_init(&st->avl_slabs, sizeof(struct aos_avl_node), NULL);
+
+    //TODO Improve how to init slabs if we are setting up init or child domain
+    if(start_addr != 0) {
+        slab_grow(&st->addr_mgr_slabs, addr_mgr_node_buf, sizeof(addr_mgr_node_buf));
+        slab_grow(&st->avl_slabs, addr_mgr_avl_buf, sizeof(addr_mgr_avl_buf));
+    } else {
+        err = slab_default_refill(&st->addr_mgr_slabs);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_SLAB_REFILL);
+        }
+
+        err = slab_default_refill(&st->avl_slabs);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_SLAB_REFILL);
+        }
+    }
+
+    st->addr_mgr_slabs_refilling = 0;
     st->avl_slabs_refilling = 0;
 
     st->start_addr = start_addr;
@@ -96,6 +112,9 @@ errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t 
     new->size = max_addr - start_addr;
 
     err = addr_mgr_add_to_free(st, new);
+    if(err_is_fail(err)) {
+        return err_push(err, LIB_ERR_ADDR_MGR_ADD_TO_FREE);
+    }
 
     return SYS_ERR_OK;
 }
