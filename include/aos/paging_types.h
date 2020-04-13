@@ -51,7 +51,6 @@
 
 typedef int paging_flags_t;
 
-
 struct paging_region {
     lvaddr_t base_addr;
     lvaddr_t current_addr;
@@ -59,8 +58,6 @@ struct paging_region {
     paging_flags_t flags;
 };
 
-// TODO: Replace with a tree of some sort, linked list will be excrutiating slow
-// when many mappings exist
 struct paging_node {
     struct capref mapping;
     struct capref table;

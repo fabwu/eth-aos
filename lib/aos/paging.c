@@ -25,8 +25,6 @@
 #define EX_STACK_SIZE (1 << 14)
 static char ex_stack_first[EX_STACK_SIZE];
 
-// TODO: switch from slot_alloc to the slot alloc given by paging_init_state
-
 #if 0
 #    define DEBUG_PAGING(fmt...) debug_printf(fmt);
 #else
@@ -51,46 +49,6 @@ static char paging_node_buf[sizeof(struct paging_node) * 64];
 static char paging_avl_node_buf[sizeof(struct aos_avl_node) * 64];
 
 /**
- * \brief Helper function that allocates a slot and
- *        creates a aarch64 page table capability for a certain level
- */
-static errval_t pt_alloc(struct paging_state *st, enum objtype type, struct capref *ret)
-{
-    errval_t err;
-    err = slot_alloc(ret);
-    if (err_is_fail(err)) {
-        debug_printf("slot_alloc failed: %s\n", err_getstring(err));
-        return err;
-    }
-    err = vnode_create(*ret, type);
-    if (err_is_fail(err)) {
-        debug_printf("vnode_create failed: %s\n", err_getstring(err));
-        return err;
-    }
-    return SYS_ERR_OK;
-}
-
-__attribute__((unused)) static errval_t pt_alloc_l1(struct paging_state *st,
-                                                    struct capref *ret)
-{
-    return pt_alloc(st, ObjType_VNode_AARCH64_l1, ret);
-}
-
-__attribute__((unused)) static errval_t pt_alloc_l2(struct paging_state *st,
-                                                    struct capref *ret)
-{
-    return pt_alloc(st, ObjType_VNode_AARCH64_l2, ret);
-}
-
-__attribute__((unused)) static errval_t pt_alloc_l3(struct paging_state *st,
-                                                    struct capref *ret)
-{
-    return pt_alloc(st, ObjType_VNode_AARCH64_l3, ret);
-}
-
-/**
- * TODO(M2): Implement this function.
- * TODO(M4): Improve this function.
  * \brief Initialize the paging_state struct for the paging
  *        state of the calling process.
  *
@@ -107,10 +65,8 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
                            struct slot_allocator *ca, struct slab_allocator paging_slabs,
                            struct slab_allocator paging_avl_slabs)
 {
-    // TODO (M2): Implement state struct initialization
-    // TODO (M4): Implement page fault handler that installs frames when a page fault
-    // occurs and keeps track of the virtual address space.
     errval_t err;
+
     st->l0.table = pdir;
     st->l0.parent = NULL;
     st->l0.child = NULL;
@@ -138,8 +94,6 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
 }
 
 /**
- * TODO(M2): Implement this function.
- * TODO(M4): Improve this function.
  * \brief Initialize the paging_state struct for the paging state
  *        of a child process.
  *
@@ -156,9 +110,7 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
                                    struct slot_allocator *ca)
 {
     errval_t err;
-    // TODO (M2): Implement state struct initialization
-    // TODO (M4): Implement page fault handler that installs frames when a page fault
-    // occurs and keeps track of the virtual address space.
+
     struct slab_allocator paging_slabs;
     slab_init(&paging_slabs, sizeof(struct paging_node), NULL);
     err = slab_default_refill(&paging_slabs);
@@ -240,13 +192,6 @@ static void exception_handler(enum exception_type type, int subtype, void *addr,
 errval_t paging_init(void)
 {
     debug_printf("paging_init\n");
-    // TODO (M2): Call paging_init_state for &current
-    // TODO (M4): initialize self-paging handler
-    // TIP: use thread_set_exception_handler() to setup a page fault handler
-    // TIP: Think about the fact that later on, you'll have to make sure that
-    // you can handle page faults in any thread of a domain.
-    // TIP: it might be a good idea to call paging_init_state() from here to
-    // avoid code duplication.
 
     struct slab_allocator paging_slabs;
     slab_init(&paging_slabs, sizeof(struct paging_node), NULL);
@@ -465,7 +410,6 @@ errval_t paging_region_map(struct paging_region *pr, size_t req_size, void **ret
 }
 
 /**
- * TODO(M2): As an OPTIONAL part of M2 implement this function
  * \brief free a bit of the paging region `pr`.
  * This function gets used in some of the code that is responsible
  * for allocating Frame (and other) capabilities.
@@ -479,7 +423,6 @@ errval_t paging_region_unmap(struct paging_region *pr, lvaddr_t base, size_t byt
 }
 
 /**
- * TODO(M2): Implement this function.
  * \brief Find a bit of free virtual address space that is large enough to accomodate a
  *        buffer of size 'bytes'.
  *
@@ -510,7 +453,6 @@ errval_t paging_alloc(struct paging_state *st, void **buf, size_t bytes, size_t 
 }
 
 /**
- * TODO(M2): Implement this function.
  * \brief Finds a free virtual address and maps a frame at that address
  *
  * \param st A pointer to the paging state.
@@ -529,9 +471,6 @@ errval_t paging_alloc(struct paging_state *st, void **buf, size_t bytes, size_t 
 errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes,
                                struct capref frame, int flags, void *arg1, void *arg2)
 {
-    // TODO(M2): Implement me
-    // - Call paging_alloc to get a free virtual address region of the requested size
-    // - Map the user provided frame at the free virtual address
     errval_t err;
 
     genvaddr_t addr;
@@ -550,11 +489,39 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     return SYS_ERR_OK;
 }
 
-errval_t slab_refill_no_pagefault(struct slab_allocator *slabs, struct capref frame,
-                                  size_t minbytes)
+/**
+ * \brief Helper function that allocates a slot and
+ *        creates a aarch64 page table capability for a certain level
+ */
+static errval_t pt_alloc(struct paging_state *st, enum objtype type, struct capref *ret)
 {
-    // Refill the two-level slot allocator without causing a page-fault
+    errval_t err;
+    err = slot_alloc(ret);
+    if (err_is_fail(err)) {
+        debug_printf("slot_alloc failed: %s\n", err_getstring(err));
+        return err;
+    }
+    err = vnode_create(*ret, type);
+    if (err_is_fail(err)) {
+        debug_printf("vnode_create failed: %s\n", err_getstring(err));
+        return err;
+    }
     return SYS_ERR_OK;
+}
+
+static errval_t pt_alloc_l1(struct paging_state *st, struct capref *ret)
+{
+    return pt_alloc(st, ObjType_VNode_AARCH64_l1, ret);
+}
+
+static errval_t pt_alloc_l2(struct paging_state *st, struct capref *ret)
+{
+    return pt_alloc(st, ObjType_VNode_AARCH64_l2, ret);
+}
+
+static errval_t pt_alloc_l3(struct paging_state *st, struct capref *ret)
+{
+    return pt_alloc(st, ObjType_VNode_AARCH64_l3, ret);
 }
 
 static errval_t paging_map_some(struct paging_node **ret, struct aos_avl_node **root,
@@ -593,7 +560,6 @@ static errval_t paging_map_some(struct paging_node **ret, struct aos_avl_node **
             return err_push(err, LIB_ERR_SLOT_ALLOC);
         }
 
-        // Does Read/Write make sense for a page table?
         err = vnode_map(pt_cpr, lower_pt_cpr, slot, flags, offset, 1, higher_lower_map);
         if (err_is_fail(err)) {
             return err_push(err, LIB_ERR_VNODE_MAP);
@@ -639,7 +605,6 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     errval_t err;
 
     // Only one page at the time
-    // TODO: Allow for larger frames
     assert(bytes <= BASE_PAGE_SIZE);
 
     // First 9 bits
@@ -689,7 +654,6 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
 
     DEBUG_PAGING("paging_map_fixed_attr_one middle\n");
 
-    // TODO: Hope we do not run out of slabs in between
     if (slab_freecount(&st->slabs) < 64 && !st->slab_refilling) {
         st->slab_refilling = 1;
         err = slab_default_refill(&st->slabs);
@@ -699,7 +663,6 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
         st->slab_refilling = 0;
     }
 
-    // TODO: Hope we do not run out of slabs in between
     if (slab_freecount(&st->avl_slabs) < 64 && !st->avl_slab_refilling) {
         st->avl_slab_refilling = 1;
         err = slab_default_refill(&st->avl_slabs);
@@ -724,7 +687,6 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
 {
     DEBUG_PAGING("paging_map_fixed_attr begin\n");
 
-    // TODO: Inefficient, but correct
     errval_t err;
 
     size_t offset = 0;
@@ -818,12 +780,9 @@ static errval_t paging_unmap_one(struct paging_state *st, lvaddr_t vaddr,
  *        frame in `buf`.
  * NOTE: Implementing this function is optional.
  */
-// errval_t paging_unmap(struct paging_state *st, const void *region)
-// {
 errval_t paging_unmap(struct paging_state *st, lvaddr_t vaddr, struct capref frame,
                       size_t bytes)
 {
-    // TODO: Inefficient, but correct
     errval_t err;
 
     // FIXME: Every unmap should have a corresponding reservation
