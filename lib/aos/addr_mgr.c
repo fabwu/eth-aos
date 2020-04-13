@@ -80,6 +80,12 @@ errval_t addr_mgr_init(struct addr_mgr_state *st, lvaddr_t start_addr, lvaddr_t 
     st->start_addr = start_addr;
     st->max_addr = max_addr;
 
+    // reset data structures
+    st->all = NULL;
+    st->size_free = NULL;
+    st->address_free = NULL;
+    st->allocated = NULL;
+
     // Add region which goes from start_addr to max_addr to free list
     struct addr_mgr_node *new = (struct addr_mgr_node *)slab_alloc(&st->addr_mgr_slabs);
     if (new == NULL) {
