@@ -61,9 +61,7 @@ static char paging_avl_node_buf[sizeof(struct aos_avl_node) * 64];
  * indicating what went wrong otherwise.
  */
 errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
-                           lvaddr_t max_vaddr, struct capref pdir,
-                           struct slot_allocator *ca, struct slab_allocator paging_slabs,
-                           struct slab_allocator paging_avl_slabs)
+                           lvaddr_t max_vaddr, struct capref pdir)
 {
     errval_t err;
 
@@ -73,21 +71,15 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->l0.level = 0;
     st->l0.slot = 0;
 
+    slab_init(&st->slabs, sizeof(struct paging_node), NULL);
+    st->slab_refilling = 0;
+
+    slab_init(&st->avl_slabs, sizeof(struct aos_avl_node), NULL);
+    st->avl_slab_refilling = 0;
+
     err = addr_mgr_init(&st->addr_mgr_state, start_vaddr, max_vaddr);
     if(err_is_fail(err)) {
         return err_push(err, LIB_ERR_ADDR_MGR_INIT);
-    }
-
-    st->slabs = paging_slabs;
-    st->slab_refilling = 0;
-    st->avl_slabs = paging_avl_slabs;
-    st->avl_slab_refilling = 0;
-
-    if (start_vaddr == 0) {
-        err = addr_mgr_alloc_fixed(&st->addr_mgr_state, 0, BASE_PAGE_SIZE);
-        if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FIXED);
-        }
     }
 
     return SYS_ERR_OK;
@@ -111,22 +103,31 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
 {
     errval_t err;
 
-    struct slab_allocator paging_slabs;
-    slab_init(&paging_slabs, sizeof(struct paging_node), NULL);
-    err = slab_default_refill(&paging_slabs);
+    // address space has to start at zero so we can catch null pointers
+    assert(start_vaddr == 0);
+
+    err = paging_init_state(st, start_vaddr, max_vaddr, pdir);
+    if(err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_INIT_STATE);
+    }
+
+    err = slab_default_refill(&st->slabs);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_SLAB_REFILL);
     }
 
-    struct slab_allocator paging_avl_slabs;
-    slab_init(&paging_avl_slabs, sizeof(struct aos_avl_node), NULL);
-    err = slab_default_refill(&paging_avl_slabs);
+    err = slab_default_refill(&st->avl_slabs);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_SLAB_REFILL);
     }
 
-    return paging_init_state(st, start_vaddr, max_vaddr, pdir, ca, paging_slabs,
-                             paging_avl_slabs);
+    // reserve first page to catch null pointers
+    err = addr_mgr_alloc_fixed(&st->addr_mgr_state, start_vaddr, BASE_PAGE_SIZE);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_ADDR_MGR_ALLOC_FIXED);
+    }
+
+    return SYS_ERR_OK;
 }
 
 static errval_t handle_pagefault(lvaddr_t addr)
@@ -192,14 +193,7 @@ static void exception_handler(enum exception_type type, int subtype, void *addr,
 errval_t paging_init(void)
 {
     debug_printf("paging_init\n");
-
-    struct slab_allocator paging_slabs;
-    slab_init(&paging_slabs, sizeof(struct paging_node), NULL);
-    slab_grow(&paging_slabs, paging_node_buf, sizeof(paging_node_buf));
-
-    struct slab_allocator paging_avl_slabs;
-    slab_init(&paging_avl_slabs, sizeof(struct aos_avl_node), NULL);
-    slab_grow(&paging_avl_slabs, paging_avl_node_buf, sizeof(paging_avl_node_buf));
+    errval_t err;
 
     struct capref pdir;
     // TODO: How to get existing mapping capabilities??
@@ -212,16 +206,22 @@ errval_t paging_init(void)
     // First L0 page table slot is already used, use second slot
     genvaddr_t start_addr = addr << VMSAv8_64_L0_BITS;
 
-    paging_init_state(&current, start_addr, max_addr, pdir, get_default_slot_allocator(),
-                      paging_slabs, paging_avl_slabs);
-
-    void *ex_stack_top = ex_stack_first + EX_STACK_SIZE;
-    ex_stack_top = ex_stack_top - (lvaddr_t)ex_stack_top % STACK_ALIGNMENT;
-
-    thread_set_exception_handler(exception_handler, NULL, ex_stack_first, ex_stack_top,
-                                 NULL, NULL);
+    err = paging_init_state(&current, start_addr, max_addr, pdir);
+    if(err_is_fail(err)) {
+        return err_push(err, LIB_ERR_PAGING_INIT_STATE);
+    }
 
     set_current_paging_state(&current);
+
+    // give slabs a bit space to get paging up and running
+    slab_grow(&current.slabs, paging_node_buf, sizeof(paging_node_buf));
+    slab_grow(&current.avl_slabs, paging_avl_node_buf, sizeof(paging_avl_node_buf));
+
+    // setup exception handler
+    void *ex_stack_top = ex_stack_first + EX_STACK_SIZE;
+    ex_stack_top = ex_stack_top - (lvaddr_t)ex_stack_top % STACK_ALIGNMENT;
+    thread_set_exception_handler(exception_handler, NULL, ex_stack_first, ex_stack_top,
+                                 NULL, NULL);
 
     return SYS_ERR_OK;
 }

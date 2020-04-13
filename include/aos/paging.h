@@ -30,9 +30,7 @@ struct paging_region;
 
 struct thread;
 errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
-                           lvaddr_t max_addr, struct capref pdir,
-                           struct slot_allocator *ca, struct slab_allocator paging_slabs,
-                           struct slab_allocator paging_avl_slabs);
+                           lvaddr_t max_addr, struct capref pdir);
 
 errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr,
                                    lvaddr_t max_addr, struct capref pdir,
