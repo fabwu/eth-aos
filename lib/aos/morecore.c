@@ -105,7 +105,6 @@ static void *morecore_alloc(size_t bytes, size_t *retbytes)
     errval_t err;
     void *addr;
 
-    // TODO paging region?
     size_t bytes_pages = ROUND_UP(bytes, BASE_PAGE_SIZE);
     err = paging_alloc(st, &addr, bytes_pages, BASE_PAGE_SIZE);
     if (err_is_fail(err)) {

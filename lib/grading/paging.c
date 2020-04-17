@@ -49,7 +49,6 @@ static int alloc(void *args) {
 }
 
 static void test_malloc_threads(void) {
-    //FIXME This test fails at the moment
     for(int i = 0; i < NUM_THREADS; ++i) {
         thread_create(alloc, NULL);
         thread_yield();
@@ -76,10 +75,37 @@ static void test_address_out_of_range_low_addr(void) {
     DEBUG_PRINTF("%c\n", *out_of_range);
 }
 
+#define CONCURRENT_PAGE_FAULT_NUM_THREADS 8
+#define CONCURRENT_PAGE_FAULT_MEM (64 * MB)
+
+static int concurrent_page_fault_func(void *arg) {
+    DEBUG_PRINTF("thread starting\n");
+    char *mem = (char *)arg;
+    for (int i = 0; i < CONCURRENT_PAGE_FAULT_MEM; i++) {
+        mem[i] = 'A';
+    }
+    DEBUG_PRINTF("thread done\n");
+    return 0;
+}
+
+/*
+ * Test for multiple threads accessing the same memory, i.e. the page fault for
+ * a page could be handled in both threads at the same time.
+ */
+static void test_concurrent_page_faults(void) {
+    DEBUG_PRINTF("starting %i threads that access the same memory...\n",
+                 CONCURRENT_PAGE_FAULT_NUM_THREADS);
+    char *mem = malloc(CONCURRENT_PAGE_FAULT_MEM);
+    for (int i = 0; i < CONCURRENT_PAGE_FAULT_NUM_THREADS; i++) {
+        thread_create(concurrent_page_fault_func, mem);
+    }
+}
+
 #define TEST_MALLOC 0
 #define TEST_NULL_POINTER 0
 #define TEST_ADDRESS_OUT_OF_RANGE_HIGH 0
 #define TEST_ADDRESS_OUT_OF_RANGE_LOW 0
+#define TEST_CONCURRENT_PAGE_FAULTS 0
 
 void grading_test_demand_paging(void) {
     if(TEST_MALLOC) {
@@ -99,5 +125,9 @@ void grading_test_demand_paging(void) {
     if(TEST_ADDRESS_OUT_OF_RANGE_LOW) {
         //FIXME This test should fail
         test_address_out_of_range_low_addr();
+    }
+
+    if (TEST_CONCURRENT_PAGE_FAULTS) {
+        test_concurrent_page_faults();
     }
 }

@@ -76,6 +76,8 @@ struct paging_state {
     struct addr_mgr_state addr_mgr_state;
     char slab_refilling;
     char avl_slab_refilling;
+    struct thread_mutex paging_mutex;
+    struct thread_mutex heap_mutex;
 };
 
 

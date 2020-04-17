@@ -71,6 +71,9 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->l0.level = 0;
     st->l0.slot = 0;
 
+    thread_mutex_init(&st->paging_mutex);
+    thread_mutex_init(&st->heap_mutex);
+
     slab_init(&st->slabs, sizeof(struct paging_node), NULL);
     st->slab_refilling = 0;
 
@@ -130,6 +133,52 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
     return SYS_ERR_OK;
 }
 
+static bool paging_addr_is_mapped(struct paging_state *st, lvaddr_t vaddr)
+{
+    errval_t err;
+    bool ret = true;
+
+    uint64_t mask = 0x1FF;
+    uint64_t l0_slot = (vaddr >> VMSAv8_64_L0_BITS) & mask;
+    uint64_t l1_slot = (vaddr >> VMSAv8_64_L1_BLOCK_BITS) & mask;
+    uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
+    uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
+
+    thread_mutex_lock(&st->paging_mutex);
+
+    struct paging_node *node_l1;
+    err = aos_avl_find(st->l0.child, l0_slot, (void **)&node_l1);
+    if (err_is_fail(err)) {
+        ret = false;
+        goto out;
+    }
+
+    struct paging_node *node_l2;
+    err = aos_avl_find(node_l1->child, l1_slot, (void **)&node_l2);
+    if (err_is_fail(err)) {
+        ret = false;
+        goto out;
+    }
+
+    struct paging_node *node_l3;
+    err = aos_avl_find(node_l2->child, l2_slot, (void **)&node_l3);
+    if (err_is_fail(err)) {
+        ret = false;
+        goto out;
+    }
+
+    struct paging_node *node_l4;
+    err = aos_avl_find(node_l3->child, l3_slot, (void **)&node_l4);
+    if (err_is_fail(err)) {
+        ret = false;
+        goto out;
+    }
+
+out:
+    thread_mutex_unlock(&st->paging_mutex);
+    return ret;
+}
+
 static errval_t handle_pagefault(lvaddr_t addr)
 {
     DEBUG_PAGING("handle_pagefault begin\n");
@@ -142,9 +191,18 @@ static errval_t handle_pagefault(lvaddr_t addr)
 
     struct paging_state *st = get_current_paging_state();
 
+    thread_mutex_lock(&st->heap_mutex);
+
     // check if address was allocated in address manager
     if (!addr_mgr_is_addr_allocated(&st->addr_mgr_state, (genvaddr_t)addr)) {
-        return LIB_ERR_PAGING_HANDLE_PAGEFAULT_ADDR_NOT_FOUND;
+        err = LIB_ERR_PAGING_HANDLE_PAGEFAULT_ADDR_NOT_FOUND;
+        goto out;
+    }
+
+    // check if address was already mapped by another thread
+    if (paging_addr_is_mapped(st, addr)) {
+        err = SYS_ERR_OK;
+        goto out;
     }
 
     // allocate frame for this address
@@ -152,7 +210,8 @@ static errval_t handle_pagefault(lvaddr_t addr)
     size_t allocated_bytes;
     err = frame_alloc(&frame, BASE_PAGE_SIZE, &allocated_bytes);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_FRAME_ALLOC);
+        err = err_push(err, LIB_ERR_FRAME_ALLOC);
+        goto out;
     }
     assert(allocated_bytes == BASE_PAGE_SIZE);
 
@@ -160,11 +219,15 @@ static errval_t handle_pagefault(lvaddr_t addr)
     err = paging_map_fixed_attr(st, addr_aligned, frame, BASE_PAGE_SIZE,
                                 VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
+        err = err_push(err, LIB_ERR_PAGING_MAP_FIXED_ATTR);
+        goto out;
     }
 
+    err = SYS_ERR_OK;
+out:
+    thread_mutex_unlock(&st->heap_mutex);
     DEBUG_PAGING("handle_pagefault end\n");
-    return SYS_ERR_OK;
+    return err;
 }
 
 static void exception_handler(enum exception_type type, int subtype, void *addr,
@@ -615,6 +678,9 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
 
+    // Nested because of slab_default_refill and slot_alloc
+    thread_mutex_lock_nested(&st->paging_mutex);
+
     DEBUG_PAGING_FINE("map l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: %" PRIu64 ""
                       " addr: 0x%" PRIx64 "\n",
                       l0_slot, l1_slot, l2_slot, l3_slot, vaddr);
@@ -677,6 +743,9 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     // Assumption: looking at two_level_alloc, slot_allocator underlying
     // slot_alloc seems already designed to not trigger a recursion
     // Search for two_level_allo, or generally look under lib/aos/slot_alloc
+
+    thread_mutex_unlock(&st->paging_mutex);
+
     DEBUG_PAGING("paging_map_fixed_attr_one end\n");
 
     return SYS_ERR_OK;
