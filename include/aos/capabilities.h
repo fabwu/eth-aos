@@ -51,7 +51,7 @@ errval_t cap_delete(struct capref cap);
 errval_t cap_revoke(struct capref cap);
 struct cspace_allocator;
 errval_t cap_destroy(struct capref cap);
-
+errval_t cap_get_phys_addr(struct capref capref, genpaddr_t *ret_paddr);
 
 errval_t cap_register_revoke(struct capref cap, struct event_closure cont);
 

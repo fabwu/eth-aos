@@ -217,6 +217,7 @@ errors libaos LIB_ERR_ {
 
     // nested errors in specific functions
     failure FRAME_ALLOC         "Failure in frame_alloc()",
+    failure FRAME_FREE          "Failure in frame_free()",
     failure FRAME_CREATE        "Failure in frame_create()",
     failure FRAME_CREATE_MS_CONSTRAINTS "frame_create() failed due to constraints to mem_serv in ram_alloc",
     failure VNODE_CREATE        "Failure in vnode_create()",
@@ -235,6 +236,7 @@ errors libaos LIB_ERR_ {
     failure DEVFRAME_TYPE       "Failure in devframe_type()",
     failure CAP_DELETE          "Failure in cap_delete()",
     failure CAP_DESTROY         "Failure in cap_destroy()",
+    failure CAP_GET_PHYS_ADDR   "Failure in cap_get_phys_addr()",
     failure CAP_INVOKE          "Failure in cap_invoke()",
     failure CAP_IDENTIFY        "Failure in cap_identify",
     failure CAP_NOT_MAPPABLE    "Failure in cap_identify: cap not mappable",
@@ -274,6 +276,7 @@ errors libaos LIB_ERR_ {
 
     // paging
     failure PAGING_MAP_FRAME "paging_map_frame() returned error",
+    failure PAGING_MAP_FRAME_ATTR "paging_map_frame_attr() returned error",
     failure PAGING_MAPPING_EXISTS "a mapping at given addr already exists",
     failure PAGING_MAP_FIXED_ATTR "paging_map_fixed_attr() returned error",
     failure PAGING_UNMAP "paging_unmap() returned error",
@@ -479,6 +482,15 @@ errors libaos LIB_ERR_ {
     failure AVL_FIND_LE "Failure aos_avl_find_le()",
     failure AVL_INSERT "Failure aos_avl_insert()",
     failure AVL_REMOVE "Failure aos_avl_remove()",
+
+    // Coreboot
+    failure COREBOOT_CREATE_KCB         "Failure in create_kcb()",
+    failure COREBOOT_LOAD_MULTIBOOT     "Failure in load_multiboot()",
+    failure COREBOOT_FIND_ENTRY_POINT   "Failure in find_entry_point()",
+    failure COREBOOT_ALLOCATE_MEMORY    "Failure in allocate_memory()",
+    failure COREBOOT_LOAD_ELF_BINARY    "Failure in load_elf_binary()",
+    failure COREBOOT_RELOCATE_ELF       "Failure in relocate_elf()",
+    failure COREBOOT_FIND_EP            "Couldn't find entry point symbol",
 };
 
 // errors in Flounder-generated bindings
@@ -618,6 +630,9 @@ errors spawn SPAWN_ERR_ {
     failure UNSUPPORTED_TARGET_ARCH "Unsupported target architecture type",
 
     failure OUT_OF_PIDS         "Failure allocating a pid",
+
+    // multiboot
+    failure MULTIBOOT_FIND_MODULE   "Failure in multiboot_find_module()",
 
     failure CREATE_CHILD_CSPACE "Failure in spawn_create_child_cspace",
     failure CREATE_CHILD_VSPACE "Failure in spawn_create_child_vspace",

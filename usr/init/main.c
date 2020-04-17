@@ -24,6 +24,7 @@
 #include <spawn/spawn.h>
 #include <grading.h>
 #include <aos/core_state.h>
+#include <aos/coreboot.h>
 
 #include "mem_alloc.h"
 #include "rpc.h"
@@ -86,6 +87,19 @@ static int bsp_main(int argc, char *argv[])
 
     // Grading
     grading_test_early();
+
+    // allocate urpc frame
+    struct capref urpc_frame;
+    size_t urpc_frame_size;
+    err = frame_alloc(&urpc_frame, BASE_PAGE_SIZE, &urpc_frame_size);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_FRAME_ALLOC);
+    }
+    struct frame_identity urpc_frame_id;
+    err = frame_identify(urpc_frame, &urpc_frame_id);
+
+    err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
+    DEBUG_ERR(err, "COREBOOT\n");
 
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn("memeater", NULL);

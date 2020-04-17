@@ -380,6 +380,37 @@ errval_t cap_destroy(struct capref cap)
 }
 
 /**
+ * \brief Get physical address of a ram cap or frame
+ *
+ * \param capref capability reference to a ram cap or frame
+ * \param ret_paddr physical addr of that cap
+ */
+errval_t cap_get_phys_addr(struct capref capref, genpaddr_t *ret_paddr)
+{
+    errval_t err;
+    struct capability cap;
+    err = invoke_cap_identify(capref, &cap);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_IDENTIFY);
+    }
+
+    switch (cap.type) {
+    case ObjType_RAM:
+        *ret_paddr = cap.u.ram.base;
+        break;
+    case ObjType_Frame:
+    case ObjType_DevFrame:
+        *ret_paddr = cap.u.frame.base;
+        break;
+    default:
+        DEBUG_PRINTF("cap type %lld not supported", cap.type);
+        return LIB_ERR_NOT_IMPLEMENTED;
+    }
+
+    return SYS_ERR_OK;
+}
+
+/**
  * \brief Replace own L1 CNode
  *
  * \param new the replacement L1 CNode
