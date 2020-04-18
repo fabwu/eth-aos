@@ -532,21 +532,26 @@ errval_t coreboot(coreid_t mpid, const char *boot_driver, const char *cpu_driver
     DEBUG_COREBOOT("started log/phys core id %lld/%lld\n", core_data->dst_core_id,
                    core_data->dst_arch_id);
 
-    // - Flush the cache.
-    // TODO Don't know how to clear cache. Copied this form upstream barrelfish.
-    __asm volatile("dsb   sy\n"
-                   "dmb   sy\n"
-                   "isb     \n");
+    // Flush the cache
+    cpu_dcache_wb_range((genvaddr_t)core_block.buf, core_block.size);
 
-    // - Call the invoke_monitor_spawn_core with the entry point
-    //   of the boot driver and pass the (physical, of course) address of the
-    //   boot struct as argument.
     err = invoke_monitor_spawn_core(core_data->dst_arch_id, CPU_ARM8, boot_ep_paddr,
                                     mem.core_data.phys_base, 0);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldnt spawn\n");
         return err;
     }
+
+    // dump boot driver readelf -W -x .text build/armv8/sbin/boot_armv8_generic
+    // debug_dump_mem(0x8000beb000, 0x8000beb000 + BASE_PAGE_SIZE, 0);
+
+    // dump cpu driver readelf -W -x .text build/armv8/sbin/cpu_imx8x
+    // genvaddr_t cpu_addr = (genvaddr_t)mem.cpu_driver.buf;
+    // debug_dump_mem(cpu_addr, cpu_addr + BASE_PAGE_SIZE, 0);
+
+    // dump core_data
+    // genvaddr_t core_addr = (genvaddr_t)mem.core_data.buf;
+    // debug_dump_mem(core_addr, core_addr + BASE_PAGE_SIZE, 0);
 
     return SYS_ERR_OK;
 }
