@@ -650,6 +650,7 @@ errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t 
     }
 
     err = spawn_load_module_argv(module, argc, argv, si, pid);
+    assert(err_is_ok(err));
 
     free_argv(argv, argv_str);
 

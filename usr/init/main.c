@@ -285,7 +285,7 @@ static int app_main(int argc, char *argv[])
     for (int i = 0; i < bi->regions_length; ++i) {
         struct mem_region mr = bi->regions[i];
         if (mr.mr_type == RegionType_Module) {
-            DEBUG_PRINTF("base %p size %lld consumed %d modsize %lld moddata %p modslot "
+            DEBUG_PRINTF("app_main base %p size %lld consumed %d modsize %lld moddata %p modslot "
                          "%d\n",
                          mr.mr_base, mr.mr_bytes, mr.mr_consumed, mr.mrmod_size,
                          mr.mrmod_data, mr.mrmod_slot);

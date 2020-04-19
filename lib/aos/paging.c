@@ -81,7 +81,7 @@ errval_t paging_init_state(struct paging_state *st, lvaddr_t start_vaddr,
     st->avl_slab_refilling = 0;
 
     err = addr_mgr_init(&st->addr_mgr_state, start_vaddr, max_vaddr);
-    if(err_is_fail(err)) {
+    if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_ADDR_MGR_INIT);
     }
 
@@ -110,7 +110,7 @@ errval_t paging_init_state_foreign(struct paging_state *st, lvaddr_t start_vaddr
     assert(start_vaddr == 0);
 
     err = paging_init_state(st, start_vaddr, max_vaddr, pdir);
-    if(err_is_fail(err)) {
+    if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_INIT_STATE);
     }
 
@@ -270,7 +270,7 @@ errval_t paging_init(void)
     genvaddr_t start_addr = addr << VMSAv8_64_L0_BITS;
 
     err = paging_init_state(&current, start_addr, max_addr, pdir);
-    if(err_is_fail(err)) {
+    if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_PAGING_INIT_STATE);
     }
 
@@ -552,83 +552,93 @@ errval_t paging_map_frame_attr(struct paging_state *st, void **buf, size_t bytes
     return SYS_ERR_OK;
 }
 
-/**
- * \brief Helper function that allocates a slot and
- *        creates a aarch64 page table capability for a certain level
- */
-static errval_t pt_alloc(struct paging_state *st, enum objtype type, struct capref *ret)
-{
-    errval_t err;
-    err = slot_alloc(ret);
-    if (err_is_fail(err)) {
-        debug_printf("slot_alloc failed: %s\n", err_getstring(err));
-        return err;
-    }
-    err = vnode_create(*ret, type);
-    if (err_is_fail(err)) {
-        debug_printf("vnode_create failed: %s\n", err_getstring(err));
-        return err;
-    }
-    return SYS_ERR_OK;
-}
-
-static errval_t pt_alloc_l1(struct paging_state *st, struct capref *ret)
-{
-    return pt_alloc(st, ObjType_VNode_AARCH64_l1, ret);
-}
-
-static errval_t pt_alloc_l2(struct paging_state *st, struct capref *ret)
-{
-    return pt_alloc(st, ObjType_VNode_AARCH64_l2, ret);
-}
-
-static errval_t pt_alloc_l3(struct paging_state *st, struct capref *ret)
-{
-    return pt_alloc(st, ObjType_VNode_AARCH64_l3, ret);
-}
-
-static errval_t paging_map_some(struct paging_node **ret, struct aos_avl_node **root,
-                                struct paging_node *parent, int level,
-                                struct capref pt_cpr, int slot, struct paging_state *st,
-                                struct capref *frame, size_t offset, int flags)
+static errval_t paging_map_some(struct paging_node **ret, struct paging_node *our_level,
+                                struct paging_node *parent, int level, int slot,
+                                struct paging_state *st, struct capref *frame,
+                                size_t offset, int flags)
 {
     DEBUG_PAGING("map_some begin level: 0x%" PRIx64 " slot: 0x%" PRIx64 "\n",
                  (uint64_t)level, (uint64_t)slot);
 
-    errval_t err = 0;
-    struct paging_node *node;
-    err = aos_avl_find(*root, slot, (void **)&node);
-    if (err_is_fail(err) && err_no(err) == LIB_ERR_AVL_FIND_NOT_FOUND) {
-        struct capref lower_pt_cpr;
-        struct capref higher_lower_map;
+    errval_t err = SYS_ERR_OK;
 
-        switch (level) {
-        case (1):
-            err = pt_alloc_l1(st, &lower_pt_cpr);
-            break;
-        case (2):
-            err = pt_alloc_l2(st, &lower_pt_cpr);
-            break;
-        case (3):
-            err = pt_alloc_l3(st, &lower_pt_cpr);
-            break;
-        case (4):
+    struct capref lower_pt_cpr;
+    struct capref higher_lower_map;
+
+    int alloced = 0;
+
+    struct paging_node *node;
+    err = aos_avl_find(our_level->child, slot, (void **)&node);
+    if (err_is_fail(err) && err_no(err) == LIB_ERR_AVL_FIND_NOT_FOUND) {
+        if (level != 4) {
+            enum objtype type = ObjType_VNode_AARCH64_l1;
+            switch (level) {
+            case (1):
+                type = ObjType_VNode_AARCH64_l1;
+                break;
+            case (2):
+                type = ObjType_VNode_AARCH64_l2;
+                break;
+            case (3):
+                type = ObjType_VNode_AARCH64_l3;
+                break;
+            default:
+                return LIB_ERR_PAGING_LEVEL;
+            }
+
+            err = slot_alloc(&lower_pt_cpr);
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_SLOT_ALLOC);
+            }
+
+            struct capref ram;
+
+            err = ram_alloc_aligned(&ram, vnode_objsize(type), vnode_objsize(type));
+            if (err_no(err) == LIB_ERR_RAM_ALLOC_WRONG_SIZE
+                && type != ObjType_VNode_ARM_l1) {
+                // can only get 4kB pages, cannot create ARM_l1, and waste 3kB for
+                // ARM_l2
+                err = ram_alloc(&ram, BASE_PAGE_SIZE);
+            }
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_RAM_ALLOC);
+            }
+
+            assert(type_is_vnode(type));
+            err = cap_retype(lower_pt_cpr, ram, 0, type, vnode_objsize(type), 1);
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_CAP_RETYPE);
+            }
+
+            err = cap_destroy(ram);
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_CAP_DESTROY);
+            }
+        } else {
             lower_pt_cpr = *frame;
-            break;
-        default:
-            return LIB_ERR_PAGING_LEVEL;
         }
+
         err = slot_alloc(&higher_lower_map);
         if (err_is_fail(err)) {
             return err_push(err, LIB_ERR_SLOT_ALLOC);
         }
 
-        err = vnode_map(pt_cpr, lower_pt_cpr, slot, flags, offset, 1, higher_lower_map);
+        alloced = 1;
+    }
+
+    thread_mutex_lock(&st->paging_mutex);
+
+    err = aos_avl_find(our_level->child, slot, (void **)&node);
+    if (err_is_fail(err) && err_no(err) == LIB_ERR_AVL_FIND_NOT_FOUND) {
+        assert(alloced);
+
+        err = vnode_map(our_level->table, lower_pt_cpr, slot, flags, offset, 1,
+                        higher_lower_map);
         if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_VNODE_MAP);
+            err = err_push(err, LIB_ERR_VNODE_MAP);
+            goto out;
         }
 
-        // FIXME: This is not necessarily reentrant
         node = slab_alloc(&st->slabs);
         assert(node != NULL);
 
@@ -640,24 +650,46 @@ static errval_t paging_map_some(struct paging_node **ret, struct aos_avl_node **
         struct aos_avl_node *avl_node = slab_alloc(&st->avl_slabs);
         assert(avl_node != NULL);
 
-        err = aos_avl_insert(root, slot, (void *)node, avl_node);
+        err = aos_avl_insert(&our_level->child, slot, (void *)node, avl_node);
         assert(err_is_ok(err));
 
         node->level = level;
         node->slot = slot;
-    } else if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_AVL_FIND);
-    } else if (level == 4) {
-        // We do not expect there to be an existing mapping for the frame cap we want to
-        // map, so this is an error
-        return LIB_ERR_PAGING_MAPPING_EXISTS;
+    } else {
+        if (alloced) {
+            if (level != 4) {
+                err = cap_destroy(lower_pt_cpr);
+                if (err_is_fail(err)) {
+                    err = err_push(err, LIB_ERR_CAP_DESTROY);
+                    goto out;
+                }
+            }
+
+            err = slot_free(higher_lower_map);
+            if (err_is_fail(err)) {
+                err = err_push(err, LIB_ERR_SLOT_FREE);
+                goto out;
+            }
+        }
+
+        if (err_is_fail(err)) {
+            err = err_push(err, LIB_ERR_AVL_FIND);
+            goto out;
+        } else if (level == 4) {
+            // We do not expect there to be an existing mapping for the frame cap we
+            // want to map, so this is an error
+            err = LIB_ERR_PAGING_MAPPING_EXISTS;
+            goto out;
+        }
     }
 
     *ret = node;
 
     DEBUG_PAGING("map_some end\n");
 
-    return SYS_ERR_OK;
+out:
+    thread_mutex_unlock(&st->paging_mutex);
+    return err;
 }
 
 static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vaddr,
@@ -678,40 +710,39 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     uint64_t l2_slot = (vaddr >> VMSAv8_64_L2_BLOCK_BITS) & mask;
     uint64_t l3_slot = (vaddr >> VMSAv8_64_BASE_PAGE_BITS) & mask;
 
-    // Nested because of slab_default_refill and slot_alloc
-    thread_mutex_lock_nested(&st->paging_mutex);
 
-    DEBUG_PAGING_FINE("map l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: %" PRIu64 ""
+    DEBUG_PAGING_FINE("map l0: %" PRIu64 " l1: %" PRIu64 " l2: %" PRIu64 " l3: "
+                      "%" PRIu64 ""
                       " addr: 0x%" PRIx64 "\n",
                       l0_slot, l1_slot, l2_slot, l3_slot, vaddr);
 
     struct paging_node *node_l1;
-    err = paging_map_some(&node_l1, &st->l0.child, NULL, 1, st->l0.table, l0_slot, st,
-                          NULL, 0, VREGION_FLAGS_READ_WRITE);
+    err = paging_map_some(&node_l1, &st->l0, NULL, 1, l0_slot, st, NULL, 0,
+                          VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l1 != NULL);
 
     struct paging_node *node_l2;
-    err = paging_map_some(&node_l2, &node_l1->child, node_l1, 2, node_l1->table, l1_slot,
-                          st, NULL, 0, VREGION_FLAGS_READ_WRITE);
+    err = paging_map_some(&node_l2, node_l1, node_l1, 2, l1_slot, st, NULL, 0,
+                          VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l2 != NULL);
 
     struct paging_node *node_l3;
-    err = paging_map_some(&node_l3, &node_l2->child, node_l2, 3, node_l2->table, l2_slot,
-                          st, NULL, 0, VREGION_FLAGS_READ_WRITE);
+    err = paging_map_some(&node_l3, node_l2, node_l2, 3, l2_slot, st, NULL, 0,
+                          VREGION_FLAGS_READ_WRITE);
     if (err_is_fail(err)) {
         return err;
     }
     assert(node_l3 != NULL);
 
     struct paging_node *node_l4;
-    err = paging_map_some(&node_l4, &node_l3->child, node_l3, 4, node_l3->table, l3_slot,
-                          st, &frame, offset, flags);
+    err = paging_map_some(&node_l4, node_l3, node_l3, 4, l3_slot, st, &frame, offset,
+                          flags);
     if (err_is_fail(err)) {
         return err;
     }
@@ -744,8 +775,6 @@ static errval_t paging_map_fixed_attr_one(struct paging_state *st, lvaddr_t vadd
     // slot_alloc seems already designed to not trigger a recursion
     // Search for two_level_allo, or generally look under lib/aos/slot_alloc
 
-    thread_mutex_unlock(&st->paging_mutex);
-
     DEBUG_PAGING("paging_map_fixed_attr_one end\n");
 
     return SYS_ERR_OK;
@@ -755,6 +784,8 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
                                struct capref frame, size_t bytes, int flags)
 {
     DEBUG_PAGING("paging_map_fixed_attr begin\n");
+    DEBUG_PAGING_FINE("paging_map_fixed_attr addr: 0x%" PRIx64 " size: 0x%" PRIx64 "\n",
+                      vaddr, bytes);
 
     errval_t err;
 
@@ -783,8 +814,18 @@ errval_t paging_map_fixed_attr(struct paging_state *st, lvaddr_t vaddr,
 static errval_t paging_delete_level(struct paging_state *st, struct paging_node *node)
 {
     errval_t err;
+
+    thread_mutex_lock(&st->paging_mutex);
+
     if (node->level != 4) {
         err = cap_destroy(node->table);
+        assert(err_is_ok(err));
+    }
+    if (node->parent != NULL) {
+        err = vnode_unmap(node->parent->table, node->mapping);
+        assert(err_is_ok(err));
+    } else {
+        err = vnode_unmap(st->l0.table, node->mapping);
         assert(err_is_ok(err));
     }
     err = cap_destroy(node->mapping);
@@ -796,6 +837,8 @@ static errval_t paging_delete_level(struct paging_state *st, struct paging_node 
     assert(err_is_ok(err));
     slab_free(&st->avl_slabs, avl_node);
     slab_free(&st->slabs, node);
+
+    thread_mutex_unlock(&st->paging_mutex);
 
     if (parent->child == NULL) {
         if (node->level != 0) {
