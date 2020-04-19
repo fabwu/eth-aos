@@ -227,11 +227,21 @@ static errval_t create_kcb(genpaddr_t *ret_addr)
 {
     errval_t err;
 
+    // TODO: HACK until mm_alloc_aligned supports >4k alignment
     struct capref ram_cap;
-    err = ram_alloc_aligned(&ram_cap, OBJSIZE_KCB, BASE_PAGE_SIZE);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_RAM_ALLOC_ALIGNED);
-    }
+    int ctr = 0;
+    do {
+        err = ram_alloc_aligned(&ram_cap, OBJSIZE_KCB, BASE_PAGE_SIZE);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_RAM_ALLOC_ALIGNED);
+        }
+        err = cap_get_phys_addr(ram_cap, ret_addr);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_CAP_GET_PHYS_ADDR);
+        }
+        ctr++;
+    } while ((*ret_addr) % (16 * 1024) != 0);
+    DEBUG_PRINTF("FIXME: allocated 0x%lx bytes %i times (total %lu bytes) until found 16k alignment\n", OBJSIZE_KCB, ctr, OBJSIZE_KCB * ctr);
 
     struct capref kcb_cap;
     slot_alloc(&kcb_cap);
@@ -240,13 +250,8 @@ static errval_t create_kcb(genpaddr_t *ret_addr)
         return err_push(err, LIB_ERR_CAP_RETYPE);
     }
 
-    err = cap_get_phys_addr(ram_cap, ret_addr);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_CAP_GET_PHYS_ADDR);
-    }
-
     // Comment says should be aligned to 16k...
-    assert((*ret_addr) % 16 * 1024 == 0);
+    assert((*ret_addr) % (16 * 1024) == 0);
 
     return SYS_ERR_OK;
 }
