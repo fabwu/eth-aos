@@ -37,6 +37,8 @@ void boot_app_init(lpaddr_t pointer)
     __attribute__((noreturn));
 
 /* low level debugging facilities */
+#define DEBUG 1
+#define IMX8X
 #if DEBUG
 #ifdef THUNDERX
 #include <dev/pl011_uart_dev.h>
@@ -93,16 +95,25 @@ static void debug_serial_putc(char c)
 
 #define IMX8X8_MAP_UART0_OFFSET 0x5A090000UL
 
-static lpuart_t uart;
+#define PA_STAT         0x5A090014
+#define PA_DATA         0x5A09001C
+#define STAT_TDRE       (1 << 23)
+
+//static lpuart_t uart;
 
 static void debug_uart_initialize(void) {
-    lpuart_initialize(&uart, (mackerel_addr_t) IMX8X8_MAP_UART0_OFFSET);
+    //lpuart_initialize(&uart, (mackerel_addr_t) IMX8X8_MAP_UART0_OFFSET);
 }
 
 static void debug_serial_putc(char c)
 {
-    while(lpuart_stat_tdre_rdf(&uart) == 0);
-    lpuart_write_data_wr(&uart,c);
+    volatile uint32_t *pa_stat = (volatile uint32_t *)PA_STAT;
+    volatile uint32_t *pa_data = (volatile uint32_t *)PA_DATA;
+
+    //while(lpuart_stat_tdre_rdf(&uart) == 0);
+    while (!(*pa_stat & STAT_TDRE));
+    //lpuart_write_data_wr(&uart,c);
+    *pa_data = c;
 }
 #endif
 
@@ -601,6 +612,10 @@ void boot_app_init(lpaddr_t pointer)
     debug_print_string("APP BOOTING\n");
 
     struct armv8_core_data *core_data = (struct armv8_core_data *)pointer;
+
+    debug_print_string("CPU driver entry: ");
+    debug_print_hex(core_data->cpu_driver_entry);
+    debug_print_string("\n");
 
     uint8_t current_el = armv8_CurrentEL_EL_rdf(NULL);
 

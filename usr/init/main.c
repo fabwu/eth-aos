@@ -99,7 +99,8 @@ static int bsp_main(int argc, char *argv[])
     err = frame_identify(urpc_frame, &urpc_frame_id);
 
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
-    DEBUG_ERR(err, "COREBOOT\n");
+    //DEBUG_ERR(err, "COREBOOT\n");
+    while (1);
 
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn("memeater", NULL);
