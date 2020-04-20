@@ -490,8 +490,8 @@ errval_t coreboot(coreid_t mpid, const char *boot_driver, const char *cpu_driver
     DEBUG_COREBOOT("cpu driver stack goes from %p to %p\n", core_data->cpu_driver_stack,
                    core_data->cpu_driver_stack_limit);
 
-    core_data->cpu_driver_entry = cpu_ep_vaddr + ARMv8_KERNEL_OFFSET;
-    DEBUG_COREBOOT("cpu driver entry point vaddr %p\n", core_data->cpu_driver_entry);
+    core_data->cpu_driver_entry = cpu_ep_paddr + ARMv8_KERNEL_OFFSET;
+    DEBUG_COREBOOT("cpu driver entry point paddr %p\n", core_data->cpu_driver_entry);
 
     // set everything to zero as no arguments
     memset(core_data->cpu_driver_cmdline, 0, sizeof(core_data->cpu_driver_cmdline));
