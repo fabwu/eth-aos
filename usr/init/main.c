@@ -98,9 +98,12 @@ static int bsp_main(int argc, char *argv[])
     struct frame_identity urpc_frame_id;
     err = frame_identify(urpc_frame, &urpc_frame_id);
 
+    // boot second core
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
-    //DEBUG_ERR(err, "COREBOOT\n");
-    while (1);
+    if(err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't boot second core");
+        return -1;
+    }
 
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn("memeater", NULL);
