@@ -15,11 +15,7 @@
 #endif
 
 /**
- * Receives a number
- * msg.words[0] == AOS_RPC_MSG_SEND_NUMBER
- * msg.words[1] == number
- * msg.words[2] == not used
- * msg.words[3] == not used
+ * Receives a number.
  */
 static errval_t rpc_print_number(uintptr_t number)
 {
@@ -30,11 +26,7 @@ static errval_t rpc_print_number(uintptr_t number)
 }
 
 /**
- * Receives a string
- * msg.words[0] == AOS_RPC_MSG_SEND_STRING
- * msg.words[1] == buffer 1
- * msg.words[2] == buffer 2
- * msg.words[3] == buffer 3
+ * Receives a string.
  */
 static errval_t rpc_print_string(struct lmp_chan *chan, struct lmp_recv_msg *lookahead)
 {
@@ -53,11 +45,7 @@ static errval_t rpc_print_string(struct lmp_chan *chan, struct lmp_recv_msg *loo
 }
 
 /**
- * Allocates ram, sends capability to child
- * msg.words[0] == AOS_RPC_MSG_GET_RAM_CAP
- * msg.words[1] == size
- * msg.words[2] == alignment
- * msg.words[3] == success
+ * Allocates ram, sends capability to child.
  */
 static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignment)
 {
@@ -97,10 +85,7 @@ out:
 }
 
 /**
- * Allocates ram, sends capability to child
- * msg.words[0] == AOS_RPC_MSG_FREE_RAM_CAP
- * msg.words[1] == addr
- * msg.words[2] == success
+ * Frees ram at given physical address.
  */
 // FIXME: Add mechanism so processes can only free their only ram, why we can't get the
 // capability here is because of fram_free
@@ -119,8 +104,7 @@ static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
 }
 
 /**
- * Receives a char from the serial line
- * msg.words[0] == AOS_RPC_MSG_SERIAL_PUTCHAR
+ * Receives a char from the serial line.
  */
 static errval_t rpc_serial_getchar(void)
 {
@@ -133,9 +117,7 @@ static errval_t rpc_serial_getchar(void)
 }
 
 /**
- * Puts a char on the serial line
- * msg.words[0] == AOS_RPC_MSG_SERIAL_PUTCHAR
- * msg.words[1] == character
+ * Puts a char on the serial line.
  */
 // FIXME: Add line buffer, so the output of different processes does not get mixed and
 // sys_print() only gets called once per line.
@@ -158,10 +140,7 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
 struct urpc_data *urpc_frame_core1;
 
 /**
- * Spawns process
- * msg.words[0] == AOS_RPC_MSG_PROCESS_SPAWN
- * msg.words[1] == pid
- * msg.words[2] == success
+ * Spawns process.
  */
 static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     errval_t err = SYS_ERR_OK;
@@ -359,7 +338,7 @@ fail:
 
 /**
  * Receives a child endpoint cap, saves it in the channel and notify the child
- * that channel is ready
+ * that channel is ready.
  */
 static void rpc_setup_recv_closure(void *arg)
 {
