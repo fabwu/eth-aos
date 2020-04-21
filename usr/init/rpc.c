@@ -255,7 +255,8 @@ out:
 static void rpc_handler_recv_closure(void *arg)
 {
     errval_t err;
-    struct lmp_chan *chan = (struct lmp_chan *)arg;
+    struct dispatcher_node *node = (struct dispatcher_node *)arg;
+    struct lmp_chan *chan = &node->chan;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
     err = lmp_chan_recv(chan, &msg, &cap);
