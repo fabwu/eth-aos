@@ -16,7 +16,8 @@
     cFiles = [
         "rpc.c",
         "grading.c",
-        "paging.c"
+        "paging.c",
+        "ump.c"
     ]
   }
 ]

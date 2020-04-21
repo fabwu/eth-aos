@@ -9,6 +9,7 @@
 #include <spawn/spawn.h>
 
 #include "paging.h"
+#include "ump.h"
 
 // #define DEBUG_TEST_EASY
 
@@ -530,6 +531,7 @@ static void test_avl(void)
 #define TEST_PAGING_REGION 0
 #define TEST_DEMAND_PAGING 0
 #define TEST_SPAWN 0
+#define TEST_UMP 0
 
 void grading_test_early(void)
 {
@@ -565,6 +567,10 @@ void grading_test_early(void)
 
     if (TEST_AVL) {
         test_avl();
+    }
+
+    if (TEST_UMP) {
+        grading_test_ump();
     }
 }
 

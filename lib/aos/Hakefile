@@ -25,6 +25,7 @@
                              "slot_alloc/twolevel_slot_alloc.c",
                              "addr_mgr.c",
                              "aos_rpc.c",
+                             "ump.c",
                              "avl.c",
                              "capabilities.c",
                              "coreset.c",

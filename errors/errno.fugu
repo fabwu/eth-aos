@@ -402,6 +402,10 @@ errors libaos LIB_ERR_ {
     failure RCK_NOTIFY          "Failure in rck_notify()",
     failure IPI_NOTIFY          "Failure in ipi_notify()",
 
+    failure UMP_ENQUEUE_FULL     "No slot to enqueue to",
+
+    failure UMP_DEQUEUE_FULL     "No slot for dequeue to enqueue acks",
+
     failure LMP_CHAN_REGISTER_RECV          "Failure in lmp_chan_register_recv()",
     failure LMP_CHAN_ALLOC_RECV_SLOT          "Failure in lmp_chan_alloc_recv_slot()",
 
