@@ -38,6 +38,7 @@ static errval_t ram_free_remote(genpaddr_t addr)
     errval_t err;
     struct aos_rpc *mem_channel = aos_rpc_get_memory_channel();
 
+    DEBUG_PRINTF("Free RAM");
     err = aos_rpc_free_ram_cap(mem_channel, addr);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_FREE_RAM_CAP);

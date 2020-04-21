@@ -30,6 +30,7 @@
 #define AOS_RPC_MSG_PROCESS_GET_NAME     0x08
 #define AOS_RPC_MSG_PROCESS_GET_ALL_PIDS 0x09
 #define AOS_RPC_MSG_GET_DEVICE_CAP       0x0a
+#define AOS_RPC_MSG_PROCESS_EXIT         0x0b
 
 #define AOS_RPC_MSG_SETUP                0x10
 
@@ -52,6 +53,7 @@
 #define AOS_RPC_PROCESS_GET_NAME     AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_NAME, AOS_RPC_SUBMSG_DEFAULT)
 #define AOS_RPC_PROCESS_GET_ALL_PIDS AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_ALL_PIDS, AOS_RPC_SUBMSG_DEFAULT)
 #define AOS_RPC_GET_DEVICE_CAP       AOS_RPC_CMB(AOS_RPC_MSG_GET_DEVICE_CAP, AOS_RPC_SUBMSG_DEFAULT)
+#define AOS_RPC_PROCESS_EXIT         AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_EXIT, AOS_RPC_SUBMSG_DEFAULT)
 
 #define AOS_RPC_SETUP                AOS_RPC_CMB(AOS_RPC_MSG_SETUP, AOS_RPC_SUBMSG_DEFAULT)
 
@@ -98,7 +100,6 @@ errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr);
  */
 errval_t aos_rpc_serial_getchar(struct aos_rpc *rpc, char *retc);
 
-
 /**
  * \brief Send one character to the serial port
  */
@@ -113,7 +114,6 @@ errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c);
 errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *name, coreid_t core,
                                domainid_t *newpid);
 
-
 /**
  * \brief Get name of process with the given PID.
  * \arg pid the process id to lookup
@@ -122,7 +122,6 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *name, coreid_t core,
  * responsibility.
  */
 errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **name);
-
 
 /**
  * \brief Get PIDs of all running processes.
@@ -134,6 +133,10 @@ errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **na
 errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
                                       size_t *pid_count);
 
+/**
+ * \brief Remove process from the running processes.
+ */
+errval_t aos_rpc_process_exit(struct aos_rpc *rpc);
 
 /**
  * \brief Request a device cap for the given region.
@@ -144,7 +147,6 @@ errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
  */
 errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t bytes,
                                 struct capref *frame);
-
 
 /**
  * \brief Returns the RPC channel to init.

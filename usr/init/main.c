@@ -30,6 +30,7 @@
 
 #include "mem_alloc.h"
 #include "rpc.h"
+#include "process.h"
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_SPAWNTEST 0
@@ -48,13 +49,27 @@ static errval_t init_spawn(char *name, domainid_t *pid) {
         return INIT_ERR_PREPARE_SPAWN;
     }
 
-    err = rpc_create_child_channel_to_init(&si->initep);
+    dispatcher_node_ref node_ref;
+    err = rpc_create_child_channel_to_init(&si->initep, &node_ref);
     if (err_is_fail(err)) {
         err = err_push(err, INIT_ERR_PREPARE_SPAWN);
         goto out;
     }
 
-    err = spawn_load_by_name(name, si, pid);
+    domainid_t domain_id;
+    err = spawn_load_by_name(name, si, &domain_id);
+    if (err_is_fail(err)) {
+        err = err_push(err, INIT_ERR_SPAWN);
+        goto out;
+    }
+
+    if (pid != NULL) {
+        *pid = domain_id;
+    }
+
+    rpc_dispatcher_node_set_pid(node_ref, domain_id);
+
+    err = process_add(domain_id, my_core_id, name);
     if (err_is_fail(err)) {
         err = err_push(err, INIT_ERR_SPAWN);
         goto out;
@@ -87,6 +102,8 @@ static int bsp_main(int argc, char *argv[])
         DEBUG_ERR(err, "initialize_lmp failed");
         return -1;
     }
+
+    process_init();
 
     // Grading
     grading_test_early();

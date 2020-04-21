@@ -68,6 +68,7 @@ struct dispatcher_node {
     struct lmp_chan chan;
     enum { DISPATCHER_DISCONNECTED, DISPATCHER_CONNECTED } state;
     struct dispatcher_node *next;
+    domainid_t pid;  ///< PID of the referenced process
 };
 
 struct lmp_state {

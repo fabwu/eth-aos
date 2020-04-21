@@ -200,7 +200,6 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
     return SYS_ERR_OK;
 }
 
-
 errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **name)
 {
     // Protocol
@@ -214,7 +213,6 @@ errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **na
     // TODO (M5): implement name lookup for process given a process id
     return SYS_ERR_OK;
 }
-
 
 errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
                                       size_t *pid_count)
@@ -231,6 +229,14 @@ errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
     return SYS_ERR_OK;
 }
 
+errval_t aos_rpc_process_exit(struct aos_rpc *rpc)
+{
+    // Protocol
+    // Request: AOS_RPC_PROCESS_EXIT
+    // Responses: None
+
+    return lmp_protocol_send0(&rpc->chan, AOS_RPC_PROCESS_EXIT);
+}
 
 errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t bytes,
                                 struct capref *ret_cap)
@@ -244,7 +250,6 @@ errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t byte
     aos_rpc_assert(rpc);
     return LIB_ERR_NOT_IMPLEMENTED;
 }
-
 
 /**
  * \brief Returns the RPC channel to init.
@@ -280,4 +285,3 @@ struct aos_rpc *aos_rpc_get_serial_channel(void)
     // FIXME: return channel to terminal server domain
     return &rpc_init;
 }
-

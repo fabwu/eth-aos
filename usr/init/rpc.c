@@ -4,9 +4,9 @@
  */
 
 #include "rpc.h"
+#include "process.h"
 #include <aos/lmp_protocol.h>
 #include <machine/atomic.h>
-#include <spawn/argv.h>
 
 #if 0
 #    define DEBUG_RPC_SETUP(fmt...) debug_printf(fmt);
@@ -142,7 +142,7 @@ struct urpc_data *urpc_frame_core1;
 /**
  * Spawns process.
  */
-static errval_t rpc_spawn_process(struct lmp_chan *chan) {
+__attribute__((unused)) static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     errval_t err = SYS_ERR_OK;
     struct spawninfo *si = NULL;
     domainid_t pid;
@@ -178,7 +178,7 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan) {
             goto out;
         }
 
-        err = rpc_create_child_channel_to_init(&si->initep);
+        err = rpc_create_child_channel_to_init(&si->initep, NULL);
         if (err_is_fail(err)) {
             err = err_push(err, INIT_ERR_PREPARE_SPAWN);
             goto out;
@@ -300,10 +300,27 @@ static void rpc_handler_recv_closure(void *arg)
             }
             break;
         case AOS_RPC_PROCESS_SPAWN:
-            // TODO: Handle large string
-            err = rpc_spawn_process(chan);
+            err = process_spawn_rpc(chan);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Failed to spawn process in rpc_spawn_process()");
+            }
+            break;
+        case AOS_RPC_PROCESS_GET_ALL_PIDS:
+            err = process_get_all_pids_rpc(chan);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed in rpc_get_all_pids()");
+            }
+            break;
+        case AOS_RPC_PROCESS_GET_NAME:
+            err = process_get_name_rpc(chan, (domainid_t)msg.words[1]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed in rpc_process_get_name()");
+            }
+            break;        
+        case AOS_RPC_PROCESS_EXIT:
+            err = process_exit(node->pid);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed in rpc_process_exit()");
             }
             break;
         default:
@@ -399,7 +416,7 @@ fail:
 /**
  * Creates a unique channel to a child (to be spawned)
  */
-errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
+errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap, dispatcher_node_ref *node_ref)
 {
     errval_t err = SYS_ERR_OK;
 
@@ -444,6 +461,9 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap)
 
     assert(!capref_is_null(node->chan.local_cap));
     *ret_init_ep_cap = node->chan.local_cap;
+    if (node_ref != NULL) {
+        *node_ref = (dispatcher_node_ref)node;
+    }
 
 out:
     if (err_is_fail(err)) {
@@ -454,6 +474,12 @@ out:
         slab_free(&st->slabs, node);
     }
     return err;
+}
+
+void rpc_dispatcher_node_set_pid(dispatcher_node_ref node_ref, domainid_t pid)
+{
+    struct dispatcher_node *node = (struct dispatcher_node *)node_ref;
+    node->pid = pid;
 }
 
 errval_t rpc_initialize_lmp(struct lmp_state *st)

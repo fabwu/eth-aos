@@ -825,6 +825,7 @@ errors init INIT_ERR_ {
     failure SPAWN               "Failed to spawn process",
     failure SPAWN_CMD_TOO_LONG  "Process command line too long",
     failure SPAWN_URPC          "Failed to spawn process on another core",
+    failure PROCESS_NOT_FOUND   "Failed to find process with given pid",
 };
 
 //errors in continuation management

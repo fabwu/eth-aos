@@ -14,7 +14,8 @@
                       cFiles = [
                         "main.c",
                         "mem_alloc.c",
-                        "rpc.c"
+                        "rpc.c",
+                        "process.c"
                       ],
                       addLinkFlags = [ "-e _start_init"], -- this is only needed for init
                       addLibraries = [ "mm", "getopt", "elf",
