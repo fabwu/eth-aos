@@ -823,6 +823,8 @@ errors init INIT_ERR_ {
     failure NO_MATCHING_RAM_CAP "No suitably-sized RAM cap found when initialising local memory allocator",
     failure PREPARE_SPAWN       "Failed to prepare RPC for new process",
     failure SPAWN               "Failed to spawn process",
+    failure SPAWN_CMD_TOO_LONG  "Process command line too long",
+    failure SPAWN_URPC          "Failed to spawn process on another core",
 };
 
 //errors in continuation management

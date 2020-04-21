@@ -149,6 +149,12 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
         return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
     }
 
+    // Send ID of core that process should be spawned on
+    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_PROCESS_SPAWN_CORE, core);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+    }
+
     // Get pid and success information
     err = lmp_protocol_recv2(&rpc->chan, AOS_RPC_PROCESS_SPAWN, &ret_pid, &ret_success);
     if (err_is_fail(err)) {

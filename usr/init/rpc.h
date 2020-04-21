@@ -25,5 +25,13 @@
 errval_t rpc_initialize_lmp(struct lmp_state *lmp_state);
 errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap);
 
+#define URPC_MAX_MSG_LEN 2048
+struct urpc_data {
+    volatile int flag;
+    volatile errval_t err;
+    volatile char msg[URPC_MAX_MSG_LEN];
+};
+extern struct urpc_data *urpc_frame_core1;
+
 #endif
 

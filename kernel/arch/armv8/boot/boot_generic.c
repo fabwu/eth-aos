@@ -37,7 +37,7 @@ void boot_app_init(lpaddr_t pointer)
     __attribute__((noreturn));
 
 /* low level debugging facilities */
-#define DEBUG 1
+#define DEBUG 0
 #define IMX8X
 #if DEBUG
 #ifdef THUNDERX

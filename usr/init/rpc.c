@@ -5,6 +5,7 @@
 
 #include "rpc.h"
 #include <aos/lmp_protocol.h>
+#include <machine/atomic.h>
 #include <spawn/argv.h>
 
 #if 0
@@ -154,6 +155,8 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
     return SYS_ERR_OK;
 }
 
+struct urpc_data *urpc_frame_core1;
+
 /**
  * Spawns process
  * msg.words[0] == AOS_RPC_MSG_PROCESS_SPAWN
@@ -163,9 +166,9 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
 static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     errval_t err = SYS_ERR_OK;
     struct spawninfo *si = NULL;
+    domainid_t pid;
 
-    // FIXME: Pass core id
-    char *cmdline;
+    char *cmdline = NULL;
     err = lmp_protocol_recv_string(chan, AOS_RPC_PROCESS_SPAWN_CMD, &cmdline);
     if (err_is_fail(err)) {
         return err;
@@ -174,31 +177,71 @@ static errval_t rpc_spawn_process(struct lmp_chan *chan) {
     int argc;
     char *buf;
     char **argv = make_argv(cmdline, &argc, &buf);
-    free(cmdline);
     if (argc < 1 || argv == NULL) {
         err = AOS_ERR_RPC_SPAWN_PROCESS;
         goto out;
     }
 
-    grading_rpc_handler_process_spawn(argv[0], disp_get_core_id()); // FIXME core id
-
-    si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-    if (si == NULL) {
-        err = INIT_ERR_PREPARE_SPAWN;
+    uintptr_t coreid_recv;
+    err = lmp_protocol_recv1(chan, AOS_RPC_PROCESS_SPAWN_CORE, &coreid_recv);
+    if (err_is_fail(err)) {
+        err = AOS_ERR_RPC_SPAWN_PROCESS;
         goto out;
     }
+    coreid_t coreid = (coreid_t)coreid_recv;
 
-    err = rpc_create_child_channel_to_init(&si->initep);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-        goto out;
-    }
+    grading_rpc_handler_process_spawn(argv[0], coreid);
 
-    domainid_t pid;
-    err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_SPAWN);
-        goto out;
+    if (coreid == 0) {
+        si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+        if (si == NULL) {
+            err = INIT_ERR_PREPARE_SPAWN;
+            goto out;
+        }
+
+        err = rpc_create_child_channel_to_init(&si->initep);
+        if (err_is_fail(err)) {
+            err = err_push(err, INIT_ERR_PREPARE_SPAWN);
+            goto out;
+        }
+
+        err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
+        if (err_is_fail(err)) {
+            err = err_push(err, INIT_ERR_SPAWN);
+            goto out;
+        }
+    } else {
+        assert(coreid == 1);
+        struct urpc_data *urpc = urpc_frame_core1;
+
+        size_t cmd_len = strlen(cmdline);
+        if (cmd_len > URPC_MAX_MSG_LEN - 1) {
+            err = INIT_ERR_SPAWN_CMD_TOO_LONG;
+            goto out;
+        }
+
+        DEBUG_PRINTF("passing command '%s' to core %u in URPC frame...\n", cmdline, coreid);
+        memcpy((void *)urpc->msg, cmdline, cmd_len);
+        urpc->msg[cmd_len] = '\0';
+        // ensure msg is written before flag is written
+        dmb(sy);
+        urpc->flag = 1;
+
+        // wait for response
+        DEBUG_PRINTF("waiting for reply from core %u...\n", coreid);
+        while (urpc->flag);
+
+        // ensure flag is read before ret is read
+        dmb(sy);
+        err = urpc->err;
+        DEBUG_PRINTF("received reply %u from core %u in URPC frame\n", err, coreid);
+        if (err_is_fail(err)) {
+            return err_push(err, INIT_ERR_SPAWN_URPC);
+            goto out;
+        }
+
+        // TODO get PID
+        pid = 1;
     }
 
 out:
@@ -207,6 +250,9 @@ out:
     }
     if (argv != NULL) {
         free_argv(argv, buf);
+    }
+    if (cmdline != NULL) {
+        free(cmdline);
     }
 
     if (err_is_fail(err)) {

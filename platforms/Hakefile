@@ -16,7 +16,8 @@ let
         "init",
         "hello",
         "memeater",
-        "spawnTester"
+        "spawnTester",
+        "shell"
       ] ]
   in
   [

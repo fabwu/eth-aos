@@ -25,12 +25,15 @@
 #include <grading.h>
 #include <aos/core_state.h>
 #include <aos/coreboot.h>
+#include <barrelfish_kpi/startup_arm.h>
+#include <machine/atomic.h>
 
 #include "mem_alloc.h"
 #include "rpc.h"
 
-#define INIT_EXECUTE_MEMORYTEST 1
+#define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_SPAWNTEST 0
+#define INIT_EXECUTE_SHELL 1
 
 struct bootinfo *bi;
 
@@ -97,6 +100,16 @@ static int bsp_main(int argc, char *argv[])
     }
     struct frame_identity urpc_frame_id;
     err = frame_identify(urpc_frame, &urpc_frame_id);
+    // initialize urpc frame
+    struct urpc_data *urpc;
+    err = paging_map_frame(get_current_paging_state(), (void **)&urpc,
+                           urpc_frame_size, urpc_frame, NULL, NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't map URPC frame\n");
+        return EXIT_FAILURE;
+    }
+    memset(urpc, 0, urpc_frame_size);
+    urpc_frame_core1 = urpc;
 
     // boot second core
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
@@ -114,6 +127,13 @@ static int bsp_main(int argc, char *argv[])
 
     if (INIT_EXECUTE_SPAWNTEST) {
         init_spawn("spawnTester", NULL);
+    }
+
+    if (INIT_EXECUTE_SHELL) {
+        err = init_spawn("shell", NULL);
+        if(err_is_fail(err)) {
+            DEBUG_ERR(err, "Couldn't spawn shell");
+        }
     }
 
     // TODO: Spawn system processes, boot second core etc. here
@@ -142,7 +162,25 @@ static int app_main(int argc, char *argv[])
     // - grading_setup_app_init(..);
     // - grading_test_early();
     // - grading_test_late();
-    return LIB_ERR_NOT_IMPLEMENTED;
+
+    struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
+
+    while (true) {
+        // wait for message
+        DEBUG_PRINTF("core %u: waiting for commands...\n", disp_get_current_core_id());
+        while (urpc->flag == 0);
+
+        // ensure flag is read before msg is read
+        dmb(sy);
+        DEBUG_PRINTF("received command: %s\n", urpc->msg);
+
+        urpc->err = SYS_ERR_OK;
+        // ensure ret is written before flag is written
+        dmb(sy);
+        urpc->flag = 0;
+    }
+
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char *argv[])
