@@ -194,14 +194,38 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
 errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **name)
 {
     // Protocol
-    // FIXME: Not implemented
-    // TODO: Request: AOS_RPC_PROCESS_GET_NAME, pid
-    // TODO: Responses:
+    // Request: AOS_RPC_PROCESS_GET_NAME, pid
+    // Responses:
     //     AOS_RPC_PROCESS_GET_NAME, success
-    //     recv_string(AOS_RPC_PROCESS_GET_NAME, &name)
+    //     recv_string(AOS_RPC_PROCESS_GET_NAME_STR, &name)
 
+    errval_t err;
     aos_rpc_assert(rpc);
-    // TODO (M5): implement name lookup for process given a process id
+
+    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_PROCESS_GET_NAME, pid);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_NAME);
+    }
+
+    uintptr_t success;
+    err = lmp_protocol_recv1(&rpc->chan, AOS_RPC_PROCESS_GET_NAME, &success);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_NAME);
+    }
+    if (!success) {
+        return AOS_ERR_RPC_GET_NAME;
+    }
+
+    char * ret_name;
+    err = lmp_protocol_recv_string(&rpc->chan, AOS_RPC_PROCESS_GET_NAME_STR, &ret_name);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_NAME);
+    }
+
+    if (name != NULL) {
+        *name = ret_name;
+    }
+
     return SYS_ERR_OK;
 }
 
@@ -209,14 +233,33 @@ errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
                                       size_t *pid_count)
 {
     // Protocol
-    // FIXME: Not implemented
-    // TODO: Request: AOS_RPC_PROCESS_GET_ALL_PIDS
-    // TODO: Responses:
-    //     AOS_RPC_PROCESS_GET_ALL_PIDS, success
-    //     recv_bytes(AOS_RPC_PROCESS_GET_ALL_PIDS, &pid_count, &pids)
+    // Request: AOS_RPC_PROCESS_GET_ALL_PIDS
+    // Respons: recv_bytes(AOS_RPC_PROCESS_GET_ALL_PIDS, &pid_count, &pids)
 
-    // errval_t err;
+    errval_t err;
     aos_rpc_assert(rpc);
+
+    err = lmp_protocol_send0(&rpc->chan, AOS_RPC_PROCESS_GET_ALL_PIDS);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_PIDS);
+    }
+
+    size_t size;
+    uint8_t * bytes;
+    err = lmp_protocol_recv_bytes(&rpc->chan, AOS_RPC_PROCESS_GET_ALL_PIDS, &size, &bytes);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_PIDS);
+    }
+    
+    assert(size % sizeof(domainid_t) == 0);
+
+    if (pid_count != NULL) {
+        *pid_count = size / sizeof(domainid_t);
+    }
+    if (pids != NULL) {
+        *pids = (domainid_t *)bytes;
+    }
+
     return SYS_ERR_OK;
 }
 

@@ -198,13 +198,19 @@ errval_t process_get_all_pids_rpc(struct lmp_chan *chan)
 
 errval_t process_get_name_rpc(struct lmp_chan *chan, domainid_t pid)
 {
+    errval_t err;
     grading_rpc_handler_process_get_name(pid);
 
     struct process_node *node, *parent;
     if (!process_find_node(pid, &node, &parent)) {
         DEBUG_PRINTF("Trying to access unkown process with pid: 0x%x\n", pid);
-        return INIT_ERR_PROCESS_NOT_FOUND;
-    }
+        return lmp_protocol_send1(chan, AOS_RPC_PROCESS_GET_NAME, false);
+    } else {
+        err = lmp_protocol_send1(chan, AOS_RPC_PROCESS_GET_NAME, true);
+        if (err_is_fail(err)) {
+            return err;
+        }
 
-    return lmp_protocol_send_string(chan, AOS_RPC_PROCESS_GET_NAME, node->name);
+        return lmp_protocol_send_string(chan, AOS_RPC_PROCESS_GET_NAME_STR, node->name);
+    }
 }

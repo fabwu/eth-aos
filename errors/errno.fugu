@@ -1433,6 +1433,8 @@ errors aos AOS_ERR_ {
     failure RPC_FREE_RAM_CAP       "Failure in aos_rpc_free_ram_cap()",
     failure RPC_FREE_RAM_CAP_REMOTE_ERR "Got err from remote in aos_rpc_free_ram_cap()",
     failure RPC_SPAWN_PROCESS      "Failure in aos_rpc_process_spawn()",
+    failure RPC_GET_PIDS           "Failure in aos_rpc_process_get_all_pids()",
+    failure RPC_GET_NAME           "Failure in aos_rpc_process_get_name()",
     failure INIT_SETUP_INITEP      "Failed to setup lmp between init and the process",
 };
 
