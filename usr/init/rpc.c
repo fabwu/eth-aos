@@ -6,13 +6,14 @@
 #include "rpc.h"
 #include "process.h"
 #include <aos/lmp_protocol.h>
-#include <machine/atomic.h>
 
 #if 0
 #    define DEBUG_RPC_SETUP(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_RPC_SETUP(fmt...) ((void)0)
 #endif
+
+struct urpc_data *urpc_frame_core1;
 
 /**
  * Receives a number.
@@ -137,118 +138,6 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
     return SYS_ERR_OK;
 }
 
-struct urpc_data *urpc_frame_core1;
-
-/**
- * Spawns process.
- */
-__attribute__((unused)) static errval_t rpc_spawn_process(struct lmp_chan *chan) {
-    errval_t err = SYS_ERR_OK;
-    struct spawninfo *si = NULL;
-    domainid_t pid;
-
-    char *cmdline = NULL;
-    err = lmp_protocol_recv_string(chan, AOS_RPC_PROCESS_SPAWN_CMD, &cmdline);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    int argc;
-    char *buf;
-    char **argv = make_argv(cmdline, &argc, &buf);
-    if (argc < 1 || argv == NULL) {
-        err = AOS_ERR_RPC_SPAWN_PROCESS;
-        goto out;
-    }
-
-    uintptr_t coreid_recv;
-    err = lmp_protocol_recv1(chan, AOS_RPC_PROCESS_SPAWN_CORE, &coreid_recv);
-    if (err_is_fail(err)) {
-        err = AOS_ERR_RPC_SPAWN_PROCESS;
-        goto out;
-    }
-    coreid_t coreid = (coreid_t)coreid_recv;
-
-    grading_rpc_handler_process_spawn(argv[0], coreid);
-
-    if (coreid == 0) {
-        si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-        if (si == NULL) {
-            err = INIT_ERR_PREPARE_SPAWN;
-            goto out;
-        }
-
-        err = rpc_create_child_channel_to_init(&si->initep, NULL);
-        if (err_is_fail(err)) {
-            err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-            goto out;
-        }
-
-        err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
-        if (err_is_fail(err)) {
-            err = err_push(err, INIT_ERR_SPAWN);
-            goto out;
-        }
-    } else {
-        assert(coreid == 1);
-        struct urpc_data *urpc = urpc_frame_core1;
-
-        size_t cmd_len = strlen(cmdline);
-        if (cmd_len > URPC_MAX_MSG_LEN - 1) {
-            err = INIT_ERR_SPAWN_CMD_TOO_LONG;
-            goto out;
-        }
-
-        DEBUG_PRINTF("passing command '%s' to core %u in URPC frame...\n", cmdline, coreid);
-        memcpy((void *)urpc->msg, cmdline, cmd_len);
-        urpc->msg[cmd_len] = '\0';
-        // ensure msg is written before flag is written
-        dmb(sy);
-        urpc->flag = 1;
-
-        // wait for response
-        DEBUG_PRINTF("waiting for reply from core %u...\n", coreid);
-        while (urpc->flag);
-
-        // ensure flag is read before ret is read
-        dmb(sy);
-        err = urpc->err;
-        DEBUG_PRINTF("received reply %u from core %u in URPC frame\n", err, coreid);
-        if (err_is_fail(err)) {
-            return err_push(err, INIT_ERR_SPAWN_URPC);
-            goto out;
-        }
-
-        // TODO get PID
-        pid = 1;
-    }
-
-out:
-    if (si != NULL) {
-        free(si);
-    }
-    if (argv != NULL) {
-        free_argv(argv, buf);
-    }
-    if (cmdline != NULL) {
-        free(cmdline);
-    }
-
-    if (err_is_fail(err)) {
-        errval_t inner_err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, 0, false);
-        if (err_is_fail(inner_err)) {
-            DEBUG_ERR(inner_err, "Could not report failed process spawn");
-        }
-    } else {
-        err = lmp_protocol_send2(chan, AOS_RPC_PROCESS_SPAWN, pid, true);
-        if (err_is_fail(err)) {
-            err = err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
-        }
-    }
-
-    return err;
-}
-
 /**
  * Handles messages from different child channels
  */
@@ -300,7 +189,7 @@ static void rpc_handler_recv_closure(void *arg)
             }
             break;
         case AOS_RPC_PROCESS_SPAWN:
-            err = process_spawn_rpc(chan);
+            err = process_spawn_rpc(chan, (coreid_t)msg.words[1]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Failed to spawn process in rpc_spawn_process()");
             }

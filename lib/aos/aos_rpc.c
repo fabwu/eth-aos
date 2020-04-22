@@ -154,9 +154,8 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
                                domainid_t *newpid)
 {
     // Protocol
-    // TODO: Pass core id with first request
     // Requests:
-    //     AOS_RPC_PROCESS_SPAWN
+    //     AOS_RPC_PROCESS_SPAWN, core id
     //     send_string(AOS_RPC_PROCESS_SPAWN_CMD, cmdline)
     // Response: AOS_RPC_PROCESS_SPAWN, domain id, success
 
@@ -165,22 +164,14 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
     uintptr_t ret_pid = 0;
     uintptr_t ret_success = 0;
 
-    // TODO (M5): Send request to correct core
-
-    // Request process spawn
-    err = lmp_protocol_send0(&rpc->chan, AOS_RPC_PROCESS_SPAWN);
+    // Request process spawn on specified core
+    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_PROCESS_SPAWN, core);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
     }
 
     // Send commandline that should be used to spawn process
     err = lmp_protocol_send_string(&rpc->chan, AOS_RPC_PROCESS_SPAWN_CMD, cmdline);
-    if (err_is_fail(err)) {
-        return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
-    }
-
-    // Send ID of core that process should be spawned on
-    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_PROCESS_SPAWN_CORE, core);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
     }

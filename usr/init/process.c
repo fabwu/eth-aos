@@ -4,7 +4,7 @@
 static struct process_state state;
 
 static bool process_find_node(domainid_t pid, struct process_node **node,
-                      struct process_node **parent)
+                              struct process_node **parent)
 {
     *parent = NULL;
     *node = state.head;
@@ -41,11 +41,12 @@ errval_t process_add(domainid_t pid, coreid_t core_id, char *name)
     return SYS_ERR_OK;
 }
 
-errval_t process_spawn_rpc(struct lmp_chan *chan) {
+errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id)
+{
     errval_t err = SYS_ERR_OK;
     struct spawninfo *si = NULL;
+    domainid_t pid;
 
-    // FIXME: Pass core id
     char *cmdline;
     err = lmp_protocol_recv_string(chan, AOS_RPC_PROCESS_SPAWN_CMD, &cmdline);
     if (err_is_fail(err)) {
@@ -55,38 +56,71 @@ errval_t process_spawn_rpc(struct lmp_chan *chan) {
     int argc;
     char *buf;
     char **argv = make_argv(cmdline, &argc, &buf);
-    free(cmdline);
     if (argc < 1 || argv == NULL) {
         err = AOS_ERR_RPC_SPAWN_PROCESS;
         goto out;
     }
 
-    grading_rpc_handler_process_spawn(argv[0], disp_get_core_id()); // FIXME core id
+    grading_rpc_handler_process_spawn(argv[0], core_id);
 
-    si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-    if (si == NULL) {
-        err = INIT_ERR_PREPARE_SPAWN;
-        goto out;
+    if (core_id == 0) {
+        si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+        if (si == NULL) {
+            err = INIT_ERR_PREPARE_SPAWN;
+            goto out;
+        }
+
+        dispatcher_node_ref node_ref;
+        err = rpc_create_child_channel_to_init(&si->initep, &node_ref);
+        if (err_is_fail(err)) {
+            err = err_push(err, INIT_ERR_PREPARE_SPAWN);
+            goto out;
+        }
+
+        err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
+        if (err_is_fail(err)) {
+            err = err_push(err, INIT_ERR_SPAWN);
+            goto out;
+        }
+
+        rpc_dispatcher_node_set_pid(node_ref, pid);
+    } else {
+        assert(core_id == 1);
+        struct urpc_data *urpc = urpc_frame_core1;
+
+        size_t cmd_len = strlen(cmdline);
+        if (cmd_len > URPC_MAX_MSG_LEN - 1) {
+            err = INIT_ERR_SPAWN_CMD_TOO_LONG;
+            goto out;
+        }
+
+        DEBUG_PRINTF("passing command '%s' to core %u in URPC frame...\n", cmdline,
+                     core_id);
+        memcpy((void *)urpc->msg, cmdline, cmd_len);
+        urpc->msg[cmd_len] = '\0';
+        // ensure msg is written before flag is written
+        dmb(sy);
+        urpc->flag = 1;
+
+        // wait for response
+        DEBUG_PRINTF("waiting for reply from core %u...\n", core_id);
+        while (urpc->flag)
+            ;
+
+        // ensure flag is read before ret is read
+        dmb(sy);
+        err = urpc->err;
+        DEBUG_PRINTF("received reply %u from core %u in URPC frame\n", err, core_id);
+        if (err_is_fail(err)) {
+            return err_push(err, INIT_ERR_SPAWN_URPC);
+            goto out;
+        }
+
+        // TODO get PID
+        pid = 1;
     }
 
-    dispatcher_node_ref node_ref;
-    err = rpc_create_child_channel_to_init(&si->initep, &node_ref);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-        goto out;
-    }
-
-    domainid_t pid;
-    err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_SPAWN);
-        goto out;
-    }
-
-    rpc_dispatcher_node_set_pid(node_ref, pid);
-
-    // FIXME: Add core_id here
-    err = process_add(pid, 0, argv[0]);
+    err = process_add(pid, core_id, argv[0]);
     if (err_is_fail(err)) {
         err = err_push(err, INIT_ERR_SPAWN);
         goto out;
@@ -98,6 +132,9 @@ out:
     }
     if (argv != NULL) {
         free_argv(argv, buf);
+    }
+    if (cmdline != NULL) {
+        free(cmdline);
     }
 
     if (err_is_fail(err)) {

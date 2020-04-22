@@ -11,6 +11,7 @@
 #include <aos/aos_rpc.h>
 #include <spawn/spawn.h>
 #include <spawn/argv.h>
+#include <machine/atomic.h>
 #include <grading.h>
 
 // TODO: Could be improved by using an AVL tree or similar instead of a linked list
@@ -36,7 +37,7 @@ void process_init(void);
 /**
  * \brief Spawns process.
  */
-errval_t process_spawn_rpc(struct lmp_chan *chan);
+errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id);
 
 /**
  * \brief Add process to running processes.
