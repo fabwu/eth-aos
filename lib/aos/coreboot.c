@@ -53,7 +53,7 @@ struct core_mem {
     struct mem_info init;
 };
 
-#if 1
+#if 0
 #    define DEBUG_COREBOOT(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_COREBOOT(fmt...) ((void)0)

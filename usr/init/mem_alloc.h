@@ -21,7 +21,7 @@
 extern struct bootinfo *bi;
 extern struct mm aos_mm;
 
-errval_t initialize_ram_alloc(void);
+errval_t initialize_ram_alloc(struct capref mem_cap, genpaddr_t base, size_t size);
 errval_t aos_ram_alloc_aligned(struct capref *ret, size_t size, size_t alignment);
 errval_t aos_ram_free(genpaddr_t addr);
 

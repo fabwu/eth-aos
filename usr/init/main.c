@@ -27,6 +27,7 @@
 #include <aos/coreboot.h>
 #include <barrelfish_kpi/startup_arm.h>
 #include <machine/atomic.h>
+#include <aos/kernel_cap_invocations.h>
 
 #include "mem_alloc.h"
 #include "rpc.h"
@@ -80,6 +81,13 @@ out:
     return err;
 }
 
+//FIXME Pass these with boot param or URPC
+#define CORE0_BASE 0x806b2000
+#define CORE0_SIZE 1077252095
+
+#define CORE1_BASE 0xc0a0b000
+#define CORE1_SIZE 1077252096
+
 static int bsp_main(int argc, char *argv[])
 {
     errval_t err;
@@ -91,7 +99,43 @@ static int bsp_main(int argc, char *argv[])
     bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
     assert(bi);
 
-    err = initialize_ram_alloc();
+    // FIXME Just print the value for now...
+    genpaddr_t ram_base = -1;
+    size_t ram_size = 0;
+
+    for (int i = 0; i < bi->regions_length; i++) {
+        struct mem_region mr = bi->regions[i];
+        if (mr.mr_type == RegionType_Empty) {
+            if (ram_base != -1) {
+                USER_PANIC("More than one region of RAM -> add to mm");
+            }
+
+            ram_base = mr.mr_base;
+            ram_size = mr.mr_base;
+        }
+    }
+
+    assert(ram_base != -1);
+    assert(ram_size > 0);
+
+    size_t cut = ram_size / 2;
+    genpaddr_t core0_base = ram_base;
+    size_t core0_size = cut - 1;
+
+    genpaddr_t core1_base = core0_base + cut;
+    size_t core1_size = cut;
+
+    DEBUG_PRINTF("core0 %p/%lld\n", core0_base, core0_size);
+    DEBUG_PRINTF("core1 %p/%lld\n", core1_base, core1_size);
+    // FIXME END
+
+    // TODO One could retype this cap to the correct size
+    struct capref mem_cap = {
+        .cnode = cnode_super,
+        .slot = 0,
+    };
+
+    err = initialize_ram_alloc(mem_cap, CORE0_BASE, CORE0_SIZE);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_ram_alloc");
         return -1;
@@ -179,6 +223,102 @@ static int app_main(int argc, char *argv[])
     // - grading_setup_app_init(..);
     // - grading_test_early();
     // - grading_test_late();
+    errval_t err;
+    coreid_t coreid = disp_get_current_core_id();
+
+    // init mm
+    struct capref mem_cap = {
+        .cnode = cnode_super,
+        .slot = 0,
+    };
+
+    err = ram_forge(mem_cap, CORE1_BASE, CORE1_SIZE, coreid);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't create cap for physical memory\n");
+        return -EXIT_FAILURE;
+    }
+
+    err = initialize_ram_alloc(mem_cap, CORE1_BASE, CORE1_SIZE);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "initialize_ram_alloc");
+        return -EXIT_FAILURE;
+    }
+
+    // create frame to bootinfo
+    // TODO get these from bsp
+    genpaddr_t bi_addr = 0x80212000;
+    size_t bi_size = 16384;
+    err = frame_forge(cap_bootinfo, bi_addr, bi_size, coreid);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't create frame for bootinfo\n");
+        return -EXIT_FAILURE;
+    }
+    err = paging_map_frame(get_current_paging_state(), (void **)&bi, bi_size,
+                           cap_bootinfo, NULL, NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't map bootinfo frame\n");
+        return -EXIT_FAILURE;
+    }
+
+    // create an L2 cnode for the modules
+    struct capref cap_module_cnode = { .cnode = cnode_root, .slot = ROOTCN_SLOT_MODULECN };
+    cslot_t retslots;
+    err = cnode_create_raw(cap_module_cnode, &cnode_module, ObjType_L2CNode,
+                           L2_CNODE_SLOTS, &retslots);
+    if (err_is_fail(err) || retslots != L2_CNODE_SLOTS) {
+        DEBUG_ERR(err, "Couldn't create L2 cnode for modules");
+        return -EXIT_FAILURE;
+    }
+
+    // create frame for mmstrings
+    genpaddr_t mmstrings_addr = 0x806b2000;
+    size_t mmstrings_size = 4096;
+
+    cap_mmstrings.cnode = cnode_module;
+    err = frame_forge(cap_mmstrings, mmstrings_addr, mmstrings_size, coreid);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "ASDASDASD");
+        return -EXIT_FAILURE;
+    }
+
+    // create dev frames for modules
+    for (int i = 0; i < bi->regions_length; ++i) {
+        struct mem_region mr = bi->regions[i];
+        if (mr.mr_type == RegionType_Module) {
+            DEBUG_PRINTF("base %p size %lld consumed %d modsize %lld moddata %p modslot "
+                         "%d\n",
+                         mr.mr_base, mr.mr_bytes, mr.mr_consumed, mr.mrmod_size,
+                         mr.mrmod_data, mr.mrmod_slot);
+            struct capref mod_devframe = { .cnode = cnode_module, .slot = mr.mrmod_slot };
+
+            size_t aligned_size = ROUND_UP(mr.mrmod_size, BASE_PAGE_SIZE);
+            err = devframe_forge(mod_devframe, mr.mr_base, aligned_size, coreid);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Couldn't create devframe for module at addr %p\n",
+                          mr.mr_base);
+                return -EXIT_FAILURE;
+            }
+        }
+    }
+
+    err = rpc_initialize_lmp(&lmp_state);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "initialize_lmp failed");
+        return -EXIT_FAILURE;
+    }
+
+    process_init();
+
+    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
+    if (si == NULL) {
+        return INIT_ERR_PREPARE_SPAWN;
+    }
+
+    err = init_spawn("memeater", NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't spawn memeater");
+        return -EXIT_FAILURE;
+    }
 
     struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
 

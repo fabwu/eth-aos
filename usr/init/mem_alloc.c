@@ -24,7 +24,7 @@ errval_t aos_ram_free(genpaddr_t addr)
  * \brief Setups a local memory allocator for init to use till the memory server
  * is ready to be used. Inspects bootinfo for finding memory region.
  */
-errval_t initialize_ram_alloc(void)
+errval_t initialize_ram_alloc(struct capref mem_cap, genpaddr_t base, size_t size)
 {
     errval_t err;
 
@@ -45,28 +45,12 @@ errval_t initialize_ram_alloc(void)
     static char avl_node_buf[sizeof(struct aos_avl_node)*64];
     slab_grow(&aos_mm.avl_node_slab, avl_node_buf, sizeof(avl_node_buf));
 
-    assert(bi->regions_length <= 32);
-
-    // Walk bootinfo and add all RAM caps to allocator handed to us by the kernel
-    uint64_t mem_avail = 0;
-    struct capref mem_cap = {
-        .cnode = cnode_super,
-        .slot = 0,
-    };
-
-    for (int i = 0; i < bi->regions_length; i++) {
-        if (bi->regions[i].mr_type == RegionType_Empty) { 
-            err = mm_add(&aos_mm, mem_cap, bi->regions[i].mr_base, bi->regions[i].mr_bytes);
-            if (err_is_ok(err)) {
-                mem_avail += bi->regions[i].mr_bytes;
-            } else {
-                DEBUG_ERR(err, "Warning: adding RAM region %d (%p/%zu) FAILED", i, bi->regions[i].mr_base, bi->regions[i].mr_bytes);
-            }
-
-            mem_cap.slot++;
-        }
+    err = mm_add(&aos_mm, mem_cap, base, size);
+    if(err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Adding RAM region (%p/%zu) FAILED", base, size);
     }
-    debug_printf("Added %"PRIu64" MB of physical memory.\n", mem_avail / 1024 / 1024);
+
+    DEBUG_PRINTF("Added %"PRIu64" MB of physical memory starting at %p.\n", size / 1024 / 1024, base);
 
     // Finally, we can initialize the generic RAM allocator to use our local allocator
     err = ram_alloc_set(aos_ram_alloc_aligned);
