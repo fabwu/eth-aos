@@ -182,6 +182,7 @@ out:
 static errval_t handle_pagefault(lvaddr_t addr)
 {
     DEBUG_PAGING("handle_pagefault begin\n");
+    DEBUG_PRINTF("PAGEFAULT at 0x%x\n", addr);
     errval_t err;
 
     // handle null pointer

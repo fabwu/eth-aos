@@ -188,6 +188,7 @@ static errval_t test_demand_paging(void) {
     // with write
     DEBUG_PRINTF("Allocating 64 MB of memory successful...\n");
 
+    if(0) {
     DEBUG_PRINTF("Allocating 64 MB of memory and write to it...\n");
     base_pointer = (char *)malloc(64*1024*1024);
     int num_bytes = 64*1024*1024;
@@ -199,6 +200,7 @@ static errval_t test_demand_paging(void) {
         num_bytes--;
     }
     DEBUG_PRINTF("Allocating 64 MB of memory and write to it successfull...\n");
+    }
 
     DEBUG_PRINTF("testing demand paging successful...\n");
 
@@ -236,13 +238,11 @@ int main(int argc, char *argv[])
 
     printf("Hello world using terminal service\n");
 
-    if(0) {
     debug_printf("Demand Paging: testing allocating 64 MB in child\n");
     
     err = test_demand_paging();
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "failure in testing demand paging\n");
-    }
     }
 
     debug_printf("memeater terminated....\n");
