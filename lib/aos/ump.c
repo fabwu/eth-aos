@@ -144,7 +144,7 @@ uint64_t aos_ump_can_dequeue(struct aos_ump *ump)
 
 errval_t aos_ump_dequeue(struct aos_ump *ump, void *buf, uint64_t len)
 {
-    assert(len >= aos_ump_get_capacity(ump));
+    assert(len <= aos_ump_get_capacity(ump));
 
     while (1) {
         uint8_t *current_recv_slot = ump->recv_buf + ump->line_size * ump->next_recv_slot;
@@ -203,7 +203,7 @@ errval_t aos_ump_dequeue(struct aos_ump *ump, void *buf, uint64_t len)
                 DEBUG_AOS_UMP("aos_ump_dequeue got just message\n");
             }
 
-            memcpy(buf, current_recv_slot, ump->line_size);
+            memcpy(buf, current_recv_slot, len);
 
             ++ump->slots_to_ack;
 

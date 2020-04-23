@@ -20,6 +20,7 @@
 #include <aos/paging.h>
 #include <aos/waitset.h>
 #include <aos/aos_rpc.h>
+#include <aos/ump.h>
 #include <mm/mm.h>
 #include <spawn/spawn.h>
 #include <grading.h>
@@ -43,7 +44,8 @@ coreid_t my_core_id;
 
 struct lmp_state lmp_state;
 
-static errval_t init_spawn(char *name, domainid_t *pid) {
+static errval_t init_spawn(char *name, domainid_t *pid)
+{
     errval_t err = SYS_ERR_OK;
     struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
     if (si == NULL) {
@@ -165,10 +167,14 @@ static int bsp_main(int argc, char *argv[])
     // allocate urpc frame
     struct capref urpc_frame;
     size_t urpc_frame_size;
-    err = frame_alloc(&urpc_frame, BASE_PAGE_SIZE, &urpc_frame_size);
+    err = frame_alloc(&urpc_frame, MON_URPC_SIZE, &urpc_frame_size);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_FRAME_ALLOC);
     }
+    if (urpc_frame_size < MON_URPC_SIZE) {
+        return LIB_ERR_FRAME_ALLOC;
+    }
+
     struct frame_identity urpc_frame_id;
     err = frame_identify(urpc_frame, &urpc_frame_id);
     // initialize urpc frame
@@ -180,7 +186,30 @@ static int bsp_main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     memset(urpc, 0, urpc_frame_size);
-    urpc_frame_core1 = urpc;
+
+    // FIXME: Use constatns instead of magic numbers
+    assert(64 * 64 * 2 == MON_URPC_SIZE);
+    aos_ump_init(&ump, (void *)urpc, ((void *)urpc) + (MON_URPC_SIZE >> 1), 64, 64);
+
+    // TODO: Move to separate urpc file
+    uint64_t ump_size = aos_ump_get_capacity(&ump);
+    // FIXME: Improve (use smaller buffer)
+    uint8_t ump_buf[ump_size];
+    size_t offset = 0;
+    *(genpaddr_t *)ump_buf = app_ram_base;
+    offset += sizeof(genpaddr_t);
+    *(size_t *)(ump_buf + offset) = app_ram_size;
+    offset += sizeof(size_t);
+    *(genpaddr_t *)(ump_buf + offset) = bootinfo_id.base;
+    offset += sizeof(genpaddr_t);
+    *(gensize_t *)(ump_buf + offset) = bootinfo_id.bytes;
+    offset += sizeof(gensize_t);
+    *(genpaddr_t *)(ump_buf + offset) = mmstrings_id.base;
+    offset += sizeof(genpaddr_t);
+    *(gensize_t *)(ump_buf + offset) = mmstrings_id.bytes;
+    offset += sizeof(gensize_t);
+
+    aos_ump_enqueue(&ump, ump_buf, offset);
 
     // boot second core
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
@@ -236,9 +265,32 @@ static int app_main(int argc, char *argv[])
         .slot = 0,
     };
 
-    // FIXME get these from bsp
-    genpaddr_t app_ram_base = 0xc0a0b000;
-    genpaddr_t app_ram_size = 1077252096;
+    struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
+    aos_ump_init(&ump, ((void *)urpc) + (MON_URPC_SIZE >> 1), (void *)urpc, 64, 64);
+
+    // TODO: Move to separate urpc file
+    uint64_t ump_size = aos_ump_get_capacity(&ump);
+    // FIXME: Improve (use smaller buffer)
+    uint8_t ump_buf[ump_size];
+    aos_ump_dequeue(&ump, ump_buf, ump_size);
+
+    size_t offset = 0;
+    genpaddr_t app_ram_base = *(genpaddr_t *)ump_buf;
+    offset += sizeof(genpaddr_t);
+    size_t app_ram_size = *(size_t *)(ump_buf + offset);
+    offset += sizeof(size_t);
+    genpaddr_t bi_addr = *(genpaddr_t *)(ump_buf + offset);
+    offset += sizeof(genpaddr_t);
+    size_t bi_size = *(gensize_t *)(ump_buf + offset);
+    offset += sizeof(gensize_t);
+    genpaddr_t mmstrings_addr = *(genpaddr_t *)(ump_buf + offset);
+    offset += sizeof(genpaddr_t);
+    size_t mmstrings_size = *(gensize_t *)(ump_buf + offset);
+    offset += sizeof(gensize_t);
+
+    DEBUG_PRINTF("CORE 1 Received: RAM %p/%lld\n", app_ram_base, app_ram_size);
+    DEBUG_PRINTF("CORE 1 Received: BOOTINFO %p/%lld\n", bi_addr, bi_size);
+    DEBUG_PRINTF("CORE 1 Received: MMSTRINGS  %p/%lld\n", mmstrings_addr, mmstrings_size);
 
     err = ram_forge(mem_cap, app_ram_base, app_ram_size, coreid);
     if (err_is_fail(err)) {
@@ -253,9 +305,6 @@ static int app_main(int argc, char *argv[])
     }
 
     // create frame to bootinfo
-    // FIXME get these from bsp
-    genpaddr_t bi_addr = 0x80212000;
-    size_t bi_size = 16384;
     err = frame_forge(cap_bootinfo, bi_addr, bi_size, coreid);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't create frame for bootinfo\n");
@@ -279,10 +328,6 @@ static int app_main(int argc, char *argv[])
     }
 
     // create frame for mmstrings
-    // FIXME get these from bsp
-    genpaddr_t mmstrings_addr = 0x806b2000;
-    size_t mmstrings_size = 4096;
-
     cap_mmstrings.cnode = cnode_module;
     err = frame_forge(cap_mmstrings, mmstrings_addr, mmstrings_size, coreid);
     if (err_is_fail(err)) {
@@ -318,33 +363,55 @@ static int app_main(int argc, char *argv[])
 
     grading_test_early();
 
+    // Spawn memeater
+    char *module_name = "memeater";
+    domainid_t mem_pid;
+    err = init_spawn(module_name, &mem_pid);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
+        // FIXME Error handling for urpc
+        return -EXIT_FAILURE;
+    }
+    DEBUG_PRINTF("Spawend %s with pid %d\n", module_name, mem_pid);
+
     grading_test_late();
 
-    struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
     DEBUG_PRINTF("Message handler loop\n");
     // Hang around
     struct waitset *default_ws = get_default_waitset();
     while (true) {
-        if(urpc->flag == 1) {
-            // ensure flag is read before msg is read
-            dmb(sy);
-            DEBUG_PRINTF("received command: %s\n", urpc->msg);
-            char *module_name = (char*) urpc->msg;
+        if (aos_ump_can_dequeue(&ump)) {
+            DEBUG_PRINTF("received ump command\n");
 
-            domainid_t pid;
-            err = init_spawn(module_name, &pid);
+            size_t cmd_len;
+            aos_ump_dequeue(&ump, &cmd_len, sizeof(size_t));
+            char *cmdline = (char *)malloc(cmd_len);
+
+            for (size_t i = 0; i < cmd_len; i += ump_size) {
+                aos_ump_dequeue(&ump, cmdline + i, MIN(cmd_len - i, ump_size));
+            }
+
+            // FIXME: Hotfix name extraction
+            for (size_t i = 1; i < cmd_len; ++i) {
+                if (cmdline[i] == ' ') {
+                    cmdline[i] = '\0';
+                }
+            }
+
+            domainid_t pid = 0;
+            err = init_spawn(cmdline, &pid);
             if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
-                urpc->err = INIT_ERR_SPAWN_URPC;
-                // FIXME removing this line causes spawn to fail
+                DEBUG_ERR(err, "Couldn't spawn %s\n", cmdline);
                 return -EXIT_FAILURE;
             } else {
-                DEBUG_PRINTF("spawned %s with pid %d\n", module_name, pid);
-                urpc->err = SYS_ERR_OK;
+                DEBUG_PRINTF("Spawned %s with pid %d\n", cmdline, pid);
             }
-            // ensure ret is written before flag is written
-            dmb(sy);
-            urpc->flag = 0;
+
+            // FIXME: Improve (use only 16 bytes instead of ump_size)
+            uint8_t ump_buf2[ump_size];
+            *((errval_t *)ump_buf2) = err;
+            *((domainid_t *)(ump_buf2 + sizeof(errval_t))) = pid;
+            aos_ump_enqueue(&ump, ump_buf2, ump_size);
         } else {
             err = event_dispatch_non_block(default_ws);
             if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {

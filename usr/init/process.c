@@ -86,38 +86,41 @@ errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id)
         rpc_dispatcher_node_set_pid(node_ref, pid);
     } else {
         assert(core_id == 1);
-        struct urpc_data *urpc = urpc_frame_core1;
+        size_t cmd_len = strlen(cmdline) + 1;
 
-        size_t cmd_len = strlen(cmdline);
-        if (cmd_len > URPC_MAX_MSG_LEN - 1) {
-            err = INIT_ERR_SPAWN_CMD_TOO_LONG;
-            goto out;
+        DEBUG_PRINTF("Passing command '%s' to core %u in URPC frame...\n", cmdline,
+                     core_id);
+
+        aos_ump_enqueue(&ump, &cmd_len, sizeof(size_t));
+
+        uint64_t ump_size = aos_ump_get_capacity(&ump);
+        size_t offset = 0;
+
+        while (offset < cmd_len) {
+            err = aos_ump_enqueue(&ump, cmdline + offset, MIN(cmd_len - offset, ump_size));
+            if (err_is_fail(err)) {
+                err = err_push(err, INIT_ERR_SPAWN);
+                goto out;
+            }
+
+            offset += ump_size;
         }
 
-        DEBUG_PRINTF("passing command '%s' to core %u in URPC frame...\n", cmdline,
-                     core_id);
-        memcpy((void *)urpc->msg, cmdline, cmd_len);
-        urpc->msg[cmd_len] = '\0';
-        // ensure msg is written before flag is written
-        dmb(sy);
-        urpc->flag = 1;
-
-        // wait for response
-        DEBUG_PRINTF("waiting for reply from core %u...\n", core_id);
-        while (urpc->flag)
-            ;
-
-        // ensure flag is read before ret is read
-        dmb(sy);
-        err = urpc->err;
-        DEBUG_PRINTF("received reply %u from core %u in URPC frame\n", err, core_id);
+        DEBUG_PRINTF("Receive reply %u from core %u in URPC frame\n", err, core_id);
+        uint8_t recv_buf[ump_size];
+        err = aos_ump_dequeue(&ump, (void *)recv_buf, ump_size);
         if (err_is_fail(err)) {
             return err_push(err, INIT_ERR_SPAWN_URPC);
             goto out;
         }
 
-        // TODO get PID
-        pid = 1;
+        err = *(errval_t *)recv_buf;
+        if (err_is_fail(err)) {
+            return err_push(err, INIT_ERR_SPAWN_URPC);
+            goto out;
+        }
+
+        pid = *(domainid_t *)(recv_buf + sizeof(errval_t));
     }
 
     err = process_add(pid, core_id, argv[0]);

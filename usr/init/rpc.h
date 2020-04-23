@@ -19,6 +19,7 @@
 #include <aos/aos.h>
 #include <aos/core_state.h>
 #include <aos/aos_rpc.h>
+#include <aos/ump.h>
 #include <grading.h>
 
 typedef uintptr_t dispatcher_node_ref;
@@ -27,12 +28,6 @@ errval_t rpc_initialize_lmp(struct lmp_state *lmp_state);
 errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap, dispatcher_node_ref *node_ref);
 void rpc_dispatcher_node_set_pid(dispatcher_node_ref node_ref, domainid_t pid);
 
-#define URPC_MAX_MSG_LEN 2048
-struct urpc_data {
-    volatile int flag;
-    volatile errval_t err;
-    volatile char msg[URPC_MAX_MSG_LEN];
-};
-extern struct urpc_data *urpc_frame_core1;
+extern struct aos_ump ump;
 
 #endif

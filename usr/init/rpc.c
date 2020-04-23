@@ -13,7 +13,7 @@
 #    define DEBUG_RPC_SETUP(fmt...) ((void)0)
 #endif
 
-struct urpc_data *urpc_frame_core1;
+struct aos_ump ump;
 
 /**
  * Receives a number.
