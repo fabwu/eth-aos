@@ -10,8 +10,8 @@
 // 01 -> multiple acks, no message, bits 0 to 5 of meta byte is num of acked slots, acked
 // slots as array in cache line, 0 to acked slots - 1
 struct aos_ump {
-    uint8_t *send_buf;
-    uint8_t *recv_buf;
+    volatile uint8_t *send_buf;
+    volatile uint8_t *recv_buf;
     uint64_t free;
     uint64_t acks;
     uint64_t next_send_slot;

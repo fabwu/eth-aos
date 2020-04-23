@@ -49,10 +49,12 @@ errval_t aos_ump_enqueue(struct aos_ump *ump, void *buf, uint64_t len)
         return LIB_ERR_UMP_ENQUEUE_FULL;
     }
 
-    uint8_t *current_send_slot = ump->send_buf + ump->line_size * ump->next_send_slot;
-    uint8_t *current_send_slot_meta = current_send_slot + ump->line_size - 1;
+    volatile uint8_t *current_send_slot = ump->send_buf
+                                          + ump->line_size * ump->next_send_slot;
+    volatile uint8_t *current_send_slot_meta = current_send_slot + ump->line_size - 1;
 
-    memcpy(current_send_slot, buf, len);
+    // Dropping volatile here is fine, as it is only really needed for the meta byte
+    memcpy((uint8_t *)current_send_slot, buf, len);
 
     dmb();
 
@@ -87,8 +89,9 @@ errval_t aos_ump_enqueue(struct aos_ump *ump, void *buf, uint64_t len)
 
 uint64_t aos_ump_can_dequeue(struct aos_ump *ump)
 {
-    uint8_t *current_recv_slot = ump->recv_buf + ump->line_size * ump->next_recv_slot;
-    uint8_t *current_recv_slot_meta = current_recv_slot + ump->line_size - 1;
+    volatile uint8_t *current_recv_slot = ump->recv_buf
+                                          + ump->line_size * ump->next_recv_slot;
+    volatile uint8_t *current_recv_slot_meta = current_recv_slot + ump->line_size - 1;
 
     do {
         DEBUG_AOS_UMP("aos_ump_can_dequeue next_recv_slot: 0x%" PRIx64 "\n",
@@ -133,7 +136,8 @@ uint64_t aos_ump_can_dequeue(struct aos_ump *ump)
             current_recv_slot = ump->recv_buf + ump->line_size * ump->next_recv_slot;
             current_recv_slot_meta = current_recv_slot + ump->line_size - 1;
 
-            DEBUG_AOS_UMP("aos_ump_can_dequeu after dequeue free: 0x%" PRIx64 "\n", ump->free);
+            DEBUG_AOS_UMP("aos_ump_can_dequeu after dequeue free: 0x%" PRIx64 "\n",
+                          ump->free);
         } else {
             return 1;
         }
@@ -147,8 +151,9 @@ errval_t aos_ump_dequeue(struct aos_ump *ump, void *buf, uint64_t len)
     assert(len <= aos_ump_get_capacity(ump));
 
     while (1) {
-        uint8_t *current_recv_slot = ump->recv_buf + ump->line_size * ump->next_recv_slot;
-        uint8_t *current_recv_slot_meta = current_recv_slot + ump->line_size - 1;
+        volatile uint8_t *current_recv_slot = ump->recv_buf
+                                              + ump->line_size * ump->next_recv_slot;
+        volatile uint8_t *current_recv_slot_meta = current_recv_slot + ump->line_size - 1;
 
         DEBUG_AOS_UMP("aos_ump_dequeue next_recv_slot: 0x%" PRIx64 "\n",
                       ump->next_recv_slot);
@@ -203,7 +208,8 @@ errval_t aos_ump_dequeue(struct aos_ump *ump, void *buf, uint64_t len)
                 DEBUG_AOS_UMP("aos_ump_dequeue got just message\n");
             }
 
-            memcpy(buf, current_recv_slot, len);
+            // Dropping volatile here is fine, as it is only really needed for the meta byte
+            memcpy(buf, (uint8_t *)current_recv_slot, len);
 
             ++ump->slots_to_ack;
 
@@ -225,8 +231,9 @@ errval_t aos_ump_dequeue(struct aos_ump *ump, void *buf, uint64_t len)
         DEBUG_AOS_UMP("aos_ump_dequeue acking next_send_slot: 0x%" PRIx64 "\n",
                       ump->next_send_slot);
 
-        uint8_t *current_send_slot = ump->send_buf + ump->line_size * ump->next_send_slot;
-        uint8_t *current_send_slot_meta = current_send_slot + ump->line_size - 1;
+        volatile uint8_t *current_send_slot = ump->send_buf
+                                              + ump->line_size * ump->next_send_slot;
+        volatile uint8_t *current_send_slot_meta = current_send_slot + ump->line_size - 1;
         for (uint8_t i = 0; i < ump->slots_to_ack; ++i) {
             DEBUG_AOS_UMP("aos_ump_dequeue acking slot_to_ack: 0x%" PRIx64 "\n",
                           (ump->next_slot_to_ack + i) & (ump->slots - 1));
@@ -254,7 +261,8 @@ errval_t aos_ump_dequeue(struct aos_ump *ump, void *buf, uint64_t len)
     }
 
     DEBUG_AOS_UMP("aos_ump_dequeue after dequeue free: 0x%" PRIx64 "\n", ump->free);
-    DEBUG_AOS_UMP("aos_ump_dequeue after dequeue free: 0x%" PRIx64 "\n", ump->slots_to_ack);
+    DEBUG_AOS_UMP("aos_ump_dequeue after dequeue free: 0x%" PRIx64 "\n",
+                  ump->slots_to_ack);
 
     return SYS_ERR_OK;
 }
