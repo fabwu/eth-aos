@@ -400,7 +400,11 @@ static int app_main(int argc, char *argv[])
             uint8_t ump_buf2[ump_size];
             *((errval_t *)ump_buf2) = err;
             *((domainid_t *)(ump_buf2 + sizeof(errval_t))) = pid;
-            aos_ump_enqueue(&ump, ump_buf2, ump_size);
+            err = aos_ump_enqueue(&ump, ump_buf2, ump_size);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Couldn't reply pid %d\n", pid);
+                return -EXIT_FAILURE;
+            }
         } else {
             err = event_dispatch_non_block(default_ws);
             if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
