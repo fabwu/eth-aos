@@ -18,25 +18,40 @@
 #include <aos/aos.h>
 #include <aos/aos_rpc.h>
 
+#define CMDLINE_LEN 100
+
 int main(int argc, char *argv[])
 {
+    errval_t err;
+    char cmdline[CMDLINE_LEN];
+    coreid_t coreid = 1;
+    uint32_t pid;
+
     struct aos_rpc *process_rpc = aos_rpc_get_process_channel();
     if (!process_rpc) {
         DEBUG_PRINTF("init RPC channel NULL?\n");
         return EXIT_FAILURE;
     }
 
-    errval_t err;
-    uint32_t new_pid;
-    char *cmdline = "hello arg1";
-    coreid_t coreid = 1;
+#if 0
+    memcpy(cmdline, "hello", strlen("hello") + 1);
     DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline, coreid);
-    err = aos_rpc_process_spawn(process_rpc, cmdline, coreid, &new_pid);
+    err = aos_rpc_process_spawn(process_rpc, cmdline, coreid, &pid);
     if (err_is_fail(err)) {
-        DEBUG_PRINTF("starting 'hello' failed.\n");
+        DEBUG_PRINTF("starting '%s' failed.\n", cmdline);
         return EXIT_FAILURE;
     }
-    DEBUG_PRINTF("'%s' started successfully (PID = %u)\n", cmdline, new_pid);
+    DEBUG_PRINTF("'%s' started successfully\n", cmdline);
+#endif
+
+    memcpy(cmdline, "memeater", strlen("memeater") + 1);
+    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline, coreid);
+    err = aos_rpc_process_spawn(process_rpc, cmdline, coreid, &pid);
+    if (err_is_fail(err)) {
+        DEBUG_PRINTF("starting '%s' failed.\n", cmdline);
+        return EXIT_FAILURE;
+    }
+    DEBUG_PRINTF("'%s' started successfully\n", cmdline);
 
     return EXIT_SUCCESS;
 }

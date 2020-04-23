@@ -35,7 +35,7 @@
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_SPAWNTEST 0
-#define INIT_EXECUTE_SHELL 0
+#define INIT_EXECUTE_SHELL 1
 
 struct bootinfo *bi;
 
@@ -318,30 +318,13 @@ static int app_main(int argc, char *argv[])
 
     grading_test_early();
 
-    // spawn memeater
-    char *module_name = "memeater";
-    domainid_t pid;
-    err = init_spawn(module_name, &pid);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
-        // FIXME Error handling for urpc
-        return -EXIT_FAILURE;
-    }
-    DEBUG_PRINTF("spawend %s with pid %d\n", module_name, pid);
-
     grading_test_late();
 
-    // struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
+    struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
     DEBUG_PRINTF("Message handler loop\n");
     // Hang around
     struct waitset *default_ws = get_default_waitset();
     while (true) {
-        err = event_dispatch(default_ws);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "in event_dispatch");
-            abort();
-        }
-        /* FIXME This doesn't work at the moment (inf loop)
         if(urpc->flag == 1) {
             // ensure flag is read before msg is read
             dmb(sy);
@@ -352,16 +335,24 @@ static int app_main(int argc, char *argv[])
             err = init_spawn(module_name, &pid);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
-                //FIXME Error handling for urpc
+                urpc->err = INIT_ERR_SPAWN_URPC;
+                // FIXME removing this line causes spawn to fail
                 return -EXIT_FAILURE;
+            } else {
+                DEBUG_PRINTF("spawned %s with pid %d\n", module_name, pid);
+                urpc->err = SYS_ERR_OK;
             }
-            DEBUG_PRINTF("spawend %s with pid %d\n", module_name, pid);
-            urpc->err = SYS_ERR_OK;
             // ensure ret is written before flag is written
             dmb(sy);
             urpc->flag = 0;
+        } else {
+            err = event_dispatch_non_block(default_ws);
+            if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
+                DEBUG_ERR(err, "in event_dispatch");
+                abort();
+            }
+            thread_yield();
         }
-        */
     }
 
     return EXIT_SUCCESS;
