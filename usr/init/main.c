@@ -363,17 +363,6 @@ static int app_main(int argc, char *argv[])
 
     grading_test_early();
 
-    // Spawn memeater
-    char *module_name = "memeater";
-    domainid_t mem_pid;
-    err = init_spawn(module_name, &mem_pid);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
-        // FIXME Error handling for urpc
-        return -EXIT_FAILURE;
-    }
-    DEBUG_PRINTF("Spawend %s with pid %d\n", module_name, mem_pid);
-
     grading_test_late();
 
     DEBUG_PRINTF("Message handler loop\n");

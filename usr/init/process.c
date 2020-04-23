@@ -106,7 +106,6 @@ errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id)
             offset += ump_size;
         }
 
-        DEBUG_PRINTF("Receive reply %u from core %u in URPC frame\n", err, core_id);
         uint8_t recv_buf[ump_size];
         err = aos_ump_dequeue(&ump, (void *)recv_buf, ump_size);
         if (err_is_fail(err)) {
@@ -121,6 +120,8 @@ errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id)
         }
 
         pid = *(domainid_t *)(recv_buf + sizeof(errval_t));
+
+        DEBUG_PRINTF("Received ump reply from core %u: Spawned pid %d\n", core_id, pid);
     }
 
     err = process_add(pid, core_id, argv[0]);
