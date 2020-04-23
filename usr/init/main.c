@@ -35,7 +35,7 @@
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_SPAWNTEST 0
-#define INIT_EXECUTE_SHELL 1
+#define INIT_EXECUTE_SHELL 0
 
 struct bootinfo *bi;
 
@@ -81,13 +81,6 @@ out:
     return err;
 }
 
-//FIXME Pass these with boot param or URPC
-#define CORE0_BASE 0x806b2000
-#define CORE0_SIZE 1077252095
-
-#define CORE1_BASE 0xc0a0b000
-#define CORE1_SIZE 1077252096
-
 static int bsp_main(int argc, char *argv[])
 {
     errval_t err;
@@ -99,7 +92,8 @@ static int bsp_main(int argc, char *argv[])
     bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
     assert(bi);
 
-    // FIXME Just print the value for now...
+    // FIXME BEGIN Just print the value for now...
+    // we have to pass core1_base and core1_size to the other core somehow
     genpaddr_t ram_base = -1;
     size_t ram_size = 0;
 
@@ -119,23 +113,39 @@ static int bsp_main(int argc, char *argv[])
     assert(ram_size > 0);
 
     size_t cut = ram_size / 2;
-    genpaddr_t core0_base = ram_base;
-    size_t core0_size = cut - 1;
+    genpaddr_t bsp_ram_base = ram_base;
+    size_t bsp_ram_size = cut - 1;
 
-    genpaddr_t core1_base = core0_base + cut;
-    size_t core1_size = cut;
+    genpaddr_t app_ram_base = bsp_ram_base + cut;
+    size_t app_ram_size = cut;
 
-    DEBUG_PRINTF("core0 %p/%lld\n", core0_base, core0_size);
-    DEBUG_PRINTF("core1 %p/%lld\n", core1_base, core1_size);
+    struct frame_identity bootinfo_id;
+    err = frame_identify(cap_bootinfo, &bootinfo_id);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't identify bootinfo frame\n");
+        return -EXIT_FAILURE;
+    }
+
+    struct frame_identity mmstrings_id;
+    err = frame_identify(cap_mmstrings, &mmstrings_id);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't identify mmstrings frame\n");
+        return -EXIT_FAILURE;
+    }
+
+    DEBUG_PRINTF("PASS THESE TO CORE1 RAM %p/%lld\n", app_ram_base, app_ram_size);
+    DEBUG_PRINTF("PASS THESE TO CORE1 BOOTINFO %p/%lld\n", bootinfo_id.base,
+                 bootinfo_id.bytes);
+    DEBUG_PRINTF("PASS THESE TO CORE1 MMSTRINGS  %p/%lld\n", mmstrings_id.base,
+                 mmstrings_id.bytes);
     // FIXME END
 
-    // TODO One could retype this cap to the correct size
     struct capref mem_cap = {
         .cnode = cnode_super,
         .slot = 0,
     };
 
-    err = initialize_ram_alloc(mem_cap, CORE0_BASE, CORE0_SIZE);
+    err = initialize_ram_alloc(mem_cap, bsp_ram_base, bsp_ram_size);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_ram_alloc");
         return -1;
@@ -163,8 +173,8 @@ static int bsp_main(int argc, char *argv[])
     err = frame_identify(urpc_frame, &urpc_frame_id);
     // initialize urpc frame
     struct urpc_data *urpc;
-    err = paging_map_frame(get_current_paging_state(), (void **)&urpc,
-                           urpc_frame_size, urpc_frame, NULL, NULL);
+    err = paging_map_frame(get_current_paging_state(), (void **)&urpc, urpc_frame_size,
+                           urpc_frame, NULL, NULL);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't map URPC frame\n");
         return EXIT_FAILURE;
@@ -174,14 +184,14 @@ static int bsp_main(int argc, char *argv[])
 
     // boot second core
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
-    if(err_is_fail(err)) {
+    if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't boot second core");
         return -1;
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn("memeater", NULL);
-        if(err_is_fail(err)) {
+        if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn memeater");
         }
     }
@@ -192,12 +202,10 @@ static int bsp_main(int argc, char *argv[])
 
     if (INIT_EXECUTE_SHELL) {
         err = init_spawn("shell", NULL);
-        if(err_is_fail(err)) {
+        if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn shell");
         }
     }
-
-    // TODO: Spawn system processes, boot second core etc. here
 
     // Grading
     grading_test_late();
@@ -218,34 +226,34 @@ static int bsp_main(int argc, char *argv[])
 
 static int app_main(int argc, char *argv[])
 {
-    // Implement me in Milestone 5
-    // Remember to call
-    // - grading_setup_app_init(..);
-    // - grading_test_early();
-    // - grading_test_late();
     errval_t err;
     coreid_t coreid = disp_get_current_core_id();
 
-    // init mm
+    // init memory manager
+    // (we have to do this before creating bootinfo because we need slot allocator)
     struct capref mem_cap = {
         .cnode = cnode_super,
         .slot = 0,
     };
 
-    err = ram_forge(mem_cap, CORE1_BASE, CORE1_SIZE, coreid);
+    // FIXME get these from bsp
+    genpaddr_t app_ram_base = 0xc0a0b000;
+    genpaddr_t app_ram_size = 1077252096;
+
+    err = ram_forge(mem_cap, app_ram_base, app_ram_size, coreid);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't create cap for physical memory\n");
         return -EXIT_FAILURE;
     }
 
-    err = initialize_ram_alloc(mem_cap, CORE1_BASE, CORE1_SIZE);
+    err = initialize_ram_alloc(mem_cap, app_ram_base, app_ram_size);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_ram_alloc");
         return -EXIT_FAILURE;
     }
 
     // create frame to bootinfo
-    // TODO get these from bsp
+    // FIXME get these from bsp
     genpaddr_t bi_addr = 0x80212000;
     size_t bi_size = 16384;
     err = frame_forge(cap_bootinfo, bi_addr, bi_size, coreid);
@@ -260,7 +268,7 @@ static int app_main(int argc, char *argv[])
         return -EXIT_FAILURE;
     }
 
-    // create an L2 cnode for the modules
+    // create an L2 cnode for modules
     struct capref cap_module_cnode = { .cnode = cnode_root, .slot = ROOTCN_SLOT_MODULECN };
     cslot_t retslots;
     err = cnode_create_raw(cap_module_cnode, &cnode_module, ObjType_L2CNode,
@@ -271,13 +279,14 @@ static int app_main(int argc, char *argv[])
     }
 
     // create frame for mmstrings
+    // FIXME get these from bsp
     genpaddr_t mmstrings_addr = 0x806b2000;
     size_t mmstrings_size = 4096;
 
     cap_mmstrings.cnode = cnode_module;
     err = frame_forge(cap_mmstrings, mmstrings_addr, mmstrings_size, coreid);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "ASDASDASD");
+        DEBUG_ERR(err, "Couldn't create frame for mmstrings");
         return -EXIT_FAILURE;
     }
 
@@ -285,10 +294,6 @@ static int app_main(int argc, char *argv[])
     for (int i = 0; i < bi->regions_length; ++i) {
         struct mem_region mr = bi->regions[i];
         if (mr.mr_type == RegionType_Module) {
-            DEBUG_PRINTF("app_main base %p size %lld consumed %d modsize %lld moddata %p modslot "
-                         "%d\n",
-                         mr.mr_base, mr.mr_bytes, mr.mr_consumed, mr.mrmod_size,
-                         mr.mrmod_data, mr.mrmod_slot);
             struct capref mod_devframe = { .cnode = cnode_module, .slot = mr.mrmod_slot };
 
             size_t aligned_size = ROUND_UP(mr.mrmod_size, BASE_PAGE_SIZE);
@@ -301,6 +306,8 @@ static int app_main(int argc, char *argv[])
         }
     }
 
+    grading_setup_app_init(bi);
+
     err = rpc_initialize_lmp(&lmp_state);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "initialize_lmp failed");
@@ -309,32 +316,52 @@ static int app_main(int argc, char *argv[])
 
     process_init();
 
-    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-    if (si == NULL) {
-        return INIT_ERR_PREPARE_SPAWN;
-    }
+    grading_test_early();
 
-    err = init_spawn("memeater", NULL);
+    // spawn memeater
+    char *module_name = "memeater";
+    domainid_t pid;
+    err = init_spawn(module_name, &pid);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't spawn memeater");
+        DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
+        // FIXME Error handling for urpc
         return -EXIT_FAILURE;
     }
+    DEBUG_PRINTF("spawend %s with pid %d\n", module_name, pid);
 
-    struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
+    grading_test_late();
 
+    // struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
+    DEBUG_PRINTF("Message handler loop\n");
+    // Hang around
+    struct waitset *default_ws = get_default_waitset();
     while (true) {
-        // wait for message
-        DEBUG_PRINTF("core %u: waiting for commands...\n", disp_get_current_core_id());
-        while (urpc->flag == 0);
+        err = event_dispatch(default_ws);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "in event_dispatch");
+            abort();
+        }
+        /* FIXME This doesn't work at the moment (inf loop)
+        if(urpc->flag == 1) {
+            // ensure flag is read before msg is read
+            dmb(sy);
+            DEBUG_PRINTF("received command: %s\n", urpc->msg);
+            char *module_name = (char*) urpc->msg;
 
-        // ensure flag is read before msg is read
-        dmb(sy);
-        DEBUG_PRINTF("received command: %s\n", urpc->msg);
-
-        urpc->err = SYS_ERR_OK;
-        // ensure ret is written before flag is written
-        dmb(sy);
-        urpc->flag = 0;
+            domainid_t pid;
+            err = init_spawn(module_name, &pid);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Couldn't spawn %s\n", module_name);
+                //FIXME Error handling for urpc
+                return -EXIT_FAILURE;
+            }
+            DEBUG_PRINTF("spawend %s with pid %d\n", module_name, pid);
+            urpc->err = SYS_ERR_OK;
+            // ensure ret is written before flag is written
+            dmb(sy);
+            urpc->flag = 0;
+        }
+        */
     }
 
     return EXIT_SUCCESS;
@@ -343,7 +370,6 @@ static int app_main(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     errval_t err;
-
 
     /* Set the core id in the disp_priv struct */
     err = invoke_kernel_get_core_id(cap_kernel, &my_core_id);
