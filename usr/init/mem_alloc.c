@@ -15,9 +15,24 @@ errval_t aos_ram_alloc_aligned(struct capref *ret, size_t size, size_t alignment
     return mm_alloc_aligned(&aos_mm, size, alignment, ret);
 }
 
+// TODO: Change interface to: errval_t aos_ram_free(struct capref cap)
+// See implementation of aos_ram_free_cap below
 errval_t aos_ram_free(genpaddr_t addr)
 {
     return mm_free(&aos_mm, addr);
+}
+
+errval_t aos_ram_free_cap(struct capref cap)
+{
+    errval_t err;
+    
+    struct capability c;
+    err = cap_direct_identify(cap, &c);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return mm_free(&aos_mm, get_address(&c));
 }
 
 /**
@@ -36,13 +51,13 @@ errval_t initialize_ram_alloc(struct capref mem_cap, genpaddr_t base, size_t siz
 
     // FIXME: shouldn't need to know so much about the internals of mm
     // Give aos_mm a bit of memory for the initialization
-    static char bi_node_buf[sizeof(struct bi_node)*32];
+    static char bi_node_buf[SLAB_STATIC_SIZE(32, sizeof(struct bi_node))];
     slab_grow(&aos_mm.bi_node_slab, bi_node_buf, sizeof(bi_node_buf));
 
-    static char mm_node_buf[sizeof(struct mm_node)*64];
+    static char mm_node_buf[SLAB_STATIC_SIZE(64, sizeof(struct mm_node))];
     slab_grow(&aos_mm.mm_node_slab, mm_node_buf, sizeof(mm_node_buf));
 
-    static char avl_node_buf[sizeof(struct aos_avl_node)*64];
+    static char avl_node_buf[SLAB_STATIC_SIZE(64, sizeof(struct aos_avl_node))];
     slab_grow(&aos_mm.avl_node_slab, avl_node_buf, sizeof(avl_node_buf));
 
     err = mm_add(&aos_mm, mem_cap, base, size);
