@@ -3,6 +3,18 @@
 
 #include <aos/aos.h>
 
+struct aos_ump_queue {
+    volatile uint8_t *app_buf;
+    volatile uint8_t *ack_buf;
+    uint64_t free;
+    uint64_t acks;
+    uint64_t next_app_slot;
+    uint64_t next_ack_slot;
+    uint64_t next_app_ack;
+    uint64_t next_ack_ack;
+    uint64_t slots_to_ack;
+};
+
 // Upper byte of cache line reserved for metadata
 // Upper two bits can signify
 // 10 -> no ack, just message
@@ -10,22 +22,13 @@
 // 01 -> multiple acks, no message, bits 0 to 5 of meta byte is num of acked slots, acked
 // slots as array in cache line, 0 to acked slots - 1
 struct aos_ump {
-    volatile uint8_t *send_buf;
-    volatile uint8_t *recv_buf;
-    uint64_t free;
-    uint64_t acks;
-    uint64_t next_send_slot;
-    uint64_t next_recv_slot;
+    struct aos_ump_queue send;
+    struct aos_ump_queue recv;
     uint64_t slots;
     uint64_t line_size;
-    // What got acked by partner
-    uint64_t next_slot_ack;
-    // What I need to ack for partner
-    uint64_t next_slot_to_ack;
-    uint64_t slots_to_ack;
 };
 
-static const uint8_t AOS_UMP_META_ACK_WATERMARK = 4;
+static const uint8_t AOS_UMP_META_ACK_WATERMARK = 8;
 static const uint8_t AOS_UMP_META_NUMBER_MASK = 0x3F;
 static const uint8_t AOS_UMP_META_JUST_MESSAGE = 0x80;
 static const uint8_t AOS_UMP_META_MESSAGE_AND_ACK = 0xC0;

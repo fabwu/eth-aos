@@ -28,7 +28,7 @@ static void test_ump_same(void)
     void *value = malloc(capacity);
     assert(value != NULL);
 
-    for (int i = 0; i < slots - slots / AOS_UMP_META_ACK_WATERMARK; ++i) {
+    for (int i = 0; i < slots / 2; ++i) {
         err = aos_ump_enqueue(&ump1, value, capacity);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "test_ump_same enqueue failed");
@@ -36,7 +36,7 @@ static void test_ump_same(void)
         }
     }
 
-    for (int i = 0; i < slots - slots / AOS_UMP_META_ACK_WATERMARK; ++i) {
+    for (int i = 0; i < slots / 2; ++i) {
         err = aos_ump_enqueue(&ump2, value, capacity);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "test_ump_same enqueue failed");
@@ -44,7 +44,7 @@ static void test_ump_same(void)
         }
     }
 
-    for (int i = 0; i < slots - slots / AOS_UMP_META_ACK_WATERMARK; ++i) {
+    for (int i = 0; i < slots / 2; ++i) {
         err = aos_ump_dequeue(&ump1, value, capacity);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "test_ump_same dequeue failed");
@@ -52,7 +52,7 @@ static void test_ump_same(void)
         }
     }
 
-    for (int i = 0; i < slots - slots / AOS_UMP_META_ACK_WATERMARK; ++i) {
+    for (int i = 0; i < slots / 2; ++i) {
         err = aos_ump_dequeue(&ump2, value, capacity);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "test_ump_same dequeue failed");
@@ -60,13 +60,12 @@ static void test_ump_same(void)
         }
     }
 
-    // Kinda hacky, as only acks on queue, can just dequeue with this which works to queue
-    // untils finds a message or nothing any more
-    aos_ump_can_dequeue(&ump1);
-    aos_ump_can_dequeue(&ump2);
+    debug_printf("test_ump_same middle\n");
 
     for (int j = 0; j < 12; ++j) {
-        for (int i = 0; i < slots / 3; ++i) {
+        debug_printf("test_ump_same ump1 enqueue\n");
+
+        for (int i = 0; i < slots / 2 / 3; ++i) {
             err = aos_ump_enqueue(&ump1, value, capacity);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "test_ump_same enqueue failed");
@@ -74,7 +73,9 @@ static void test_ump_same(void)
             }
         }
 
-        for (int i = 0; i < slots / 3; ++i) {
+        debug_printf("test_ump_same ump2 enqueue\n");
+
+        for (int i = 0; i < slots / 2 / 3; ++i) {
             err = aos_ump_enqueue(&ump2, value, capacity);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "test_ump_same enqueue failed");
@@ -82,7 +83,9 @@ static void test_ump_same(void)
             }
         }
 
-        for (int i = 0; i < slots / 3; ++i) {
+        debug_printf("test_ump_same ump1 dequeue\n");
+
+        for (int i = 0; i < slots / 2 / 3; ++i) {
             err = aos_ump_dequeue(&ump1, value, capacity);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "test_ump_same dequeue failed");
@@ -90,13 +93,17 @@ static void test_ump_same(void)
             }
         }
 
-        for (int i = 0; i < slots / 3; ++i) {
+        debug_printf("test_ump_same ump2 dequeue\n");
+
+        for (int i = 0; i < slots / 2 / 3; ++i) {
             err = aos_ump_dequeue(&ump2, value, capacity);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "test_ump_same dequeue failed");
                 abort();
             }
         }
+
+        debug_printf("test_ump_same iter\n");
     }
 
     debug_printf("test_ump_same end\n");
