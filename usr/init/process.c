@@ -63,7 +63,7 @@ errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id)
 
     grading_rpc_handler_process_spawn(argv[0], core_id);
 
-    if (core_id == 0) {
+    if (core_id == disp_get_core_id()) {
         si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
         if (si == NULL) {
             err = INIT_ERR_PREPARE_SPAWN;
@@ -85,7 +85,6 @@ errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id)
 
         rpc_dispatcher_node_set_pid(node_ref, pid);
     } else {
-        assert(core_id == 1);
         size_t cmd_len = strlen(cmdline) + 1;
 
         DEBUG_PRINTF("Passing command '%s' to core %u in URPC frame...\n", cmdline,
