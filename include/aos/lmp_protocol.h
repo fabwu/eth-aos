@@ -6,6 +6,8 @@
 #ifndef _LIB_BARRELFISH_LMP_PROTOCOL_H
 #define _LIB_BARRELFISH_LMP_PROTOCOL_H
 
+void set_do_ump_dispatch(bool value);
+
 errval_t lmp_protocol_send(struct lmp_chan *chan, uint16_t message_type, struct capref cap,
                            uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
 

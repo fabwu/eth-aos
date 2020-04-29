@@ -5,6 +5,7 @@
 
 #include <aos/aos.h>
 #include <aos/lmp_protocol.h>
+#include <aos/aos_protocol.h>
 
 #define LMP_PROTOCOL_DATA_LENGTH 3
 #define LMP_PROTOCOL_DATA_ENTRY_SIZE sizeof(uintptr_t)
@@ -18,6 +19,13 @@ struct lmp_msg_state {
     bool done;
     bool failed;
 };
+
+static bool do_ump_dispatch = false;
+
+void set_do_ump_dispatch(bool value)
+{
+    do_ump_dispatch = value;
+}
 
 static struct lmp_msg_state make_lmp_msg_state(struct lmp_chan *chan,
                                                uint16_t message_type, struct capref cap,
@@ -39,12 +47,17 @@ static struct lmp_msg_state make_lmp_msg_state(struct lmp_chan *chan,
  */
 static errval_t lmp_protocol_wait_for(bool *ready_bit)
 {
+    errval_t err;
     struct waitset *default_ws = get_default_waitset();
-    while (!(*ready_bit)) {
-        errval_t err = event_dispatch(default_ws);
-        if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_EVENT_DISPATCH);
+    if (!do_ump_dispatch) {
+        while (!(*ready_bit)) {
+            err = event_dispatch(default_ws);
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_EVENT_DISPATCH);
+            }
         }
+    } else {
+        aos_protocol_wait_for(ready_bit);
     }
 
     return SYS_ERR_OK;
@@ -292,6 +305,9 @@ errval_t lmp_protocol_recv_bytes_cap_la(struct lmp_chan *chan, uint16_t message_
     }
 
     *ret_bytes = (uint8_t *)malloc(size);
+    if (ret_bytes == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
 
     memcpy(*ret_bytes, &state.data[1], MIN(size, 2 * LMP_PROTOCOL_DATA_ENTRY_SIZE));
     size_t offset = 2 * LMP_PROTOCOL_DATA_ENTRY_SIZE;
