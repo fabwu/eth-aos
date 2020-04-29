@@ -4,7 +4,6 @@
 
 \usepackage[hidelinks]{hyperref}
 \hypersetup{
-	bookmarks=true,
 	pdftitle={Advanced Operating Systems - Report},
 	pdfauthor={
 		Fabian Wüthrich, 
@@ -14,6 +13,7 @@
 	} 
 }
 
+\usepackage{csquotes}
 \usepackage{biblatex}
 \addbibresource{main.bib}
 
@@ -53,7 +53,7 @@ TODO: Explain the changes in the paging interface to the given interface
 
 TODO: Maybe document our difficulties that address to params has to be passed in x0 register
 
-\chapter{Message prassing}
+\chapter{Message passing}
 
 \section{channel setup init <-> child}
 
@@ -85,7 +85,8 @@ TODO: Maybe document our difficulties that address to params has to be passed in
 
 \chapter{Page fault handling}
 
-\chapter{Multicore}
+
+\input{milestone5}
 
 \chapter{User-level message passing}
 

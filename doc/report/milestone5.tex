@@ -1,0 +1,16 @@
+\chapter{Multicore}
+
+Nowadays one can hardly find any single-core machine on the market, so
+a modern operating system has to support multiple cores somehow. The 
+Toradex board has not only four Cortex-A35 cores in the main processor 
+cluster but also two Cortex-M4 processors which are used for real-time 
+processing and chip-management. A heterogeneous multi-core system like
+the Toradex board poses entirely new challenges on operating systems 
+which were initially designed to support machines with just one single-core 
+processor.
+
+Luckily for us Barrelfish was designed for heterogeneous systems from the
+ground up and solved many of the occurring problems in an elegant but also
+radical way. Our task in this milestone was to bring up the second core
+and do all the preparation so Barrelfish can simply power on the second core
+and jump to an address we provided earlier.
