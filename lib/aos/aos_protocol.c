@@ -1,6 +1,6 @@
 #include <aos/aos_protocol.h>
 
-#if 0
+#if 1
 #    define DEBUG_AOS_PROTOCOL(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_AOS_PROTOCOL(fmt...) ((void)0)
@@ -47,7 +47,7 @@ static void aos_protocol_dispatch_ump(uint8_t *buf)
     }
 
     if (current == NULL) {
-        DEBUG_PRINTF("ERROR: Could not handle ump message for pid %d\n", pid);
+        DEBUG_AOS_PROTOCOL("ERROR: Could not handle ump message for pid %d\n", pid);
         return;
     }
 

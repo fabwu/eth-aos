@@ -38,6 +38,8 @@
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_SHELL 1
 
+#define INIT_UMP_BUF_COREBOOT_LENGTH 6
+
 struct bootinfo *bi;
 
 coreid_t my_core_id;
@@ -192,25 +194,15 @@ static int bsp_main(int argc, char *argv[])
     assert(64 * 64 * 2 == MON_URPC_SIZE);
     aos_ump_init(&ump, (void *)urpc, ((void *)urpc) + (MON_URPC_SIZE >> 1), 64, 64);
 
-    // TODO: Move to separate urpc file
-    uint64_t ump_size = aos_ump_get_capacity(&ump);
-    // FIXME: Improve (use smaller buffer)
-    uint8_t ump_buf[ump_size];
-    size_t offset = 0;
-    *(genpaddr_t *)ump_buf = app_ram_base;
-    offset += sizeof(genpaddr_t);
-    *(size_t *)(ump_buf + offset) = app_ram_size;
-    offset += sizeof(size_t);
-    *(genpaddr_t *)(ump_buf + offset) = bootinfo_id.base;
-    offset += sizeof(genpaddr_t);
-    *(gensize_t *)(ump_buf + offset) = bootinfo_id.bytes;
-    offset += sizeof(gensize_t);
-    *(genpaddr_t *)(ump_buf + offset) = mmstrings_id.base;
-    offset += sizeof(genpaddr_t);
-    *(gensize_t *)(ump_buf + offset) = mmstrings_id.bytes;
-    offset += sizeof(gensize_t);
+    uint64_t ump_buf[INIT_UMP_BUF_COREBOOT_LENGTH];
+    ump_buf[0] = app_ram_base;
+    ump_buf[1] = app_ram_size;
+    ump_buf[2] = bootinfo_id.base;
+    ump_buf[3] = bootinfo_id.bytes;
+    ump_buf[4] = mmstrings_id.base;
+    ump_buf[5] = mmstrings_id.bytes;
 
-    aos_ump_enqueue(&ump, ump_buf, offset);
+    aos_ump_enqueue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
 
     // boot second core
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
@@ -269,25 +261,15 @@ static int app_main(int argc, char *argv[])
     struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
     aos_ump_init(&ump, ((void *)urpc) + (MON_URPC_SIZE >> 1), (void *)urpc, 64, 64);
 
-    // TODO: Move to separate urpc file
-    uint64_t ump_size = aos_ump_get_capacity(&ump);
-    // FIXME: Improve (use smaller buffer)
-    uint8_t ump_buf[ump_size];
-    aos_ump_dequeue(&ump, ump_buf, ump_size);
+    uint64_t ump_buf[INIT_UMP_BUF_COREBOOT_LENGTH];
+    aos_ump_dequeue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
 
-    size_t offset = 0;
-    genpaddr_t app_ram_base = *(genpaddr_t *)ump_buf;
-    offset += sizeof(genpaddr_t);
-    size_t app_ram_size = *(size_t *)(ump_buf + offset);
-    offset += sizeof(size_t);
-    genpaddr_t bi_addr = *(genpaddr_t *)(ump_buf + offset);
-    offset += sizeof(genpaddr_t);
-    size_t bi_size = *(gensize_t *)(ump_buf + offset);
-    offset += sizeof(gensize_t);
-    genpaddr_t mmstrings_addr = *(genpaddr_t *)(ump_buf + offset);
-    offset += sizeof(genpaddr_t);
-    size_t mmstrings_size = *(gensize_t *)(ump_buf + offset);
-    offset += sizeof(gensize_t);
+    genpaddr_t app_ram_base = ump_buf[0];
+    size_t app_ram_size = ump_buf[1];
+    genpaddr_t bi_addr = ump_buf[2];
+    size_t bi_size = ump_buf[3];
+    genpaddr_t mmstrings_addr = ump_buf[4];
+    size_t mmstrings_size = ump_buf[5];
 
     DEBUG_PRINTF("CORE 1 Received: RAM %p/%lld\n", app_ram_base, app_ram_size);
     DEBUG_PRINTF("CORE 1 Received: BOOTINFO %p/%lld\n", bi_addr, bi_size);
@@ -373,6 +355,7 @@ static int app_main(int argc, char *argv[])
         if (aos_ump_can_dequeue(&ump)) {
             DEBUG_PRINTF("received ump command\n");
 
+            size_t ump_size = aos_ump_get_capacity(&ump);
             size_t cmd_len;
             aos_ump_dequeue(&ump, &cmd_len, sizeof(size_t));
             char *cmdline = (char *)malloc(cmd_len);
