@@ -115,8 +115,9 @@ static int bsp_main(int argc, char *argv[])
     assert(ram_size > 0);
 
     size_t cut = ram_size / 2;
+    cut = ROUND_DOWN(cut, BASE_PAGE_SIZE);
     genpaddr_t bsp_ram_base = ram_base;
-    size_t bsp_ram_size = cut - 1;
+    size_t bsp_ram_size = ram_size - cut;
 
     genpaddr_t app_ram_base = bsp_ram_base + cut;
     size_t app_ram_size = cut;
