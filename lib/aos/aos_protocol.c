@@ -9,14 +9,6 @@
 #define AOS_UMP_MSG_SIZE 63
 #define AOS_UMP_PAYLOAD_SIZE AOS_UMP_MSG_SIZE - 16
 
-struct callback {
-    void (*handler)(void *arg, uint8_t *buf);
-    void *arg;
-};
-
-#define MKCALLBACK(h,a)  (struct callback){ /*handler*/ (h), /*arg*/ (a) }
-#define NOP_CALLBACK     MKCALLBACK(NULL, NULL)
-
 struct ump_event_node {
     struct callback closure;
     struct ump_event_node *next;
@@ -33,12 +25,33 @@ static struct aos_ump *ump = NULL;
 
 void aos_protocol_set_ump(struct aos_ump *value)
 {
+    head = NULL;
     ump = value;
+}
+
+struct aos_chan make_aos_chan_lmp(struct lmp_chan *lmp)
+{
+    struct aos_chan chan;
+    chan.is_lmp = true;
+    chan.lmp = lmp;
+    chan.remote_pid = 0;
+    return chan;
+}
+
+struct aos_chan make_aos_chan_ump(domainid_t local_pid, domainid_t remote_pid)
+{
+    struct aos_chan chan;
+    chan.is_lmp = false;
+    chan.lmp = NULL;
+    chan.local_pid = local_pid;
+    chan.remote_pid = remote_pid;
+    return chan;
 }
 
 static void aos_protocol_dispatch_ump(uint8_t *buf)
 {
-    domainid_t pid = ((uint64_t *)buf)[0];
+    domainid_t pid = (domainid_t)((uint64_t *)buf)[0];
+    DEBUG_AOS_PROTOCOL("Received ump for pid %d\n", pid);
     struct ump_event_node *parent = NULL;
     struct ump_event_node *current = head;
     while (current != NULL && current->target_pid != pid) {
@@ -99,6 +112,27 @@ errval_t aos_protocol_wait_for(bool *ready_bit)
     return SYS_ERR_OK;
 }
 
+errval_t aos_protocol_register_recv(domainid_t pid, struct callback callback)
+{
+    struct ump_event_node *node = (struct ump_event_node *)malloc(
+        sizeof(struct ump_event_node));
+    if (node == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    node->target_pid = pid;
+    node->closure = callback;
+
+    // Add to list
+    node->next = NULL;
+    if (head != NULL) {
+        node->next = head->next;
+    }
+    head = node;
+
+    return SYS_ERR_OK;
+}
+
 static void aos_protocol_callback(void *arg, uint8_t *buf)
 {
     struct ump_msg_state *state = (struct ump_msg_state *)arg;
@@ -109,19 +143,7 @@ static void aos_protocol_callback(void *arg, uint8_t *buf)
 static errval_t aos_protocol_recv_state(domainid_t pid, struct ump_msg_state *state)
 {
     state->done = false;
-    struct ump_event_node *node = (struct ump_event_node *)malloc(
-        sizeof(struct ump_event_node));
-    if (node == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
-
-    node->target_pid = pid;
-    node->closure = MKCALLBACK(aos_protocol_callback, state);
-
-    // Add to list
-    node->next = head->next;
-    head = node;
-
+    aos_protocol_register_recv(pid, MKCALLBACK(aos_protocol_callback, state));
     return aos_protocol_wait_for(&state->done);
 }
 
@@ -135,7 +157,7 @@ errval_t aos_protocol_send(struct aos_chan *chan, uint16_t message_type, struct 
     assert(capref_is_null(cap));
 
     uint64_t buf[5];
-    buf[0] = chan->remote_pid;
+    buf[0] = (((uint64_t)chan->local_pid) << 32) | chan->remote_pid;
     buf[1] = message_type;
     buf[2] = arg1;
     buf[3] = arg2;
@@ -193,7 +215,7 @@ errval_t aos_protocol_send_bytes_cap(struct aos_chan *chan, uint16_t message_typ
     assert(capref_is_null(cap));
 
     uint64_t buf[AOS_UMP_MSG_SIZE];
-    buf[0] = chan->remote_pid;
+    buf[0] = (((uint64_t)chan->local_pid) << 32) | chan->remote_pid;
     buf[1] = message_type;
     buf[2] = size;
     uint8_t *byte_buf = (uint8_t *)&buf[3];
@@ -233,6 +255,7 @@ errval_t aos_protocol_recv_bytes_cap(struct aos_chan *chan, uint16_t message_typ
 
     uint64_t *buf = (uint64_t *)state.buf;
     assert(buf != NULL);
+    DEBUG_PRINTF("0x%x 0x%x\n", buf[1], message_type);
     assert(buf[1] == message_type);
 
     size_t size = buf[2];

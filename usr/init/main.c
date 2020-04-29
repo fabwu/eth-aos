@@ -21,6 +21,8 @@
 #include <aos/waitset.h>
 #include <aos/aos_rpc.h>
 #include <aos/ump.h>
+#include <aos/lmp_protocol.h>
+#include <aos/aos_protocol.h>
 #include <mm/mm.h>
 #include <spawn/spawn.h>
 #include <grading.h>
@@ -96,8 +98,7 @@ static int bsp_main(int argc, char *argv[])
     bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
     assert(bi);
 
-    // FIXME BEGIN Just print the value for now...
-    // we have to pass core1_base and core1_size to the other core somehow
+    // TODO: Move the value gathering code (below) for starting core 1 into an own function
     genpaddr_t ram_base = -1;
     size_t ram_size = 0;
 
@@ -143,7 +144,6 @@ static int bsp_main(int argc, char *argv[])
                  bootinfo_id.bytes);
     DEBUG_PRINTF("PASS THESE TO CORE1 MMSTRINGS  %p/%lld\n", mmstrings_id.base,
                  mmstrings_id.bytes);
-    // FIXME END
 
     struct capref mem_cap = {
         .cnode = cnode_super,
@@ -233,15 +233,12 @@ static int bsp_main(int argc, char *argv[])
     grading_test_late();
 
     debug_printf("Message handler loop\n");
-    // Hang around
-    struct waitset *default_ws = get_default_waitset();
-    while (true) {
-        err = event_dispatch(default_ws);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "in event_dispatch");
-            abort();
-        }
-    }
+    aos_protocol_set_ump(&ump);
+    rpc_ump_start_handling();
+    lmp_protocol_set_ump_dispatch(true);
+
+    // Do event_dispatch and ump dispatch forever
+    aos_protocol_wait_for(NULL);
 
     return EXIT_SUCCESS;
 }
@@ -349,55 +346,61 @@ static int app_main(int argc, char *argv[])
     grading_test_late();
 
     DEBUG_PRINTF("Message handler loop\n");
-    // Hang around
-    struct waitset *default_ws = get_default_waitset();
-    while (true) {
-        if (aos_ump_can_dequeue(&ump)) {
-            DEBUG_PRINTF("received ump command\n");
+    aos_protocol_set_ump(&ump);
+    rpc_ump_start_handling();
+    lmp_protocol_set_ump_dispatch(true);
 
-            size_t ump_size = aos_ump_get_capacity(&ump);
-            size_t cmd_len;
-            aos_ump_dequeue(&ump, &cmd_len, sizeof(size_t));
-            char *cmdline = (char *)malloc(cmd_len);
+    // Do event_dispatch and ump dispatch forever
+    aos_protocol_wait_for(NULL);
 
-            for (size_t i = 0; i < cmd_len; i += ump_size) {
-                aos_ump_dequeue(&ump, cmdline + i, MIN(cmd_len - i, ump_size));
-            }
+    // struct waitset *default_ws = get_default_waitset();
+    // while (true) {
+    //     if (aos_ump_can_dequeue(&ump)) {
+    //         DEBUG_PRINTF("received ump command\n");
 
-            // FIXME: Hotfix name extraction
-            for (size_t i = 1; i < cmd_len; ++i) {
-                if (cmdline[i] == ' ') {
-                    cmdline[i] = '\0';
-                }
-            }
+    //         size_t ump_size = aos_ump_get_capacity(&ump);
+    //         size_t cmd_len;
+    //         aos_ump_dequeue(&ump, &cmd_len, sizeof(size_t));
+    //         char *cmdline = (char *)malloc(cmd_len);
 
-            domainid_t pid = 0;
-            err = init_spawn(cmdline, &pid);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Couldn't spawn %s\n", cmdline);
-                return -EXIT_FAILURE;
-            } else {
-                DEBUG_PRINTF("Spawned %s with pid %d\n", cmdline, pid);
-            }
+    //         for (size_t i = 0; i < cmd_len; i += ump_size) {
+    //             aos_ump_dequeue(&ump, cmdline + i, MIN(cmd_len - i, ump_size));
+    //         }
 
-            // FIXME: Improve (use only 16 bytes instead of ump_size)
-            uint8_t ump_buf2[ump_size];
-            *((errval_t *)ump_buf2) = err;
-            *((domainid_t *)(ump_buf2 + sizeof(errval_t))) = pid;
-            err = aos_ump_enqueue(&ump, ump_buf2, ump_size);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Couldn't reply pid %d\n", pid);
-                return -EXIT_FAILURE;
-            }
-        } else {
-            err = event_dispatch_non_block(default_ws);
-            if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
-                DEBUG_ERR(err, "in event_dispatch");
-                abort();
-            }
-            thread_yield();
-        }
-    }
+    //         // FIXME: Hotfix name extraction
+    //         for (size_t i = 1; i < cmd_len; ++i) {
+    //             if (cmdline[i] == ' ') {
+    //                 cmdline[i] = '\0';
+    //             }
+    //         }
+
+    //         domainid_t pid = 0;
+    //         err = init_spawn(cmdline, &pid);
+    //         if (err_is_fail(err)) {
+    //             DEBUG_ERR(err, "Couldn't spawn %s\n", cmdline);
+    //             return -EXIT_FAILURE;
+    //         } else {
+    //             DEBUG_PRINTF("Spawned %s with pid %d\n", cmdline, pid);
+    //         }
+
+    //         // FIXME: Improve (use only 16 bytes instead of ump_size)
+    //         uint8_t ump_buf2[ump_size];
+    //         *((errval_t *)ump_buf2) = err;
+    //         *((domainid_t *)(ump_buf2 + sizeof(errval_t))) = pid;
+    //         err = aos_ump_enqueue(&ump, ump_buf2, ump_size);
+    //         if (err_is_fail(err)) {
+    //             DEBUG_ERR(err, "Couldn't reply pid %d\n", pid);
+    //             return -EXIT_FAILURE;
+    //         }
+    //     } else {
+    //         err = event_dispatch_non_block(default_ws);
+    //         if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
+    //             DEBUG_ERR(err, "in event_dispatch");
+    //             abort();
+    //         }
+    //         thread_yield();
+    //     }
+    // }
 
     return EXIT_SUCCESS;
 }

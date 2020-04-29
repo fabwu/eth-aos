@@ -25,6 +25,7 @@
 typedef uintptr_t dispatcher_node_ref;
 
 errval_t rpc_initialize_lmp(struct lmp_state *lmp_state);
+void rpc_ump_start_handling(void);
 errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap, dispatcher_node_ref *node_ref);
 void rpc_dispatcher_node_set_pid(dispatcher_node_ref node_ref, domainid_t pid);
 

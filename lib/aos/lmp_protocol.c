@@ -22,7 +22,7 @@ struct lmp_msg_state {
 
 static bool do_ump_dispatch = false;
 
-void set_do_ump_dispatch(bool value)
+void lmp_protocol_set_ump_dispatch(bool value)
 {
     do_ump_dispatch = value;
 }

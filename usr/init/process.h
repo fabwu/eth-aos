@@ -9,10 +9,15 @@
 #include <string.h>
 #include <aos/aos.h>
 #include <aos/aos_rpc.h>
+#include <aos/aos_protocol.h>
+#include <aos/core_state.h>
 #include <spawn/spawn.h>
 #include <spawn/argv.h>
 #include <machine/atomic.h>
 #include <grading.h>
+
+
+#define INIT_PROCESS_PIN_TO_CORE 0
 
 // TODO: Could be improved by using an AVL tree or similar instead of a linked list
 struct process_node {
@@ -34,10 +39,15 @@ struct process_state {
  */
 void process_init(void);
 
+void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg,
+                           struct dispatcher_node *node);
+
+void process_handle_ump_request(uintptr_t message_type, uint8_t *buf);
+
 /**
  * \brief Spawns process.
  */
-errval_t process_spawn_rpc(struct lmp_chan *chan, coreid_t core_id);
+errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id);
 
 /**
  * \brief Add process to running processes.
@@ -53,11 +63,11 @@ errval_t process_exit(domainid_t pid);
 /**
  * \brief Send pids of all running processes to the given channel.
  */
-errval_t process_get_all_pids_rpc(struct lmp_chan *chan);
+errval_t process_get_all_pids_rpc(struct aos_chan *chan);
 
 /**
  * \brief Return name of the running process with given pid.
  */
-errval_t process_get_name_rpc(struct lmp_chan *chan, domainid_t pid);
+errval_t process_get_name_rpc(struct aos_chan *chan, domainid_t pid);
 
 #endif

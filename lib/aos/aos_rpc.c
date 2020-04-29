@@ -161,6 +161,7 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
 
     errval_t err;
     aos_rpc_assert(rpc);
+    assert(newpid != NULL);
     uintptr_t ret_pid = 0;
     uintptr_t ret_success = 0;
 

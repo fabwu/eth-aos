@@ -138,6 +138,31 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
     return SYS_ERR_OK;
 }
 
+static void rpc_ump_handler_recv(void *arg, uint8_t *buf)
+{
+    uint64_t *numbers = (uint64_t *)buf;
+    assert(numbers[0] == 0);
+    uintptr_t message_type = numbers[1];
+    switch (numbers[1]) {
+    case AOS_RPC_PROCESS_SPAWN:
+    case AOS_RPC_PROCESS_GET_ALL_PIDS:
+    case AOS_RPC_PROCESS_GET_NAME:
+    case AOS_RPC_PROCESS_EXIT:
+    case AOS_RPC_PROCESS_SPAWN_REMOTE:
+        process_handle_ump_request(message_type, buf);
+        break;
+    default:
+        debug_printf("Unknown ump request: 0x%x\n", message_type);
+    }
+    aos_protocol_register_recv(0, MKCALLBACK(rpc_ump_handler_recv, arg));
+}
+
+void rpc_ump_start_handling(void)
+{
+    // TODO: errval handling
+    aos_protocol_register_recv(0, MKCALLBACK(rpc_ump_handler_recv, NULL));
+}
+
 /**
  * Handles messages from different child channels
  */
@@ -189,28 +214,10 @@ static void rpc_handler_recv_closure(void *arg)
             }
             break;
         case AOS_RPC_PROCESS_SPAWN:
-            err = process_spawn_rpc(chan, (coreid_t)msg.words[1]);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Failed to spawn process in rpc_spawn_process()");
-            }
-            break;
         case AOS_RPC_PROCESS_GET_ALL_PIDS:
-            err = process_get_all_pids_rpc(chan);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Failed in rpc_get_all_pids()");
-            }
-            break;
         case AOS_RPC_PROCESS_GET_NAME:
-            err = process_get_name_rpc(chan, (domainid_t)msg.words[1]);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Failed in rpc_process_get_name()");
-            }
-            break;        
         case AOS_RPC_PROCESS_EXIT:
-            err = process_exit(node->pid);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Failed in rpc_process_exit()");
-            }
+            process_handle_lmp_request(message_type, &msg, node);
             break;
         default:
             debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
