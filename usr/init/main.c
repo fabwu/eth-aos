@@ -119,7 +119,7 @@ static int bsp_main(int argc, char *argv[])
     genpaddr_t bsp_ram_base = ram_base;
     size_t bsp_ram_size = ram_size - cut;
 
-    genpaddr_t app_ram_base = bsp_ram_base + cut;
+    genpaddr_t app_ram_base = ROUND_UP(bsp_ram_base + cut, BASE_PAGE_SIZE);
     size_t app_ram_size = cut;
 
     struct frame_identity bootinfo_id;
