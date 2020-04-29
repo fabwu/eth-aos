@@ -822,15 +822,36 @@ static errval_t paging_delete_level(struct paging_state *st, struct paging_node 
         err = cap_destroy(node->table);
         assert(err_is_ok(err));
     }
-    if (node->parent != NULL) {
-        err = vnode_unmap(node->parent->table, node->mapping);
-        assert(err_is_ok(err));
+
+    // FIXME Sometimes mapping cap is missing so we cannot unmap/destroy
+    struct capability ret_cap;
+    err = cap_direct_identify(node->mapping, &ret_cap);
+
+    if (err_is_ok(err)) {
+        // a mapping exists unmap and destroy it
+        struct capref page_table;
+        if (node->parent != NULL) {
+            page_table = node->parent->table;
+        } else {
+            page_table = st->l0.table;
+        }
+
+        err = vnode_unmap(page_table, node->mapping);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_VNODE_UNMAP);
+        }
+
+        err = cap_destroy(node->mapping);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_CAP_DESTROY);
+        }
+    } else if (err_no(err) == SYS_ERR_CAP_NOT_FOUND) {
+        // somehow the mapping is missing...
+        // we just proceed for now
+        DEBUG_PRINTF("paging_delete_level(): mapping cap not found (please fix me)\n");
     } else {
-        err = vnode_unmap(st->l0.table, node->mapping);
-        assert(err_is_ok(err));
+        return err_push(err, LIB_ERR_CAP_IDENTIFY);
     }
-    err = cap_destroy(node->mapping);
-    assert(err_is_ok(err));
 
     struct paging_node *parent = node->parent;
     struct aos_avl_node *avl_node;
