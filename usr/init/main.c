@@ -181,8 +181,8 @@ static int bsp_main(int argc, char *argv[])
     struct frame_identity urpc_frame_id;
     err = frame_identify(urpc_frame, &urpc_frame_id);
     // initialize urpc frame
-    struct urpc_data *urpc;
-    err = paging_map_frame(get_current_paging_state(), (void **)&urpc, urpc_frame_size,
+    void *urpc;
+    err = paging_map_frame(get_current_paging_state(), &urpc, urpc_frame_size,
                            urpc_frame, NULL, NULL);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't map URPC frame\n");
@@ -192,7 +192,7 @@ static int bsp_main(int argc, char *argv[])
 
     // FIXME: Use constatns instead of magic numbers
     assert(64 * 64 * 2 == MON_URPC_SIZE);
-    aos_ump_init(&ump, (void *)urpc, ((void *)urpc) + (MON_URPC_SIZE >> 1), 64, 64);
+    aos_ump_init(&ump, urpc, urpc + (MON_URPC_SIZE >> 1), 64, 64);
 
     uint64_t ump_buf[INIT_UMP_BUF_COREBOOT_LENGTH];
     ump_buf[0] = app_ram_base;
@@ -258,8 +258,8 @@ static int app_main(int argc, char *argv[])
         .slot = 0,
     };
 
-    struct urpc_data *urpc = (struct urpc_data *)MON_URPC_VBASE;
-    aos_ump_init(&ump, ((void *)urpc) + (MON_URPC_SIZE >> 1), (void *)urpc, 64, 64);
+    void *urpc = (void *)MON_URPC_VBASE;
+    aos_ump_init(&ump, urpc + (MON_URPC_SIZE >> 1), urpc, 64, 64);
 
     uint64_t ump_buf[INIT_UMP_BUF_COREBOOT_LENGTH];
     aos_ump_dequeue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
