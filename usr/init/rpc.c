@@ -141,7 +141,7 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
 static void rpc_ump_handler_recv(void *arg, uint8_t *buf)
 {
     uint64_t *numbers = (uint64_t *)buf;
-    assert(numbers[0] == 0);
+    assert((domainid_t)numbers[0] == 0);
     uintptr_t message_type = numbers[1];
     switch (numbers[1]) {
     case AOS_RPC_PROCESS_SPAWN:

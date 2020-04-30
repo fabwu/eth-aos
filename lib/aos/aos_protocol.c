@@ -123,11 +123,7 @@ errval_t aos_protocol_register_recv(domainid_t pid, struct callback callback)
     node->target_pid = pid;
     node->closure = callback;
 
-    // Add to list
-    node->next = NULL;
-    if (head != NULL) {
-        node->next = head->next;
-    }
+    node->next = head;
     head = node;
 
     return SYS_ERR_OK;
