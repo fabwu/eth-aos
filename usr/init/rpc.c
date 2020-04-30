@@ -150,6 +150,7 @@ static void rpc_ump_handler_recv(void *arg, uint8_t *buf)
     case AOS_RPC_PROCESS_EXIT:
     case AOS_RPC_PROCESS_SPAWN_REMOTE:
         process_handle_ump_request(message_type, buf);
+        free(buf);
         break;
     default:
         debug_printf("Unknown ump request: 0x%x\n", message_type);

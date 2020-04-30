@@ -179,7 +179,7 @@ errval_t aos_protocol_recv(struct aos_chan *chan, uint16_t message_type,
 
     errval_t err;
     struct ump_msg_state state;
-    err = aos_protocol_recv_state(chan->remote_pid, &state);
+    err = aos_protocol_recv_state(chan->local_pid, &state);
     if (err_is_fail(err)) {
         return err;
     }

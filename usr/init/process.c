@@ -273,13 +273,15 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
         struct aos_chan remote_chan = make_aos_chan_ump(0, 0);
         err = aos_protocol_send1(&remote_chan, AOS_RPC_PROCESS_SPAWN_REMOTE, cmd_len);
         if (err_is_fail(err)) {
-            return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+            err = err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+            goto out;
         }
 
         // Send commandline that should be used to spawn process
         err = aos_protocol_send_string(&remote_chan, AOS_RPC_PROCESS_SPAWN_REMOTE_CMD, cmdline);
         if (err_is_fail(err)) {
-            return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+            err = err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+            goto out;
         }
 
         // Get pid and success information
@@ -287,9 +289,11 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
         uintptr_t ret_success = 0;
         err = aos_protocol_recv2(&remote_chan, AOS_RPC_PROCESS_SPAWN_REMOTE, &ret_pid, &ret_success);
         if (err_is_fail(err)) {
-            return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+            err = err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
+            goto out;
         } else if (!ret_success) {
-            return AOS_ERR_RPC_SPAWN_PROCESS;
+            err = AOS_ERR_RPC_SPAWN_PROCESS;
+            goto out;
         }
 
         // Not passing newpid directly because of mismatching types
