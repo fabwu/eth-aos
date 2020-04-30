@@ -179,6 +179,9 @@ void process_handle_ump_request(uintptr_t message_type, uint8_t *buf)
                 DEBUG_ERR(err, "Failed in rpc_process_exit()");
             }
             break;
+        case AOS_RPC_PROCESS_SPAWN_REMOTE:
+            DEBUG_PRINTF("Remote spawning on core 0 is not implemented\n");
+            break;
         default:
             debug_printf("Unknown request: %" PRIu64 "\n", message_type);
         }
@@ -329,6 +332,7 @@ out:
 
 errval_t process_exit(domainid_t pid)
 {
+    DEBUG_PRINTF("Removing process %d from process management\n", pid);
     struct process_node *node, *parent;
     if (!process_find_node(pid, &node, &parent)) {
         DEBUG_PRINTF("Trying to remove unkown process with pid: 0x%x\n", pid);

@@ -51,7 +51,8 @@ struct aos_chan make_aos_chan_ump(domainid_t local_pid, domainid_t remote_pid)
 static void aos_protocol_dispatch_ump(uint8_t *buf)
 {
     domainid_t pid = (domainid_t)((uint64_t *)buf)[0];
-    DEBUG_AOS_PROTOCOL("Received ump for pid %d\n", pid);
+    uintptr_t message_type = (domainid_t)((uint64_t *)buf)[1];
+    DEBUG_AOS_PROTOCOL("Received ump message 0x%x for pid %d\n", message_type, pid);
     struct ump_event_node *parent = NULL;
     struct ump_event_node *current = head;
     while (current != NULL && current->target_pid != pid) {
@@ -60,7 +61,8 @@ static void aos_protocol_dispatch_ump(uint8_t *buf)
     }
 
     if (current == NULL) {
-        DEBUG_AOS_PROTOCOL("ERROR: Could not handle ump message for pid %d\n", pid);
+        DEBUG_AOS_PROTOCOL("ERROR: Could not handle ump message 0x%x for pid %d\n",
+                           message_type, pid);
         return;
     }
 
@@ -114,6 +116,7 @@ errval_t aos_protocol_wait_for(bool *ready_bit)
 
 errval_t aos_protocol_register_recv(domainid_t pid, struct callback callback)
 {
+    DEBUG_AOS_PROTOCOL("Register ump handler for pid %d\n", pid);
     struct ump_event_node *node = (struct ump_event_node *)malloc(
         sizeof(struct ump_event_node));
     if (node == NULL) {
@@ -251,7 +254,6 @@ errval_t aos_protocol_recv_bytes_cap(struct aos_chan *chan, uint16_t message_typ
 
     uint64_t *buf = (uint64_t *)state.buf;
     assert(buf != NULL);
-    DEBUG_PRINTF("0x%x 0x%x\n", buf[1], message_type);
     assert(buf[1] == message_type);
 
     size_t size = buf[2];
