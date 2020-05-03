@@ -395,14 +395,6 @@ errval_t coreboot(coreid_t mpid, const char *boot_driver, const char *cpu_driver
 {
     errval_t err;
 
-    // creater KCB
-    genpaddr_t kcb_paddr;
-    err = create_kcb(&kcb_paddr);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_COREBOOT_CREATE_KCB);
-    }
-    DEBUG_COREBOOT("Created KCB at paddr %p\n", kcb_paddr);
-
     // load boot, cpu and init binary
     // readelf -W -a build/armv8/sbin/boot_armv8_generic
     struct binary_info boot_binary;
@@ -429,6 +421,23 @@ errval_t coreboot(coreid_t mpid, const char *boot_driver, const char *cpu_driver
     DEBUG_COREBOOT("Found init module with size 0x%llx and mapped it to %p\n",
                    init_binary.size, init_binary.addr);
 
+    // creater KCB
+    genpaddr_t kcb_paddr;
+    err = create_kcb(&kcb_paddr);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_COREBOOT_CREATE_KCB);
+    }
+    DEBUG_COREBOOT("Created KCB at paddr %p\n", kcb_paddr);
+
+    // allocate memory for new core
+    struct core_mem_block core_block;
+    struct core_mem mem;
+    err = allocate_memory(boot_binary.size, cpu_binary.size,
+                          elf_virtual_size(init_binary.addr), &core_block, &mem);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_COREBOOT_ALLOCATE_MEMORY);
+    }
+
     // find cpu and boot entry point
     genvaddr_t cpu_ep_vaddr;
     err = find_entry_point(&cpu_binary, CPU_DRIVER_EP_SYM, &cpu_ep_vaddr);
@@ -445,27 +454,13 @@ errval_t coreboot(coreid_t mpid, const char *boot_driver, const char *cpu_driver
     DEBUG_COREBOOT("Found symbol %s with value 0x%llx\n", BOOT_DRIVER_EP_SYM,
                    boot_ep_vaddr);
 
-    // allocate memory for new core
-    struct core_mem_block core_block;
-    struct core_mem mem;
-    err = allocate_memory(boot_binary.size, cpu_binary.size,
-                          elf_virtual_size(init_binary.addr), &core_block, &mem);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_COREBOOT_ALLOCATE_MEMORY);
-    }
-
     // load boot driver binary
+    // boot driver runs with 1:1 VA->PA mapping so no relocation required
     lpaddr_t boot_ep_paddr;
     err = load_elf_binary(boot_binary.addr, &mem.boot_driver, boot_ep_vaddr,
                           &boot_ep_paddr);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_COREBOOT_LOAD_ELF_BINARY);
-    }
-
-    // boot driver runs with 1:1 VA->PA mapping so offset is zero
-    err = relocate_elf(boot_binary.addr, &mem.boot_driver, 0);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_COREBOOT_RELOCATE_ELF);
     }
 
     // load cpu driver binary
@@ -538,17 +533,6 @@ errval_t coreboot(coreid_t mpid, const char *boot_driver, const char *cpu_driver
         DEBUG_ERR(err, "Couldnt spawn\n");
         return err;
     }
-
-    // dump boot driver readelf -W -x .text build/armv8/sbin/boot_armv8_generic
-    // debug_dump_mem(0x8000beb000, 0x8000beb000 + BASE_PAGE_SIZE, 0);
-
-    // dump cpu driver readelf -W -x .text build/armv8/sbin/cpu_imx8x
-    // genvaddr_t cpu_addr = (genvaddr_t)mem.cpu_driver.buf;
-    // debug_dump_mem(cpu_addr, cpu_addr + BASE_PAGE_SIZE, 0);
-
-    // dump core_data
-    // genvaddr_t core_addr = (genvaddr_t)mem.core_data.buf;
-    // debug_dump_mem(core_addr, core_addr + BASE_PAGE_SIZE, 0);
 
     return SYS_ERR_OK;
 }

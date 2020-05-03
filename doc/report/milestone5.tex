@@ -1,16 +1,103 @@
 \chapter{Multicore}
 
 Nowadays one can hardly find any single-core machine on the market, so
-a modern operating system has to support multiple cores somehow. The 
-Toradex board has not only four Cortex-A35 cores in the main processor 
-cluster but also two Cortex-M4 processors which are used for real-time 
+a modern operating system has to support multiple cores somehow. The
+Toradex board has not only four Cortex-A35 cores in the main processor
+cluster but also two Cortex-M4 processors which are used for real-time
 processing and chip-management. A heterogeneous multi-core system like
-the Toradex board poses entirely new challenges on operating systems 
-which were initially designed to support machines with just one single-core 
+the Toradex board poses entirely new challenges on operating systems
+which were initially built to support machines with just one single-core
 processor.
 
 Luckily for us Barrelfish was designed for heterogeneous systems from the
 ground up and solved many of the occurring problems in an elegant but also
 radical way. Our task in this milestone was to bring up the second core
 and do all the preparation so Barrelfish can simply power on the second core
-and jump to an address we provided earlier.
+and jump to an address we provided earlier. Then we had to setup communication
+with the second core and finally split up the memory so we can use the existing
+paging system on the other core.
+
+\section{Bringing up a second core}
+
+As starting a second core requires EL1 permissions, only the CPU driver can do
+this task for us. This functionality was already implemented in the handout so
+all we had to do was some bootstrapping and then call
+\verb|invoke_monitor_spawn_core()| to let the kernel start the core. The whole
+bootstrapping procedure was implemented in the provided \verb|coreboot()|
+function in the file \verb|lib/aos/coreboot.c|. The function takes a core id, the
+name of the boot driver, CPU driver and init image and a reference to the URPC frame.
+The whole setup was similar to spawning a process and we could benefit from our previous
+knowledge about multiboot images and ELF binaries.
+
+First, we load the multiboot images into the current address space because we
+need certain properties (e.g. size) about these images later on when allocating memory
+for the other core. The function \verb|load_multiboot| takes the image name, loads the
+image into a frame and maps the frame at a free address into memory so we can access it
+later. The function returns a \verb|binary_info| struct which holds a reference to the
+frame, the mapped address and the size of the binary. We call \verb|load_multiboot()|
+with the image names provided as arguments to \verb|coreboot()| and get back three
+\verb|binary_info| with information about the images.
+
+Now we are ready to allocate memory for the new core. For the kernel control block (KCB)
+we allocate a ram capability of size \verb|OBJSIZE_KCB| and retype it into a
+\verb|ObjType_KernelControlBlock| capability. The comments say that the KCB needs 16k
+alignment but in our case it also worked when the KCB is page aligned so that was maybe an
+artifact left by the Pandaboard code.
+
+The remaining memory can be allocated as simple frames.
+We could allocate each frame individually or calculate the required size and allocate one
+contiguous block of memory. As our paging system doesn't support arbitrary alignments we opted
+for the later. Later we realized that a contiguous block was indeed the right decision because
+it makes clearing the cache and other cleanups in the end much easier.
+
+All the memory allocation happens in the \verb|allocate_memory()| function. The function takes
+the size of all images and returns two structs. The \verb|core_mem_block| struct has all the
+information about the contiguous block which we allocate as a large frame. The \verb|core_mem|
+struct has an entry for each memory region required by the new core. Each memory region is
+described by the \verb|mem_info| struct, which holds the size, a pointer to the location where
+the region is mapped in the current address space and the physical address of the region. All these
+values are required later, when we load/relocate the ELF binaries and fill in the core data struct.
+
+In the \verb|allocate_memory()| function we first calculate the total size of the memory block and
+the offset of each memory region within this block. We have to fulfill certain alignment requirements
+but as we are not depended on the paging system, we can set arbitrary alignments and hence meet
+every requirement. Once we laid out the address space, we know the size of the memory block and can
+simply allocate a frame. Then we use \verb|frame_identify()| to get the physical address of the frame
+and map it to our address space so we can write to it. The last step is to go through each memory region
+and use the offset to set the pointer and the physical address of that region. It took some iterations
+to get a clean design so that we could adjust the address layout in just one place, which avoids bugs
+introduce by code duplication. Doing this extra effort payed out in the end during debugging, when the
+second core didn't start and we could apply changes to the address layout in a safe way.
+
+Now that we allocated all required memory we are almost ready to load the ELF binaries. As the physical
+address of the entry point is calculated when we load a binary, we have to first find the virtual address
+of the entry point by looking at the ELF symbols. The ELF library, shipped with the handout, has the
+\verb|elf64_find_symbol_by_name()| function, which we use to find the virtual address of the entry point
+from the boot driver and the CPU driver. Now we can use the provided function \verb|load_elf_binary()| to
+load the boot driver and CPU driver. The boot driver runs with an 1:1 mapping of virtual to physical
+addresses so no relocation is required. The CPU driver gets relocated to \verb|ARMv8_KERNEL_OFFSET| using
+the \verb|reloacte_elf()| function.
+
+At this point most of the bootstrapping is done but the other core has no clue where to find the binaries
+and his memory regions. All these information is stored in the \verb|armv8_core_data| struct. Barrelfish
+places a pointer to this struct into register \verb|x0| when starting the core. The new core can then look
+up all the required information form this location.
+
+We have already allocated memory for the core data struct, so we just have to fill in the required values.
+This is pretty straightforward as the struct is well documented yet we picked the wrong address for the
+CPU driver entry point. This mistake was hard to track down and we only discovered the error after enabling
+the debugging functionality in the boot driver.
+
+Before we can call \verb|invoke_monitor_spawn_core()| we have to consider ARMs weak memory model. All data
+that we set up so far is likely to still sit in the cache of the first core. The second core cannot access
+the cache of the first core so we have to bring the memory system to a so called \textit{Point of Coherency}.
+The ARM architecture defines the point of coherency as the moment when all agents see the same thing for a
+memory location at a given physical address. In our case we have to execute the \verb|DC CVAC| instruction.
+We can do that by calling \verb|cpu_dcache_wb_range()| with a range of virtual addresses. As we allocated a
+contiguous block before we can use the \verb|core_mem_block| struct to get the address range and clear the
+correct part of the cache.
+
+Now we have done all the required steps to start the second core. We simply call \verb|invoke_monitor_spawn_core()|
+and the kernel will do the rest for us. As mentioned before we couldn't start the core after the first attempt
+because we picked the wrong address for the CPU driver entry point but after some debugging we finally got the
+second core up.
