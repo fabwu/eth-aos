@@ -82,13 +82,13 @@ __attribute__((__used__)) static errval_t load_elf_binary(genvaddr_t binary,
     struct Elf64_Phdr *phdr = (struct Elf64_Phdr *)(binary + ehdr->e_phoff);
     for (size_t i = 0; i < ehdr->e_phnum; i++) {
         if (phdr[i].p_type != PT_LOAD) {
-            DEBUG_PRINTF("Segment %d load address 0x% " PRIx64 ", file size %" PRIu64
+            DEBUG_COREBOOT("Segment %d load address 0x% " PRIx64 ", file size %" PRIu64
                          ", memory size 0x%" PRIx64 " SKIP\n",
                          i, phdr[i].p_vaddr, phdr[i].p_filesz, phdr[i].p_memsz);
             continue;
         }
 
-        DEBUG_PRINTF("Segment %d load address 0x% " PRIx64 ", file size %" PRIu64
+        DEBUG_COREBOOT("Segment %d load address 0x% " PRIx64 ", file size %" PRIu64
                      ", memory size 0x%" PRIx64 " LOAD\n",
                      i, phdr[i].p_vaddr, phdr[i].p_filesz, phdr[i].p_memsz);
 
@@ -135,7 +135,7 @@ __attribute__((__used__)) static errval_t load_elf_binary(genvaddr_t binary,
 __attribute__((__used__)) static errval_t
 relocate_elf(genvaddr_t binary, struct mem_info *mem, lvaddr_t load_offset)
 {
-    DEBUG_PRINTF("Relocating image.\n");
+    DEBUG_COREBOOT("Relocating image.\n");
 
     struct Elf64_Ehdr *ehdr = (struct Elf64_Ehdr *)binary;
 
