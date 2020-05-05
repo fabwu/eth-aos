@@ -17,6 +17,7 @@ let
         "hello",
         "memeater",
         "spawnTester",
+        "nameservicetest",
         "shell"
       ] ]
   in
