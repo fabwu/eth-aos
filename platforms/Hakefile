@@ -14,6 +14,7 @@ let
     -- Default list of modules to build/install
     modules_common = [ "/sbin/" ++ f | f <- [
         "init",
+        "nameserver",
         "hello",
         "memeater",
         "spawnTester",

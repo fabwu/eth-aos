@@ -213,6 +213,12 @@ static int bsp_main(int argc, char *argv[])
         return -1;
     }
 
+    err = init_spawn("nameserver", NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't spawn nameserver\n");
+        return -EXIT_FAILURE;
+    }
+
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn("memeater", NULL);
         if (err_is_fail(err)) {
