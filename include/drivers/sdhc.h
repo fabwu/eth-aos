@@ -43,7 +43,7 @@ errval_t sdhc_init(struct sdhc_s** sd, void *base);
 errval_t sdhc_test(struct sdhc_s* sd, void * scratch, lpaddr_t scratch_p);
 
 /**
- * Write a block of SDHC_BLOCK_LEN bytes located at source to block index. 
+ * Write a block of SDHC_BLOCK_SIZE bytes located at source to block index. 
  * The caller must ensure the right memory fences are in place and the DMA
  * of the device can actually read from physical memory.
  * This call will block until the data has been written.
@@ -55,7 +55,7 @@ errval_t sdhc_test(struct sdhc_s* sd, void * scratch, lpaddr_t scratch_p);
 errval_t sdhc_write_block(struct sdhc_s* sd, int index, lpaddr_t source);
 
 /**
- * Read block number index of SDHC_BLOCK_LEN bytes to physical address dest
+ * Read block number index of SDHC_BLOCK_SIZE bytes to physical address dest
  * The caller must invalidate his cache to ensure it can read the data
  * after this function returns.
  * This call will block until the data has been read.
