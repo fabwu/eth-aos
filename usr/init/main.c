@@ -35,13 +35,12 @@
 #include "mem_alloc.h"
 #include "rpc.h"
 #include "process.h"
-#include "filesystem.h"
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 1
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVERTEST 0
-#define INIT_EXECUTE_SHELL 1
+#define INIT_EXECUTE_SHELL 0
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
 
@@ -208,11 +207,11 @@ static int bsp_main(int argc, char *argv[])
     aos_ump_enqueue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
 
     // boot second core
-    // err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
-    // if (err_is_fail(err)) {
-    //     DEBUG_ERR(err, "Couldn't boot second core\n");
-    //     return -1;
-    // }
+    err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Couldn't boot second core\n");
+        return -1;
+    }
 
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn("memeater", NULL);
@@ -222,12 +221,10 @@ static int bsp_main(int argc, char *argv[])
     }
 
     if (INIT_EXECUTE_FS) {
-        err = fs_init();
+        err = init_spawn("filereader", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't initialise filesystem\n");
         }
-
-        assert(0);
     }
 
     if (INIT_EXECUTE_SPAWNTEST) {

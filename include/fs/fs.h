@@ -7,6 +7,7 @@
 #define INCLUDE_FS_FS_H_
 
 #include <errors/errno.h>
+#include <aos/aos.h>
 
 #define FS_PATH_SEP '/'
 

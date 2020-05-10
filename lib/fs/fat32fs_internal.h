@@ -1,6 +1,8 @@
 #ifndef _INIT_FILESYSTEM_H_
 #define _INIT_FILESYSTEM_H_
 
+#include "fs_internal.h"
+
 struct sd_block {
     void *virt;
     struct capref capref;
@@ -8,6 +10,7 @@ struct sd_block {
 };
 
 struct fat32_fs {
+    struct sdhc_s *sd;
     struct sd_block fat;
     struct sd_block data;
     uint32_t FATs_z;
@@ -21,6 +24,6 @@ struct fat32_fs {
     uint8_t main_FAT;
 };
 
-errval_t fs_init(void);
+errval_t fs_init(struct fs_mount *mount);
 
 #endif

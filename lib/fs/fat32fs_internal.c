@@ -4,7 +4,8 @@
 
 #include <aos/aos.h>
 #include <aos/cache.h>
-#include <filesystem.h>
+#include <aos/aos_rpc.h>
+#include <fat32fs_internal.h>
 
 #define BPB_BYTES_PER_SEC_OFFSET 11
 #define BPB_SEC_PER_CLUS_OFFSET 13
@@ -48,21 +49,14 @@ static errval_t fs_init_sd(struct sdhc_s **sd)
     assert(IMX8X_SDHC_SIZE % BASE_PAGE_SIZE == 0);
     assert(IMX8X_SDHC2_BASE % BASE_PAGE_SIZE == 0);
 
-    struct capref device_register_capref = { .cnode = { .croot = CPTR_ROOTCN,
-                                                        .cnode = CPTR_TASKCN_BASE,
-                                                        .level = CNODE_TYPE_OTHER },
-                                             .slot = TASKCN_SLOT_DEV };
+    struct aos_rpc *init_rpc = aos_rpc_get_init_channel();
+    if (!init_rpc) {
+        return AOS_ERR_RPC_GET_INIT_CHANNEL;
+    }
 
     struct capref device_register_frame_capref;
-    err = slot_alloc(&device_register_frame_capref);
-    assert(err_is_ok(err));
-
-    struct capability device_register_cap;
-    err = cap_direct_identify(device_register_capref, &device_register_cap);
-
-    err = cap_retype(device_register_frame_capref, device_register_capref,
-                     IMX8X_SDHC2_BASE - get_address(&device_register_cap),
-                     ObjType_DevFrame, IMX8X_SDHC_SIZE, 1);
+    err = aos_rpc_get_device_cap(init_rpc, IMX8X_SDHC2_BASE, IMX8X_SDHC_SIZE,
+                                 &device_register_frame_capref);
     assert(err_is_ok(err));
 
     void *device_register;
@@ -153,7 +147,7 @@ static errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32
     return SYS_ERR_OK;
 }
 
-static errval_t fs_read_metadata(struct sdhc_s *sd, struct fat32_fs *fs)
+static errval_t fs_read_metadata(struct fat32_fs *fs)
 {
     DEBUG_FS("fs_read_fist begin\n");
 
@@ -165,7 +159,7 @@ static errval_t fs_read_metadata(struct sdhc_s *sd, struct fat32_fs *fs)
     err = fs_init_sd_block(&fs->data);
     assert(err_is_ok(err));
 
-    err = fs_read_sector(sd, &fs->fat, 0);
+    err = fs_read_sector(fs->sd, &fs->fat, 0);
     assert(err_is_ok(err));
 
     // How large the sectors of the disk are
@@ -367,7 +361,7 @@ static void fs_process_dir_cluster_sectors(struct sdhc_s *sd, struct fat32_fs *f
     }
 }
 
-static errval_t fs_list_dir(struct sdhc_s *sd, struct fat32_fs *fs, uint32_t cluster)
+static errval_t fs_list_dir(struct fat32_fs *fs, uint32_t cluster)
 {
     DEBUG_FS("fs_list_dir begin\n");
 
@@ -380,13 +374,13 @@ static errval_t fs_list_dir(struct sdhc_s *sd, struct fat32_fs *fs, uint32_t clu
     uint8_t more_entries = 1;
     do {
         if (curr_fat_sector != last_fat_sector) {
-            err = fs_read_sector(sd, &fs->fat, curr_fat_sector);
+            err = fs_read_sector(fs->sd, &fs->fat, curr_fat_sector);
             assert(err_is_ok(err));
 
             last_fat_sector = curr_fat_sector;
         }
 
-        fs_process_dir_cluster_sectors(sd, fs, get_sector_for_data(fs, clus_entry),
+        fs_process_dir_cluster_sectors(fs->sd, fs, get_sector_for_data(fs, clus_entry),
                                        &more_entries);
 
         clus_entry = *(uint32_t *)(fs->fat.virt + get_offset_for_fat(fs, clus_entry));
@@ -401,12 +395,14 @@ static errval_t fs_list_dir(struct sdhc_s *sd, struct fat32_fs *fs, uint32_t clu
     return SYS_ERR_OK;
 }
 
-static errval_t fs_list_root_dir(struct sdhc_s *sd, struct fat32_fs *fs)
+static errval_t fs_list_root_dir(struct fat32_fs *fs)
 {
-    return fs_list_dir(sd, fs, fs->root_clus);
+    return fs_list_dir(fs, fs->root_clus);
 }
 
-errval_t fs_init(void)
+#define FS_LIST_ROOT_DIR 0
+
+errval_t fs_init(struct fs_mount *mount)
 {
     DEBUG_FS("fs_init begin\n");
 
@@ -421,13 +417,20 @@ errval_t fs_init(void)
         assert(err_is_ok(err));
     }
 
-    struct fat32_fs fs;
+    struct fat32_fs *fs = malloc(sizeof(struct fat32_fs));
+    assert(fs != NULL);
 
-    err = fs_read_metadata(sd, &fs);
+    fs->sd = sd;
+
+    err = fs_read_metadata(fs);
     assert(err_is_ok(err));
 
-    err = fs_list_root_dir(sd, &fs);
-    assert(err_is_ok(err));
+    if (FS_LIST_ROOT_DIR) {
+        err = fs_list_root_dir(fs);
+        assert(err_is_ok(err));
+    }
+
+    mount->state = (void *)fs;
 
     DEBUG_FS("fs_init end\n");
 

@@ -16,37 +16,36 @@
 
 #include "fs_internal.h"
 
-#define BULK_MEM_SIZE (1U << 16)       // 64kB
-#define BULK_BLOCK_SIZE BULK_MEM_SIZE  // (it's RPC)
+#define BULK_MEM_SIZE       (1U << 16)      // 64kB
+#define BULK_BLOCK_SIZE     BULK_MEM_SIZE   // (it's RPC)
 
 
 /**
  * @brief an entry in the ramfs
  */
-struct ramfs_dirent {
-    char *name;                   ///< name of the file or directoyr
-    size_t size;                  ///< the size of the direntry in bytes or files
-    size_t refcount;              ///< reference count for open handles
-    struct ramfs_dirent *parent;  ///< parent directory
+struct ramfs_dirent
+{
+    char *name;                     ///< name of the file or directoyr
+    size_t size;                    ///< the size of the direntry in bytes or files
+    size_t refcount;                ///< reference count for open handles
+    struct ramfs_dirent *parent;    ///< parent directory
 
-    struct ramfs_dirent *next;  ///< parent directory
-    struct ramfs_dirent *prev;  ///< parent directory
+    struct ramfs_dirent *next;      ///< parent directory
+    struct ramfs_dirent *prev;      ///< parent directory
 
-    bool is_dir;  ///< flag indicationg this is a dir
-
-    bool is_mount;
-    void *mount;
+    bool is_dir;                    ///< flag indicationg this is a dir
 
     union {
-        void *data;                ///< file data pointer
-        struct ramfs_dirent *dir;  ///< directory pointer
+        void *data;                 ///< file data pointer
+        struct ramfs_dirent *dir;   ///< directory pointer
     };
 };
 
 /**
  * @brief a handle to the open
  */
-struct ramfs_handle {
+struct ramfs_handle
+{
     struct fs_handle common;
     char *path;
     bool isdir;
@@ -61,12 +60,8 @@ struct ramfs_mount {
     struct ramfs_dirent *root;
 };
 
-static struct fs_handle *handle_open(struct fs_mount *mount, struct ramfs_dirent *d)
+static struct ramfs_handle *handle_open(struct ramfs_dirent *d)
 {
-    struct fs_handle *fh = calloc(1, sizeof(struct fs_handle));
-    if (fh == NULL) {
-        return NULL;
-    }
     struct ramfs_handle *h = calloc(1, sizeof(*h));
     if (h == NULL) {
         return NULL;
@@ -76,20 +71,15 @@ static struct fs_handle *handle_open(struct fs_mount *mount, struct ramfs_dirent
     h->isdir = d->is_dir;
     h->dirent = d;
 
-    fh->state = h;
-    fh->mount = mount;
-
-    return fh;
+    return h;
 }
 
-static inline void handle_close(struct fs_handle *fh)
+static inline void handle_close(struct ramfs_handle *h)
 {
-    struct ramfs_handle *h = fh->state;
     assert(h->dirent->refcount > 0);
     h->dirent->refcount--;
     free(h->path);
     free(h);
-    free(fh);
 }
 
 
@@ -134,7 +124,7 @@ static void dirent_insert(struct ramfs_dirent *parent, struct ramfs_dirent *entr
     entry->parent = parent;
     if (parent->dir) {
         entry->next = parent->dir;
-        parent->dir->prev = entry;
+        parent->dir->prev= entry;
     }
 
     parent->dir = entry;
@@ -162,7 +152,7 @@ static errval_t find_dirent(struct ramfs_dirent *root, const char *name,
 
     struct ramfs_dirent *d = root->dir;
 
-    while (d) {
+    while(d) {
         if (strcmp(d->name, name) == 0) {
             *ret_de = d;
             return SYS_ERR_OK;
@@ -174,9 +164,8 @@ static errval_t find_dirent(struct ramfs_dirent *root, const char *name,
     return FS_ERR_NOTFOUND;
 }
 
-static errval_t resolve_path(struct fs_mount *mount, struct ramfs_dirent *root,
-                             const char *path, struct fs_handle **ret_fh,
-                             struct fs_mount **ret_mount, const char **ret_path)
+static errval_t resolve_path(struct ramfs_dirent *root, const char *path,
+                             struct ramfs_handle **ret_fh)
 {
     errval_t err;
 
@@ -210,11 +199,6 @@ static errval_t resolve_path(struct fs_mount *mount, struct ramfs_dirent *root,
             return FS_ERR_NOTDIR;
         }
 
-        if (next_dirent->is_mount) {
-            *ret_mount = next_dirent->mount;
-            // Want to have separator with us
-            *ret_path = path + pos + nextlen;
-        }
         root = next_dirent;
         if (nextsep == NULL) {
             break;
@@ -226,14 +210,13 @@ static errval_t resolve_path(struct fs_mount *mount, struct ramfs_dirent *root,
     /* create the handle */
 
     if (ret_fh) {
-        struct fs_handle *fh = handle_open(mount, root);
+        struct ramfs_handle *fh = handle_open(root);
         if (fh == NULL) {
             return LIB_ERR_MALLOC_FAIL;
         }
-        struct ramfs_handle *h = fh->state;
 
-        h->path = strdup(path);
-        // fh->common.mount = root;
+        fh->path = strdup(path);
+        //fh->common.mount = root;
 
         *ret_fh = fh;
     }
@@ -245,29 +228,20 @@ errval_t ramfs_open(void *st, const char *path, ramfs_handle_t *rethandle)
 {
     errval_t err;
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
+    struct ramfs_mount *mount = st;
 
-    struct fs_handle *fh;
     struct ramfs_handle *handle;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, &fh, &nest_mount, &nest_mount_path);
+    err = resolve_path(mount->root, path, &handle);
     if (err_is_fail(err)) {
         return err;
     }
 
-    if (nest_mount != NULL) {
-        return nest_mount->open(nest_mount->state, nest_mount_path, rethandle);
-    }
-
-    handle = fh->state;
     if (handle->isdir) {
-        handle_close(fh);
+        handle_close(handle);
         return FS_ERR_NOTFILE;
     }
 
-    *rethandle = fh;
+    *rethandle = handle;
 
     return SYS_ERR_OK;
 }
@@ -276,20 +250,13 @@ errval_t ramfs_create(void *st, const char *path, ramfs_handle_t *rethandle)
 {
     errval_t err;
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, NULL, &nest_mount, &nest_mount_path);
+    struct ramfs_mount *mount = st;
+
+    err = resolve_path(mount->root, path, NULL);
     if (err_is_ok(err)) {
         return FS_ERR_EXISTS;
     }
 
-    if (nest_mount != NULL) {
-        return nest_mount->create(nest_mount->state, nest_mount_path, rethandle);
-    }
-
-    struct fs_handle *parent_fh = NULL;
     struct ramfs_handle *parent = NULL;
     const char *childname;
 
@@ -304,14 +271,11 @@ errval_t ramfs_create(void *st, const char *path, ramfs_handle_t *rethandle)
         pathbuf[pathlen] = '\0';
 
         // resolve parent directory
-        err = resolve_path(reg_mount, mount->root, pathbuf, &parent_fh, NULL, NULL);
+        err = resolve_path(mount->root, pathbuf, &parent);
         if (err_is_fail(err)) {
             return err;
-        } else {
-            parent = parent_fh->state;
-            if (!parent->isdir) {
-                return FS_ERR_NOTDIR;  // parent is not a directory
-            }
+        } else if (!parent->isdir) {
+            return FS_ERR_NOTDIR; // parent is not a directory
         }
     } else {
         childname = path;
@@ -324,18 +288,17 @@ errval_t ramfs_create(void *st, const char *path, ramfs_handle_t *rethandle)
 
     if (parent) {
         dirent_insert(parent->dirent, dirent);
-        handle_close(parent_fh);
+        handle_close(parent);
     } else {
         dirent_insert(mount->root, dirent);
     }
 
     if (rethandle) {
-        struct fs_handle *fh = handle_open(reg_mount, dirent);
-        if (fh == NULL) {
+        struct ramfs_handle *fh = handle_open(dirent);
+        if (fh  == NULL) {
             return LIB_ERR_MALLOC_FAIL;
         }
-        struct ramfs_handle *h = fh->state;
-        h->path = strdup(path);
+        fh->path = strdup(path);
         *rethandle = fh;
     }
 
@@ -346,45 +309,34 @@ errval_t ramfs_remove(void *st, const char *path)
 {
     errval_t err;
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
+    struct ramfs_mount *mount = st;
 
-    struct fs_handle *fh;
     struct ramfs_handle *handle;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, &fh, &nest_mount, &nest_mount_path);
+    err = resolve_path(mount->root, path, &handle);
     if (err_is_fail(err)) {
         return err;
     }
-
-    if (nest_mount != NULL) {
-        nest_mount->remove(nest_mount->state, nest_mount_path);
-    }
-
-    handle = fh->state;
 
     if (handle->isdir) {
         return FS_ERR_NOTFILE;
     }
 
     struct ramfs_dirent *dirent = handle->dirent;
-    if (dirent->refcount != 1) {
-        handle_close(fh);
+    if (dirent->    refcount != 1) {
+        handle_close(handle);
         return FS_ERR_BUSY;
     }
 
 
-    // FIXME: Where is handle closed?
     dirent_remove_and_free(dirent);
 
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_read)
+errval_t ramfs_read(void *st, ramfs_handle_t handle, void *buffer, size_t bytes,
+                           size_t *bytes_read)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
+    struct ramfs_handle *h = handle;
 
     if (h->isdir) {
         return FS_ERR_NOTFILE;
@@ -410,10 +362,10 @@ errval_t ramfs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_read
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_write(void *handle, const void *buffer, size_t bytes, size_t *bytes_written)
+errval_t ramfs_write(void *st, ramfs_handle_t handle, const void *buffer,
+                            size_t bytes, size_t *bytes_written)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
+    struct ramfs_handle *h = handle;
     assert(h->file_pos >= 0);
 
     size_t offset = h->file_pos;
@@ -462,10 +414,9 @@ errval_t ramfs_truncate(void *st, ramfs_handle_t handle, size_t bytes)
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_tell(void *handle, size_t *pos)
+errval_t ramfs_tell(void *st, ramfs_handle_t handle, size_t *pos)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
+    struct ramfs_handle *h = handle;
     if (h->isdir) {
         *pos = 0;
     } else {
@@ -474,10 +425,9 @@ errval_t ramfs_tell(void *handle, size_t *pos)
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_stat(void *handle, struct fs_fileinfo *info)
+errval_t ramfs_stat(void *st, ramfs_handle_t inhandle, struct fs_fileinfo *info)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
+    struct ramfs_handle *h = inhandle;
 
     assert(info != NULL);
     info->type = h->isdir ? FS_DIRECTORY : FS_FILE;
@@ -486,10 +436,10 @@ errval_t ramfs_stat(void *handle, struct fs_fileinfo *info)
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_seek(void *handle, enum fs_seekpos whence, off_t offset)
+errval_t ramfs_seek(void *st, ramfs_handle_t handle, enum fs_seekpos whence,
+                     off_t offset)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
+    struct ramfs_handle *h = handle;
     struct fs_fileinfo info;
     errval_t err;
 
@@ -499,7 +449,7 @@ errval_t ramfs_seek(void *handle, enum fs_seekpos whence, off_t offset)
         if (h->isdir) {
             h->dir_pos = h->dirent->parent->dir;
             for (size_t i = 0; i < offset; i++) {
-                if (h->dir_pos == NULL) {
+                if (h->dir_pos  == NULL) {
                     break;
                 }
                 h->dir_pos = h->dir_pos->next;
@@ -523,7 +473,7 @@ errval_t ramfs_seek(void *handle, enum fs_seekpos whence, off_t offset)
         if (h->isdir) {
             assert(!"NYI");
         } else {
-            err = ramfs_stat(fh, &info);
+            err = ramfs_stat(st, handle, &info);
             if (err_is_fail(err)) {
                 return err;
             }
@@ -539,14 +489,13 @@ errval_t ramfs_seek(void *handle, enum fs_seekpos whence, off_t offset)
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_close(void *handle)
+errval_t ramfs_close(void *st, ramfs_handle_t inhandle)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
-    if (h->isdir) {
+    struct ramfs_handle *handle = inhandle;
+    if (handle->isdir) {
         return FS_ERR_NOTFILE;
     }
-    handle_close(fh);
+    handle_close(handle);
     return SYS_ERR_OK;
 }
 
@@ -554,40 +503,30 @@ errval_t ramfs_opendir(void *st, const char *path, ramfs_handle_t *rethandle)
 {
     errval_t err;
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
+    struct ramfs_mount *mount = st;
 
-    struct fs_handle *fh;
     struct ramfs_handle *handle;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, &fh, &nest_mount, &nest_mount_path);
+    err = resolve_path(mount->root, path, &handle);
     if (err_is_fail(err)) {
         return err;
     }
 
-    if (nest_mount != NULL) {
-        return nest_mount->opendir(nest_mount->state, nest_mount_path, rethandle);
-    }
-
-    handle = fh->state;
-
     if (!handle->isdir) {
-        handle_close(fh);
+        handle_close(handle);
         return FS_ERR_NOTDIR;
     }
 
     handle->dir_pos = handle->dirent->dir;
 
-    *rethandle = fh;
+    *rethandle = handle;
 
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_dir_read_next(void *handle, char **retname, struct fs_fileinfo *info)
+errval_t ramfs_dir_read_next(void *st, ramfs_handle_t inhandle, char **retname,
+                              struct fs_fileinfo *info)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
+    struct ramfs_handle *h = inhandle;
 
     if (!h->isdir) {
         return FS_ERR_NOTDIR;
@@ -613,16 +552,15 @@ errval_t ramfs_dir_read_next(void *handle, char **retname, struct fs_fileinfo *i
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_closedir(void *handle)
+errval_t ramfs_closedir(void *st, ramfs_handle_t dhandle)
 {
-    struct fs_handle *fh = handle;
-    struct ramfs_handle *h = fh->state;
-    if (!h->isdir) {
+    struct ramfs_handle *handle = dhandle;
+    if (!handle->isdir) {
         return FS_ERR_NOTDIR;
     }
 
-    // FIXME: Previously just called free
-    handle_close(fh);
+    free(handle->path);
+    free(handle);
 
     return SYS_ERR_OK;
 }
@@ -632,20 +570,15 @@ errval_t ramfs_mkdir(void *st, const char *path)
 {
     errval_t err;
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, NULL, &nest_mount, &nest_mount_path);
-    if (nest_mount != NULL) {
-        nest_mount->mkdir(nest_mount->state, nest_mount_path);
-    } else if (err_is_ok(err)) {
+    struct ramfs_mount *mount = st;
+
+    err = resolve_path(mount->root, path, NULL);
+    if (err_is_ok(err)) {
         return FS_ERR_EXISTS;
     }
 
 
-    struct fs_handle *parent_fh = NULL;
-    struct ramfs_handle *parent = NULL;
+    struct ramfs_handle *parent  = NULL;
     const char *childname;
 
     // find parent directory
@@ -659,16 +592,13 @@ errval_t ramfs_mkdir(void *st, const char *path)
         pathbuf[pathlen] = '\0';
 
         // resolve parent directory
-        err = resolve_path(reg_mount, mount->root, pathbuf, &parent_fh, NULL, NULL);
+        err = resolve_path(mount->root, pathbuf, &parent);
         if (err_is_fail(err)) {
-            handle_close(parent_fh);
+            handle_close(parent);
             return err;
-        } else {
-            parent = parent_fh->state;
-            if (!parent->isdir) {
-                handle_close(parent_fh);
-                return FS_ERR_NOTDIR;  // parent is not a directory
-            }
+        } else if (!parent->isdir) {
+            handle_close(parent);
+            return FS_ERR_NOTDIR; // parent is not a directory
         }
     } else {
         childname = path;
@@ -681,7 +611,7 @@ errval_t ramfs_mkdir(void *st, const char *path)
 
     if (parent) {
         dirent_insert(parent->dirent, dirent);
-        handle_close(parent_fh);
+        handle_close(parent);
     } else {
         dirent_insert(mount->root, dirent);
     }
@@ -690,35 +620,26 @@ errval_t ramfs_mkdir(void *st, const char *path)
 }
 
 
+
 errval_t ramfs_rmdir(void *st, const char *path)
 {
     errval_t err;
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
+    struct ramfs_mount *mount = st;
 
-    struct fs_handle *fh;
     struct ramfs_handle *handle;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, &fh, &nest_mount, &nest_mount_path);
+    err = resolve_path(mount->root, path, &handle);
     if (err_is_fail(err)) {
         return err;
     }
 
-    if (nest_mount != NULL) {
-        return nest_mount->rmdir(nest_mount->state, nest_mount_path);
-    }
-
-    handle = fh->state;
-
     if (!handle->isdir) {
         goto out;
-        err = FS_ERR_NOTDIR;
+        err =  FS_ERR_NOTDIR;
     }
 
     if (handle->dirent->refcount != 1) {
-        handle_close(fh);
+        handle_close(handle);
         return FS_ERR_BUSY;
     }
 
@@ -731,9 +652,8 @@ errval_t ramfs_rmdir(void *st, const char *path)
 
     dirent_remove_and_free(handle->dirent);
 
-out:
-    // FIXME: Previously free, but most probably an error
-    handle_close(fh);
+    out:
+    free(handle);
 
     return err;
 }
@@ -741,13 +661,10 @@ out:
 
 errval_t ramfs_mount(const char *uri, ramfs_mount_t *retst)
 {
+
     /* Setup channel and connect ot service */
     /* TODO: setup channel to init for multiboot files */
 
-    struct fs_mount *reg_mount = calloc(1, sizeof(struct fs_mount));
-    if (reg_mount == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
     struct ramfs_mount *mount = calloc(1, sizeof(struct ramfs_mount));
     if (mount == NULL) {
         return LIB_ERR_MALLOC_FAIL;
@@ -768,59 +685,7 @@ errval_t ramfs_mount(const char *uri, ramfs_mount_t *retst)
 
     mount->root = ramfs_root;
 
-    reg_mount->state = mount;
-    reg_mount->opendir = ramfs_opendir;
-    reg_mount->mkdir = ramfs_mkdir;
-    reg_mount->readdir = ramfs_dir_read_next;
-    reg_mount->closedir = ramfs_closedir;
-    reg_mount->rmdir = ramfs_rmdir;
-    reg_mount->stat = ramfs_stat;
-
-    reg_mount->open = ramfs_open;
-    reg_mount->create = ramfs_create;
-    reg_mount->read = ramfs_read;
-    reg_mount->write = ramfs_write;
-    reg_mount->seek = ramfs_seek;
-    reg_mount->tell = ramfs_tell;
-    reg_mount->remove = ramfs_remove;
-    reg_mount->close = ramfs_close;
-
-    *retst = reg_mount;
-
-    return SYS_ERR_OK;
-}
-
-errval_t ramfs_add_mount(void *st, const char *path, ramfs_mount_t *mount_to_add)
-{
-    errval_t err;
-    err = ramfs_mkdir(st, path);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
-    struct fs_handle *fh;
-    struct ramfs_handle *handle;
-    struct fs_mount *nest_mount = NULL;
-    const char *nest_mount_path;
-    err = resolve_path(reg_mount, mount->root, path, &fh, &nest_mount, &nest_mount_path);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    handle = fh->state;
-
-    // TODO: Support nested mount on FAT32:)
-    assert(nest_mount == NULL);
-    assert(handle->isdir);
-
-    handle->dirent->is_dir = 0;
-    handle->dirent->is_mount = 1;
-
-    handle->dirent->mount = mount_to_add;
-
-    handle_close(fh);
+    *retst = mount;
 
     return SYS_ERR_OK;
 }

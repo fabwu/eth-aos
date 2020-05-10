@@ -18,6 +18,7 @@ let
         "memeater",
         "spawnTester",
         "nameservicetest",
+        "filereader",
         "shell"
       ] ]
   in

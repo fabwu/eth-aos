@@ -25,7 +25,7 @@ static uint64_t systime_to_ms(systime_t time){
     return systime_to_us(time) / 1000;
 }
 
-#define ENABLE_LONG_FILENAME_TEST 1
+#define ENABLE_LONG_FILENAME_TEST 0
 
 /* reading */
 #define MOUNTPOINT     "/sdcard"

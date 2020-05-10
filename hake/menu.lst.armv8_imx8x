@@ -9,3 +9,4 @@ module  /armv8/sbin/memeater
 module  /armv8/sbin/hello world1 world2
 module  /armv8/sbin/spawnTester 3
 module  /armv8/sbin/shell
+module  /armv8/sbin/filereader
