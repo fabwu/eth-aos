@@ -278,13 +278,102 @@ static uint32_t get_offset_for_fat(struct fat32_fs *fs, uint32_t cluster)
     return (cluster * FAT_32_BYTES_PER_CLUSTER_ENTRY) % fs->bytes_per_sec;
 }
 
-static errval_t fs_list_root_dir(struct sdhc_s *sd, struct fat32_fs *fs)
+static int fs_is_illegal_character_dir_entry_name(char c)
 {
-    DEBUG_FS("fs_list_root_dir begin\n");
+    return c < 0x20 || c == 0x22 || c == 0x2A || c == 0x2B || c == 0x2C || c == 0x2E
+           || c == 0x2F || c == 0x3A || c == 0x3B || c == 0x3C || c == 0x3D || c == 0x3E
+           || c == 0x3F || c == 0x5B || c == 0x5C || c == 0x5D || c == 0x7C;
+}
+
+static void fs_process_dir_entry_name(unsigned char *name)
+{
+    // First char of name also used to signal entry status, clashes with a character,
+    // which needs replacement
+    if (*name == FAT_32_REPLACE_DIR_ENTRY) {
+        *name = FAT_32_REPLACE_DIR_ENTRY_VALUE;
+    }
+    // TODO: Define dir entry struct
+    unsigned char eff_name[13];
+    // 11 chars, first 8 main, last 3 extension, if extension, than add dot, also remove
+    // trailing spaces (0x20) of main and extension
+    // We also add NULL byte, so that it is a proper c string
+    int last_char_main = 7;
+    for (; last_char_main >= 0; --last_char_main) {
+        if (name[last_char_main] != 0x20)
+            break;
+    }
+    // First char is not allowed to be 0x20
+    assert(last_char_main >= 0);
+
+    int des_pos = 0;
+    for (int src_pos = 0; src_pos <= last_char_main; ++src_pos) {
+        DEBUG_FS("fs_process_dir_entry_name char: 0x%" PRIx8 "\n", name[src_pos]);
+        assert(!fs_is_illegal_character_dir_entry_name(name[src_pos]));
+
+        eff_name[des_pos] = name[src_pos];
+        ++des_pos;
+    }
+
+    int last_char_extension = 10;
+    for (; last_char_extension > 7; --last_char_extension) {
+        if (name[last_char_extension] != 0x20)
+            break;
+    }
+
+    if (last_char_extension >= 8) {
+        eff_name[des_pos] = '.';
+        ++des_pos;
+        for (int src_pos = 8; src_pos <= last_char_extension; ++last_char_extension) {
+            assert(!fs_is_illegal_character_dir_entry_name(name[src_pos]));
+
+            eff_name[des_pos] = name[src_pos];
+            ++des_pos;
+        }
+    }
+
+    eff_name[des_pos] = '\0';
+
+    DEBUG_FS("fs_process_dir_entry: %.*s\n", 13, eff_name);
+}
+
+static void fs_process_dir_entry(void *entry, uint8_t *more_entries)
+{
+    if (*(uint8_t *)entry == FAT_32_HOLE_DIR_ENTRY) {
+        return;
+    } else if (*(uint8_t *)entry == FAT_32_ONLY_FREE_DIR_ENTRY) {
+        // TODO: Better control flow
+        *more_entries = 0;
+        return;
+    }
+
+    fs_process_dir_entry_name((unsigned char *)entry);
+}
+
+static void fs_process_dir_cluster_sectors(struct sdhc_s *sd, struct fat32_fs *fs,
+                                           uint32_t base_sector, uint8_t *more_entries)
+{
+    errval_t err;
+
+    for (uint8_t sector = 0; sector < fs->sec_per_clus && *more_entries; ++sector) {
+        DEBUG_FS("fs_list_root_dir sector: 0x%" PRIx8 "\n", sector);
+        err = fs_read_sector(sd, &fs->data, base_sector + sector);
+        assert(err_is_ok(err));
+
+        assert(fs->bytes_per_sec % 32 == 0);
+        for (size_t entry_offset = 0; entry_offset < fs->bytes_per_sec && *more_entries;
+             entry_offset += 32) {
+            fs_process_dir_entry(fs->data.virt + entry_offset, more_entries);
+        }
+    }
+}
+
+static errval_t fs_list_dir(struct sdhc_s *sd, struct fat32_fs *fs, uint32_t cluster)
+{
+    DEBUG_FS("fs_list_dir begin\n");
 
     errval_t err;
 
-    uint32_t clus_entry = fs->root_clus;
+    uint32_t clus_entry = cluster;
     uint32_t curr_fat_sector = get_sector_for_fat(fs, clus_entry);
     uint32_t last_fat_sector = 0;
 
@@ -297,34 +386,8 @@ static errval_t fs_list_root_dir(struct sdhc_s *sd, struct fat32_fs *fs)
             last_fat_sector = curr_fat_sector;
         }
 
-        DEBUG_FS("fs_list_root_dir cluster: 0x%" PRIx32 "\n", clus_entry);
-
-        for (uint8_t sector = 0; sector < fs->sec_per_clus && more_entries; ++sector) {
-            DEBUG_FS("fs_list_root_dir sector: 0x%" PRIx8 "\n", sector);
-            err = fs_read_sector(sd, &fs->data,
-                                 get_sector_for_data(fs, clus_entry) + sector);
-            assert(err_is_ok(err));
-
-            assert(fs->bytes_per_sec % 32 == 0);
-            for (size_t entry_offset = 0; entry_offset < fs->bytes_per_sec;
-                 entry_offset += 32) {
-                DEBUG_FS("fs_list_root_dir entry: 0x%" PRIx64 "\n", entry_offset);
-
-                void *entry = fs->data.virt + entry_offset;
-                if (*(uint8_t *)entry == FAT_32_HOLE_DIR_ENTRY) {
-                    continue;
-                } else if (*(uint8_t *)entry == FAT_32_ONLY_FREE_DIR_ENTRY) {
-                    // TODO: Better control flow
-                    more_entries = 0;
-                    break;
-                }
-                char *name = (char *)entry;
-                if (*name == FAT_32_REPLACE_DIR_ENTRY) {
-                    *name = FAT_32_REPLACE_DIR_ENTRY_VALUE;
-                }
-                DEBUG_FS("fs_list_root_dir entry: %.*s\n", 11, name);
-            }
-        }
+        fs_process_dir_cluster_sectors(sd, fs, get_sector_for_data(fs, clus_entry),
+                                       &more_entries);
 
         clus_entry = *(uint32_t *)(fs->fat.virt + get_offset_for_fat(fs, clus_entry));
         clus_entry &= FAT_32_CLUSTER_ENTRY_MASK;
@@ -333,9 +396,14 @@ static errval_t fs_list_root_dir(struct sdhc_s *sd, struct fat32_fs *fs)
               && clus_entry < FAT_32_MIN_EOF_CLUSTER_ENTRY)
              && more_entries);
 
-    DEBUG_FS("fs_list_root_dir end\n");
+    DEBUG_FS("fs_list_dir end\n");
 
     return SYS_ERR_OK;
+}
+
+static errval_t fs_list_root_dir(struct sdhc_s *sd, struct fat32_fs *fs)
+{
+    return fs_list_dir(sd, fs, fs->root_clus);
 }
 
 errval_t fs_init(void)
