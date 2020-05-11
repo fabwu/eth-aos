@@ -217,7 +217,7 @@ errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **na
         return AOS_ERR_RPC_GET_NAME;
     }
 
-    char * ret_name;
+    char *ret_name;
     err = lmp_protocol_recv_string(&rpc->chan, AOS_RPC_PROCESS_GET_NAME_STR, &ret_name);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_NAME);
@@ -246,12 +246,12 @@ errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
     }
 
     size_t size;
-    uint8_t * bytes;
+    uint8_t *bytes;
     err = lmp_protocol_recv_bytes(&rpc->chan, AOS_RPC_PROCESS_GET_ALL_PIDS, &size, &bytes);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_PIDS);
     }
-    
+
     assert(size % sizeof(domainid_t) == 0);
 
     if (pid_count != NULL) {
@@ -277,13 +277,39 @@ errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t byte
                                 struct capref *ret_cap)
 {
     // Protocol
-    // FIXME: Not implemented
-    // TODO: Request: AOS_RPC_GET_DEVICE_CAP, physical address, size
-    // TODO: Response: AOS_RPC_GET_DEVICE_CAP, physical address, size, success
-    // TODO: Response Cap: Aquired Device Cap
-
+    // Request: AOS_RPC_GET_DEVICE_CAP, physical address, size
+    // Response: AOS_RPC_GET_DEVICE_CAP, physical address, size, success
+    // Response Cap: Aquired Device Cap
+    errval_t err;
     aos_rpc_assert(rpc);
-    return LIB_ERR_NOT_IMPLEMENTED;
+
+    // Request ram cap
+    err = lmp_protocol_send2(&rpc->chan, AOS_RPC_GET_DEVICE_CAP, paddr, bytes);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_DEVICE_CAP);
+    }
+
+    // Handle response
+    uintptr_t ret_paddr = 0;
+    uintptr_t ret_bytes = 0;
+    uintptr_t ret_success = 0;
+    err = lmp_protocol_recv_cap3(&rpc->chan, AOS_RPC_GET_DEVICE_CAP, ret_cap, &ret_paddr,
+                                 &ret_bytes, &ret_success);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_GET_RAM_CAP);
+    } else if (!ret_success) {
+        return AOS_ERR_RPC_GET_DEVICE_CAP_REMOTE_ERR;
+    }
+
+    if (ret_paddr != paddr) {
+        return AOS_ERR_RPC_GET_DEVICE_CAP_REMOTE_ERR;
+    }
+
+    if (ret_bytes < bytes) {
+        return AOS_ERR_RPC_GET_DEVICE_CAP_REMOTE_ERR;
+    }
+
+    return SYS_ERR_OK;
 }
 
 /**

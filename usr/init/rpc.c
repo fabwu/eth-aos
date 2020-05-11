@@ -48,6 +48,58 @@ static errval_t rpc_print_string(struct lmp_chan *chan, struct lmp_recv_msg *loo
 /**
  * Allocates ram, sends capability to child.
  */
+static errval_t rpc_send_device(struct lmp_chan *chan, lpaddr_t paddr, size_t bytes)
+{
+    errval_t err;
+
+    struct capref device_register_capref = { .cnode = { .croot = CPTR_ROOTCN,
+                                                        .cnode = CPTR_TASKCN_BASE,
+                                                        .level = CNODE_TYPE_OTHER },
+                                             .slot = TASKCN_SLOT_DEV };
+
+    struct capability device_register_cap;
+    err = cap_direct_identify(device_register_capref, &device_register_cap);
+    if (err_is_fail(err)) {
+        err = err_push(err, LIB_ERR_CAP_IDENTIFY);
+        goto out;
+    }
+
+    struct capref device_register_frame_capref;
+    err = slot_alloc(&device_register_frame_capref);
+    if (err_is_fail(err)) {
+        err = err_push(err, LIB_ERR_SLOT_ALLOC);
+        goto out;
+    }
+
+    err = cap_retype(device_register_frame_capref, device_register_capref,
+                     paddr - get_address(&device_register_cap), ObjType_DevFrame, bytes,
+                     1);
+    if (err_is_fail(err)) {
+        // FIXME: Clean up slot
+        err = err_push(err, LIB_ERR_CAP_RETYPE);
+        goto out;
+    }
+
+out:
+    if (err_is_ok(err)) {
+        lmp_protocol_send_cap3(chan, AOS_RPC_GET_DEVICE_CAP, device_register_frame_capref,
+                               paddr, bytes, true);
+
+        // Don't pollute init
+        err = cap_destroy(device_register_frame_capref);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_CAP_DESTROY);
+        }
+
+        return SYS_ERR_OK;
+    } else {
+        lmp_protocol_send_cap3(chan, AOS_RPC_GET_DEVICE_CAP, NULL_CAP, paddr, bytes, false);
+        return err;
+    }
+}
+/**
+ * Allocates ram, sends capability to child.
+ */
 static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignment)
 {
     errval_t err;
@@ -64,6 +116,7 @@ static errval_t rpc_send_ram(struct lmp_chan *chan, size_t size, size_t alignmen
 
     err = ram_alloc_aligned(&ram_cap, size, alignment);
     if (err_is_fail(err)) {
+        // FIXME: Clean up slot
         err = err_push(err, LIB_ERR_RAM_ALLOC_ALIGNED);
         goto out;
     }
@@ -202,13 +255,19 @@ static void rpc_handler_recv_closure(void *arg)
                 DEBUG_ERR(err, "rpc_free_ram failed");
             }
             break;
+        case AOS_RPC_GET_DEVICE_CAP:
+            err = rpc_send_device(chan, msg.words[1], msg.words[2]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_send_device failed");
+            }
+            break;
         case AOS_RPC_SERIAL_GETCHAR:
             err = rpc_serial_getchar();
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_serial_getchar failed");
             }
             break;
-         case AOS_RPC_SERIAL_PUTCHAR:
+        case AOS_RPC_SERIAL_PUTCHAR:
             err = rpc_serial_putchar(msg.words[1]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_serial_putchar failed");
@@ -313,7 +372,8 @@ fail:
 /**
  * Creates a unique channel to a child (to be spawned)
  */
-errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap, dispatcher_node_ref *node_ref)
+errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap,
+                                          dispatcher_node_ref *node_ref)
 {
     errval_t err = SYS_ERR_OK;
 
@@ -329,7 +389,8 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap, dispat
     node->state = DISPATCHER_DISCONNECTED;
     lmp_chan_init(&node->chan);
 
-    err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &node->chan.local_cap, &node->chan.endpoint);
+    err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &node->chan.local_cap,
+                          &node->chan.endpoint);
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_ENDPOINT_CREATE);
         goto out;
