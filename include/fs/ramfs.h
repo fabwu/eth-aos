@@ -39,7 +39,7 @@ errval_t ramfs_close(void *handle);
 
 errval_t ramfs_opendir(void *st, const char *path, ramfs_handle_t *rethandle);
 
-errval_t ramfs_dir_read_next(void *handle, char **retname, struct fs_fileinfo *info);
+errval_t ramfs_dir_read_next(void *handle, char **retname);
 
 errval_t ramfs_closedir(void *handle);
 

@@ -40,8 +40,7 @@ errval_t fat32fs_close(void *handle);
 
 errval_t fat32fs_opendir(void *st, const char *path, fat32fs_handle_t *rethandle);
 
-errval_t fat32fs_readdir(void *handle, char **retname,
-                               struct fs_fileinfo *info);
+errval_t fat32fs_readdir(void *handle, char **retname);
 
 errval_t fat32fs_closedir(void *handle);
 

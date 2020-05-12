@@ -13,8 +13,7 @@
 #include <fs/dirent.h>
 
 typedef errval_t (*fs_mount_opendir_fn_t)(void *mount, const char *, fs_dirhandle_t *);
-typedef errval_t (*fs_mount_readdir_fn_t)(void *handle, char **retname,
-                                          struct fs_fileinfo *info);
+typedef errval_t (*fs_mount_readdir_fn_t)(void *handle, char **retname);
 typedef errval_t (*fs_mount_closedir_fn_t)(void *handle);
 typedef errval_t (*fs_mount_mkdir_fn_t)(void *mount, const char *);
 typedef errval_t (*fs_mount_rmdir_fn_t)(void *mount, const char *);
@@ -22,14 +21,13 @@ typedef errval_t (*fs_mount_stat_fn_t)(void *handle, struct fs_fileinfo *);
 
 typedef errval_t (*fs_mount_open_fn_t)(void *mount, const char *, fs_dirhandle_t *);
 typedef errval_t (*fs_mount_create_fn_t)(void *mount, const char *, fs_dirhandle_t *);
-typedef errval_t (*fs_mount_read_fn_t)(void *handle, void *buffer,
-                                       size_t bytes, size_t *bytes_read);
-typedef errval_t (*fs_mount_write_fn_t)(void *handle, const void *buffer,
-                                        size_t bytes, size_t *bytes_written);
+typedef errval_t (*fs_mount_read_fn_t)(void *handle, void *buffer, size_t bytes,
+                                       size_t *bytes_read);
+typedef errval_t (*fs_mount_write_fn_t)(void *handle, const void *buffer, size_t bytes,
+                                        size_t *bytes_written);
 typedef errval_t (*fs_mount_remove_fn_t)(void *mount, const char *);
 typedef errval_t (*fs_mount_close_fn_t)(void *handle);
-typedef errval_t (*fs_mount_seek_fn_t)(void *handle, enum fs_seekpos whence,
-                                       off_t offset);
+typedef errval_t (*fs_mount_seek_fn_t)(void *handle, enum fs_seekpos whence, off_t offset);
 typedef errval_t (*fs_mount_tell_fn_t)(void *handle, size_t *);
 
 struct fs_mount {

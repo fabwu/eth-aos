@@ -281,7 +281,7 @@ static errval_t fs_opendir(const char *path, fs_dirhandle_t *h)
 static errval_t fs_readdir(fs_dirhandle_t h, char **name)
 {
     struct fs_handle *handle = (struct fs_handle *)h;
-    return handle->mount->readdir(handle, name, NULL);
+    return handle->mount->readdir(handle, name);
 }
 
 static errval_t fs_closedir(fs_dirhandle_t h)

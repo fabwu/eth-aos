@@ -27,6 +27,7 @@ struct fat32fs_dirent {
     uint32_t dir_clus;
 
     bool is_dir;
+    struct fat32fs_dir_state dir_state;
 };
 
 static errval_t fat32fs_next_dir_entry(struct fat32_fs *fs,
@@ -310,9 +311,50 @@ errval_t fat32fs_mkdir(void *st, const char *path)
     USER_PANIC("NYI\n");
 }
 
-errval_t fat32fs_readdir(void *handle, char **retname, struct fs_fileinfo *info)
+errval_t fat32fs_readdir(void *handle, char **retname)
 {
-    USER_PANIC("NYI\n");
+    DEBUG_FAT32FS("fat32fs_readdir begin\n");
+
+    errval_t err;
+    struct fs_handle *fh = handle;
+    struct fs_mount *mount = fh->mount;
+    struct fat32fs_dirent *dirent = fh->state;
+
+    if (!dirent->is_dir) {
+        return FS_ERR_NOTDIR;
+    }
+
+    if (dirent->dir_state.clus == 0) {
+        dirent->dir_state.clus = dirent->clus;
+        dirent->dir_state.sec = 0;
+        dirent->dir_state.entry = 0;
+    }
+
+    void *entry;
+    do {
+        bool end;
+        err = fat32fs_next_dir_entry(mount->state, &dirent->dir_state, &entry, &end);
+        if (err_is_fail(err)) {
+            return err;
+        }
+
+        if (end) {
+            return FS_ERR_INDEX_BOUNDS;
+        }
+    } while (*(uint8_t *)entry == FAT_32_HOLE_DIR_ENTRY);
+
+    char *eff_name = calloc(1, sizeof(char) * FAT_32_MAX_BYTES_EFF_NAME);
+    if (eff_name == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    fs_process_dir_entry_name((unsigned char *)entry, (unsigned char *)eff_name);
+
+    *retname = eff_name;
+
+    DEBUG_FAT32FS("fat32fs_readdir end\n");
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_closedir(void *handle)

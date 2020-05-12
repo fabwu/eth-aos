@@ -587,7 +587,7 @@ errval_t ramfs_opendir(void *st, const char *path, ramfs_handle_t *rethandle)
     return SYS_ERR_OK;
 }
 
-errval_t ramfs_dir_read_next(void *handle, char **retname, struct fs_fileinfo *info)
+errval_t ramfs_dir_read_next(void *handle, char **retname)
 {
     struct fs_handle *fh = handle;
     struct ramfs_handle *h = fh->state;
@@ -604,11 +604,6 @@ errval_t ramfs_dir_read_next(void *handle, char **retname, struct fs_fileinfo *i
 
     if (retname != NULL) {
         *retname = strdup(d->name);
-    }
-
-    if (info != NULL) {
-        info->type = d->is_dir ? FS_DIRECTORY : FS_FILE;
-        info->size = d->size;
     }
 
     h->dir_pos = d->next;
