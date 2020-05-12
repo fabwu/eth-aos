@@ -20,15 +20,6 @@
 #define BPB_FS_VER_OFFSET 42
 #define BPB_ROOT_CLUS_OFFSET 44
 #define BPB_TOT_SEC_32_OFFSET 32
-#define FAT_32_MIN_CLUSTERS 65525
-#define FAT_32_BAD_CLUSTER_ENTRY 0x0FFFFFF7
-#define FAT_32_MIN_EOF_CLUSTER_ENTRY 0x0FFFFFF8
-#define FAT_32_CLUSTER_ENTRY_MASK 0x0FFFFFFF
-#define FAT_32_BYTES_PER_CLUSTER_ENTRY 4
-#define FAT_32_HOLE_DIR_ENTRY 0xE5
-#define FAT_32_ONLY_FREE_DIR_ENTRY 0x00
-#define FAT_32_REPLACE_DIR_ENTRY 0x5
-#define FAT_32_REPLACE_DIR_ENTRY_VALUE 0xE5
 
 #if 1
 #    define DEBUG_FS(fmt...) debug_printf(fmt);
@@ -129,11 +120,12 @@ static errval_t fs_init_sd_block(struct sd_block *block)
     block->virt = virt;
     block->capref = capref;
     block->phy = phy;
+    block->sec = ~0x0;
 
     return SYS_ERR_OK;
 }
 
-static errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32_t sector)
+errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32_t sector)
 {
     errval_t err;
 
@@ -141,6 +133,8 @@ static errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32
 
     err = sdhc_read_block(sd, sector, block->phy);
     assert(err_is_ok(err));
+
+    block->sec = sector;
 
     // cpu_dcache_inv_range((genvaddr_t)block, ROUND_UP(SDHC_BLOCK_SIZE, BASE_PAGE_SIZE));
 
@@ -256,18 +250,18 @@ static errval_t fs_read_metadata(struct fat32_fs *fs)
     return SYS_ERR_OK;
 }
 
-static uint32_t get_sector_for_data(struct fat32_fs *fs, uint32_t cluster)
+uint32_t get_sector_for_data(struct fat32_fs *fs, uint32_t cluster)
 {
     return (cluster - 2) * fs->sec_per_clus + fs->first_data_sector;
 }
 
-static uint32_t get_sector_for_fat(struct fat32_fs *fs, uint32_t cluster)
+uint32_t get_sector_for_fat(struct fat32_fs *fs, uint32_t cluster)
 {
     return fs->rsvd_sec_cnt
            + ((cluster * FAT_32_BYTES_PER_CLUSTER_ENTRY) / fs->bytes_per_sec);
 }
 
-static uint32_t get_offset_for_fat(struct fat32_fs *fs, uint32_t cluster)
+uint32_t get_offset_for_fat(struct fat32_fs *fs, uint32_t cluster)
 {
     return (cluster * FAT_32_BYTES_PER_CLUSTER_ENTRY) % fs->bytes_per_sec;
 }
@@ -279,15 +273,13 @@ static int fs_is_illegal_character_dir_entry_name(char c)
            || c == 0x3F || c == 0x5B || c == 0x5C || c == 0x5D || c == 0x7C;
 }
 
-static void fs_process_dir_entry_name(unsigned char *name)
+void fs_process_dir_entry_name(unsigned char *name, unsigned char *eff_name)
 {
     // First char of name also used to signal entry status, clashes with a character,
     // which needs replacement
     if (*name == FAT_32_REPLACE_DIR_ENTRY) {
         *name = FAT_32_REPLACE_DIR_ENTRY_VALUE;
     }
-    // TODO: Define dir entry struct
-    unsigned char eff_name[13];
     // 11 chars, first 8 main, last 3 extension, if extension, than add dot, also remove
     // trailing spaces (0x20) of main and extension
     // We also add NULL byte, so that it is a proper c string
@@ -340,7 +332,8 @@ static void fs_process_dir_entry(void *entry, uint8_t *more_entries)
         return;
     }
 
-    fs_process_dir_entry_name((unsigned char *)entry);
+    char eff_name[FAT_32_MAX_BYTES_EFF_NAME];
+    fs_process_dir_entry_name((unsigned char *)entry, (unsigned char *)eff_name);
 }
 
 static void fs_process_dir_cluster_sectors(struct sdhc_s *sd, struct fat32_fs *fs,
@@ -369,15 +362,12 @@ static errval_t fs_list_dir(struct fat32_fs *fs, uint32_t cluster)
 
     uint32_t clus_entry = cluster;
     uint32_t curr_fat_sector = get_sector_for_fat(fs, clus_entry);
-    uint32_t last_fat_sector = 0;
 
     uint8_t more_entries = 1;
     do {
-        if (curr_fat_sector != last_fat_sector) {
+        if (curr_fat_sector != fs->fat.sec) {
             err = fs_read_sector(fs->sd, &fs->fat, curr_fat_sector);
             assert(err_is_ok(err));
-
-            last_fat_sector = curr_fat_sector;
         }
 
         fs_process_dir_cluster_sectors(fs->sd, fs, get_sector_for_data(fs, clus_entry),

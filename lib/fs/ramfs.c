@@ -206,15 +206,18 @@ static errval_t resolve_path(struct fs_mount *mount, struct ramfs_dirent *root,
             return err;
         }
 
-        if (!next_dirent->is_dir && nextsep != NULL) {
-            return FS_ERR_NOTDIR;
-        }
-
         if (next_dirent->is_mount) {
             *ret_mount = next_dirent->mount;
             // Want to have separator with us
             *ret_path = path + pos + nextlen;
+
+            return SYS_ERR_OK;
         }
+
+        if (!next_dirent->is_dir && nextsep != NULL) {
+            return FS_ERR_NOTDIR;
+        }
+
         root = next_dirent;
         if (nextsep == NULL) {
             break;
@@ -258,7 +261,7 @@ errval_t ramfs_open(void *st, const char *path, ramfs_handle_t *rethandle)
     }
 
     if (nest_mount != NULL) {
-        return nest_mount->open(nest_mount->state, nest_mount_path, rethandle);
+        return nest_mount->open(nest_mount, nest_mount_path, rethandle);
     }
 
     handle = fh->state;
@@ -286,7 +289,7 @@ errval_t ramfs_create(void *st, const char *path, ramfs_handle_t *rethandle)
     }
 
     if (nest_mount != NULL) {
-        return nest_mount->create(nest_mount->state, nest_mount_path, rethandle);
+        return nest_mount->create(nest_mount, nest_mount_path, rethandle);
     }
 
     struct fs_handle *parent_fh = NULL;
@@ -359,7 +362,7 @@ errval_t ramfs_remove(void *st, const char *path)
     }
 
     if (nest_mount != NULL) {
-        nest_mount->remove(nest_mount->state, nest_mount_path);
+        nest_mount->remove(nest_mount, nest_mount_path);
     }
 
     handle = fh->state;
@@ -567,7 +570,7 @@ errval_t ramfs_opendir(void *st, const char *path, ramfs_handle_t *rethandle)
     }
 
     if (nest_mount != NULL) {
-        return nest_mount->opendir(nest_mount->state, nest_mount_path, rethandle);
+        return nest_mount->opendir(nest_mount, nest_mount_path, rethandle);
     }
 
     handle = fh->state;
@@ -638,7 +641,7 @@ errval_t ramfs_mkdir(void *st, const char *path)
     const char *nest_mount_path;
     err = resolve_path(reg_mount, mount->root, path, NULL, &nest_mount, &nest_mount_path);
     if (nest_mount != NULL) {
-        nest_mount->mkdir(nest_mount->state, nest_mount_path);
+        nest_mount->mkdir(nest_mount, nest_mount_path);
     } else if (err_is_ok(err)) {
         return FS_ERR_EXISTS;
     }
@@ -707,7 +710,7 @@ errval_t ramfs_rmdir(void *st, const char *path)
     }
 
     if (nest_mount != NULL) {
-        return nest_mount->rmdir(nest_mount->state, nest_mount_path);
+        return nest_mount->rmdir(nest_mount, nest_mount_path);
     }
 
     handle = fh->state;

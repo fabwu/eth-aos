@@ -21,66 +21,66 @@
 #include <fs/fs.h>
 #include <fs/dirent.h>
 
-static uint64_t systime_to_ms(systime_t time){
+static uint64_t systime_to_ms(systime_t time)
+{
     return systime_to_us(time) / 1000;
 }
 
 #define ENABLE_LONG_FILENAME_TEST 0
 
 /* reading */
-#define MOUNTPOINT     "/sdcard"
-#define SUBDIR         "/parent"
-#define SUBDIR_LONG    "/parent-directory"
-#define DIR_NOT_EXIST  "/not-exist"
-#define FILENAME       "/myfile2.txt"
-#define LONGFILENAME   "/mylongfilenamefile.txt"
-#define LONGFILENAME2  "/mylongfilenamefilesecond.txt"
+#define MOUNTPOINT "/sdcard"
+#define SUBDIR "/parent"
+#define SUBDIR_LONG "/parent-directory"
+#define DIR_NOT_EXIST "/not-exist"
+#define FILENAME "/myfile2.txt"
+#define LONGFILENAME "/mylongfilenamefile.txt"
+#define LONGFILENAME2 "/mylongfilenamefilesecond.txt"
 #define FILE_NOT_EXIST "/not-exist.txt"
 
-#define TEST_PREAMBLE(arg) \
-    printf("\n-------------------------------\n"); \
-    printf("%s(%s)\n", __FUNCTION__, arg);
+#define TEST_PREAMBLE(arg)                                                               \
+    debug_printf("\n-------------------------------\n");                                 \
+    debug_printf("%s(%s)\n", __FUNCTION__, arg);
 
-#define TEST_END \
-    printf("-------------------------------\n");
+#define TEST_END debug_printf("-------------------------------\n");
 
-#define EXPECT_SUCCESS(err, test, _time) \
-    do{ \
-        if(err_is_fail(err)){ \
-            DEBUG_ERR(err, test); \
-        } else { \
-            printf("SUCCESS: " test " took %" PRIu64 " ms\n", _time);\
-        }\
-   } while(0);\
+#define EXPECT_SUCCESS(err, test, _time)                                                 \
+    do {                                                                                 \
+        if (err_is_fail(err)) {                                                          \
+            DEBUG_ERR(err, test);                                                        \
+            debug_printf("\n");                                                          \
+        } else {                                                                         \
+            debug_printf("SUCCESS: " test " took %" PRIu64 " ms\n", _time);              \
+        }                                                                                \
+    } while (0);
 
-#define EXPECT_FAILURE(err, _test, _time) \
-    do{ \
-        if(err_is_fail(err)){ \
-            printf("SUCCESS: failure expected " _test " took %" PRIu64 " ms\n", _time);\
-        } else { \
-            DEBUG_ERR(err, "FAILURE: failure expected, but test succeeded" _test); \
-        }\
-   } while(0);\
+#define EXPECT_FAILURE(err, _test, _time)                                                \
+    do {                                                                                 \
+        if (err_is_fail(err)) {                                                          \
+            debug_printf("SUCCESS: failure expected " _test " took %" PRIu64 " ms\n",    \
+                         _time);                                                         \
+        } else {                                                                         \
+            DEBUG_ERR(err, "FAILURE: failure expected, but test succeeded" _test);       \
+        }                                                                                \
+    } while (0);
 
-#define run_test(fn, arg) \
-    do { \
-        tstart = systime_now(); \
-        err = fn(arg); \
-        tend = systime_now(); \
-        EXPECT_SUCCESS(err, #fn, systime_to_ms(tend-tstart)); \
-        TEST_END \
-    } while(0); \
+#define run_test(fn, arg)                                                                \
+    do {                                                                                 \
+        tstart = systime_now();                                                          \
+        err = fn(arg);                                                                   \
+        tend = systime_now();                                                            \
+        EXPECT_SUCCESS(err, #fn, systime_to_ms(tend - tstart));                          \
+        TEST_END                                                                         \
+    } while (0);
 
-#define run_test_fail(fn, arg) \
-    do { \
-        tstart = systime_now(); \
-        err = fn(arg); \
-        tend = systime_now(); \
-        EXPECT_FAILURE(err, #fn, systime_to_ms(tend-tstart)); \
-        TEST_END \
-    } while(0); \
-
-
+#define run_test_fail(fn, arg)                                                           \
+    do {                                                                                 \
+        tstart = systime_now();                                                          \
+        err = fn(arg);                                                                   \
+        tend = systime_now();                                                            \
+        EXPECT_FAILURE(err, #fn, systime_to_ms(tend - tstart));                          \
+        TEST_END                                                                         \
+    } while (0);
 
 
 static errval_t test_read_dir(char *dir)
@@ -106,10 +106,10 @@ static errval_t test_read_dir(char *dir)
             goto err_out;
         }
         printf("%s\n", name);
-    } while(err_is_ok(err));
+    } while (err_is_ok(err));
 
     return closedir(dh);
-    err_out:
+err_out:
     return err;
 }
 
@@ -125,13 +125,13 @@ static errval_t test_fread(char *file)
     }
 
     /* obtain the file size */
-    res = fseek (f , 0 , SEEK_END);
+    res = fseek(f, 0, SEEK_END);
     if (res) {
         return FS_ERR_INVALID_FH;
     }
 
-    size_t filesize = ftell (f);
-    rewind (f);
+    size_t filesize = ftell(f);
+    rewind(f);
 
     printf("File size is %zu\n", filesize);
 
@@ -153,7 +153,7 @@ static errval_t test_fread(char *file)
     size_t nchars = 0;
     int c;
     do {
-        c = fgetc (f);
+        c = fgetc(f);
         nchars++;
     } while (c != EOF);
 
@@ -181,10 +181,9 @@ static errval_t test_fwrite(char *file)
     }
 
     const char *inspirational_quote = "I love deadlines. I like the whooshing "
-        "sound they make as they fly by.";
+                                      "sound they make as they fly by.";
 
-    size_t written = fwrite(inspirational_quote, 1, strlen(inspirational_quote),
-            f);
+    size_t written = fwrite(inspirational_quote, 1, strlen(inspirational_quote), f);
     printf("wrote %zu bytes\n", written);
 
     if (written != strlen(inspirational_quote)) {
@@ -210,6 +209,8 @@ int main(int argc, char *argv[])
     printf("initializing filesystem...\n");
     err = filesystem_init();
     EXPECT_SUCCESS(err, "fs init", 0);
+
+    // run_test(test_read_dir, "/");
 
     run_test(test_read_dir, MOUNTPOINT "/");
 
