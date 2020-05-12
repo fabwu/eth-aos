@@ -359,7 +359,18 @@ errval_t fat32fs_readdir(void *handle, char **retname)
 
 errval_t fat32fs_closedir(void *handle)
 {
-    USER_PANIC("NYI\n");
+    struct fs_handle *fh = handle;
+    struct fat32fs_dirent *dirent = fh->state;
+
+    if (!dirent->is_dir) {
+        return FS_ERR_NOTDIR;
+    }
+
+    free(dirent->name);
+    free(dirent);
+    free(fh);
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_rmdir(void *st, const char *path)
