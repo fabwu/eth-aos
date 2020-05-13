@@ -309,7 +309,7 @@ void fs_process_dir_entry_name(unsigned char *name, unsigned char *eff_name)
     if (last_char_extension >= 8) {
         eff_name[des_pos] = '.';
         ++des_pos;
-        for (int src_pos = 8; src_pos <= last_char_extension; ++last_char_extension) {
+        for (int src_pos = 8; src_pos <= last_char_extension; ++src_pos) {
             assert(!fs_is_illegal_character_dir_entry_name(name[src_pos]));
 
             eff_name[des_pos] = name[src_pos];

@@ -248,7 +248,22 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
 
 errval_t fat32fs_open(void *st, const char *path, fs_dirhandle_t *ret_handle)
 {
-    USER_PANIC("NYI\n");
+    errval_t err;
+
+    err = fat32fs_resolve_path(st, path, (struct fs_handle **)ret_handle);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    struct fat32fs_dirent *dirent = (*(struct fs_handle **)ret_handle)->state;
+    if (dirent->is_dir) {
+        free(dirent->name);
+        free(dirent);
+        free(*ret_handle);
+        return FS_ERR_NOTFILE;
+    }
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_create(void *st, const char *path, fs_dirhandle_t *ret_handle)
@@ -332,6 +347,8 @@ errval_t fat32fs_readdir(void *handle, char **retname)
 
     void *entry;
     do {
+        DEBUG_FAT32FS("fat32fs_readdir getting next entry\n");
+
         bool end;
         err = fat32fs_next_dir_entry(mount->state, &dirent->dir_state, &entry, &end);
         if (err_is_fail(err)) {
