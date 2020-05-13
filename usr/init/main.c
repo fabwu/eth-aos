@@ -84,49 +84,24 @@ static void split_ram(struct ram_info *ri)
     ri->app_ram_size = cut;
 }
 
-static int bsp_main(int argc, char *argv[])
+static errval_t init_urpc(struct ram_info *ri, struct frame_identity *urpc_frame_id)
 {
     errval_t err;
 
-    // Grading
-    grading_setup_bsp_init(argc, argv);
-
-    // First argument contains the bootinfo location, if it's not set
-    bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
-    assert(bi);
-
-    struct ram_info ri;
-    split_ram(&ri);
-
-    struct capref mem_cap = {
-        .cnode = cnode_super,
-        .slot = 0,
-    };
-
-    err = initialize_ram_alloc(mem_cap, ri.bsp_ram_base, ri.bsp_ram_size);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "initialize_ram_alloc");
-        return -1;
-    }
-
-    process_init();
-
-    // Grading
-    grading_test_early();
-
+    // find bootinfo frame
     struct frame_identity bootinfo_id;
     err = frame_identify(cap_bootinfo, &bootinfo_id);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't identify bootinfo frame\n");
-        return -EXIT_FAILURE;
+        return err_push(err, LIB_ERR_FRAME_IDENTIFY);
     }
 
+    // find mmstrings frame
     struct frame_identity mmstrings_id;
     err = frame_identify(cap_mmstrings, &mmstrings_id);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't identify mmstrings frame\n");
-        return -EXIT_FAILURE;
+        return err_push(err, LIB_ERR_FRAME_IDENTIFY);
     }
+
     // allocate urpc frame
     struct capref urpc_frame;
     size_t urpc_frame_size;
@@ -138,49 +113,90 @@ static int bsp_main(int argc, char *argv[])
         return LIB_ERR_FRAME_ALLOC;
     }
 
-    struct frame_identity urpc_frame_id;
-    err = frame_identify(urpc_frame, &urpc_frame_id);
     // initialize urpc frame
+    err = frame_identify(urpc_frame, urpc_frame_id);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_FRAME_IDENTIFY);
+    }
     void *urpc;
     err = paging_map_frame(get_current_paging_state(), &urpc, urpc_frame_size, urpc_frame,
                            NULL, NULL);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't map URPC frame\n");
-        return EXIT_FAILURE;
+        return err_push(err, LIB_ERR_PAGING_MAP_FRAME);
     }
     memset(urpc, 0, urpc_frame_size);
 
-    // FIXME: Use constatns instead of magic numbers
     assert(64 * 64 * 2 == MON_URPC_SIZE);
     aos_ump_init(&ump, urpc, urpc + (MON_URPC_SIZE >> 1), 64, 64);
 
     uint64_t ump_buf[INIT_UMP_BUF_COREBOOT_LENGTH];
-    ump_buf[0] = ri.app_ram_base;
-    ump_buf[1] = ri.app_ram_size;
+    ump_buf[0] = ri->app_ram_base;
+    ump_buf[1] = ri->app_ram_size;
     ump_buf[2] = bootinfo_id.base;
     ump_buf[3] = bootinfo_id.bytes;
     ump_buf[4] = mmstrings_id.base;
     ump_buf[5] = mmstrings_id.bytes;
 
-    aos_ump_enqueue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
+    err = aos_ump_enqueue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_UMP_ENQUEUE);
+    }
+
+    return SYS_ERR_OK;
+}
+
+static int bsp_main(int argc, char *argv[])
+{
+    errval_t err;
+
+    // Grading
+    grading_setup_bsp_init(argc, argv);
+
+    // First argument contains the bootinfo location, if it's not set
+    bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
+    assert(bi);
+
+    // init ram
+    struct ram_info ri;
+    split_ram(&ri);
+
+    struct capref mem_cap = {
+        .cnode = cnode_super,
+        .slot = 0,
+    };
+
+    err = initialize_ram_alloc(mem_cap, ri.bsp_ram_base, ri.bsp_ram_size);
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "initialize_ram_alloc");
+    }
+
+    process_init();
+
+    // Grading
+    grading_test_early();
 
     // boot second core
+    struct frame_identity urpc_frame_id;
+    err = init_urpc(&ri, &urpc_frame_id);
+    if(err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Couldn't init urpc\n");
+    }
+
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't boot second core\n");
-        return -1;
+        USER_PANIC_ERR(err, "Couldn't boot second core\n");
     }
 
     err = init_spawn_by_name("nameserver", NULL);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Couldn't spawn nameserver\n");
-        return -EXIT_FAILURE;
+        USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {
         err = init_spawn_by_name("memeater", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn memeater\n");
+            return -EXIT_FAILURE;
         }
     }
 
@@ -195,6 +211,7 @@ static int bsp_main(int argc, char *argv[])
         err = init_spawn_by_name("spawnTester", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn spawntester\n");
+            return -EXIT_FAILURE;
         }
     }
 
@@ -202,6 +219,7 @@ static int bsp_main(int argc, char *argv[])
         err = init_spawn_by_name("nameservicetest", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn nameservicetest\n");
+            return -EXIT_FAILURE;
         }
     }
 
@@ -209,6 +227,7 @@ static int bsp_main(int argc, char *argv[])
         err = init_spawn_by_name("shell", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn shell");
+            return -EXIT_FAILURE;
         }
     }
 
@@ -228,7 +247,6 @@ static int bsp_main(int argc, char *argv[])
 static int app_main(int argc, char *argv[])
 {
     errval_t err;
-    coreid_t coreid = disp_get_current_core_id();
 
     // init memory manager
     // (we have to do this before creating bootinfo because we need slot allocator)
@@ -250,11 +268,7 @@ static int app_main(int argc, char *argv[])
     genpaddr_t mmstrings_addr = ump_buf[4];
     size_t mmstrings_size = ump_buf[5];
 
-    DEBUG_PRINTF("CORE 1 Received: RAM %p/%lld\n", app_ram_base, app_ram_size);
-    DEBUG_PRINTF("CORE 1 Received: BOOTINFO %p/%lld\n", bi_addr, bi_size);
-    DEBUG_PRINTF("CORE 1 Received: MMSTRINGS  %p/%lld\n", mmstrings_addr, mmstrings_size);
-
-    err = ram_forge(mem_cap, app_ram_base, app_ram_size, coreid);
+    err = ram_forge(mem_cap, app_ram_base, app_ram_size, my_core_id);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't create cap for physical memory\n");
         return -EXIT_FAILURE;
@@ -267,7 +281,7 @@ static int app_main(int argc, char *argv[])
     }
 
     // create frame to bootinfo
-    err = frame_forge(cap_bootinfo, bi_addr, bi_size, coreid);
+    err = frame_forge(cap_bootinfo, bi_addr, bi_size, my_core_id);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't create frame for bootinfo\n");
         return -EXIT_FAILURE;
@@ -291,7 +305,7 @@ static int app_main(int argc, char *argv[])
 
     // create frame for mmstrings
     cap_mmstrings.cnode = cnode_module;
-    err = frame_forge(cap_mmstrings, mmstrings_addr, mmstrings_size, coreid);
+    err = frame_forge(cap_mmstrings, mmstrings_addr, mmstrings_size, my_core_id);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't create frame for mmstrings");
         return -EXIT_FAILURE;
@@ -304,7 +318,7 @@ static int app_main(int argc, char *argv[])
             struct capref mod_devframe = { .cnode = cnode_module, .slot = mr.mrmod_slot };
 
             size_t aligned_size = ROUND_UP(mr.mrmod_size, BASE_PAGE_SIZE);
-            err = devframe_forge(mod_devframe, mr.mr_base, aligned_size, coreid);
+            err = devframe_forge(mod_devframe, mr.mr_base, aligned_size, my_core_id);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Couldn't create devframe for module at addr %p\n",
                           mr.mr_base);
