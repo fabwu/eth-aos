@@ -45,7 +45,6 @@ static void run_client(void)
     nameservice_chan_t chan;
     err = nameservice_lookup(SERVICE_NAME, &chan);
     PANIC_IF_FAIL(err, "failed to lookup service\n");
-
     debug_printf("Got the service %p. Sending request '%s'\n", chan, myrequest);
 
     void *request = myrequest;
