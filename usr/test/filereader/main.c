@@ -126,6 +126,7 @@ static errval_t test_fread(char *file)
         return FS_ERR_OPEN;
     }
 
+    // Bad code?, SEI CERT FIO19-C
     /* obtain the file size */
     res = fseek(f, 0, SEEK_END);
     if (res) {

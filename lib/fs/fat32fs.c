@@ -10,12 +10,15 @@
 
 #define FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET 26
 #define FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET 20
+#define FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET 28
 #define FAT_32_DIR_ENTRY_ATTR_OFFSET 11
 #define FAT_32_DIR_ENTRY_ATTR_DIRECTORY 0x10
 
 struct fat32fs_dir_state {
     uint32_t clus;
     uint32_t sec;
+    // position in between bytes, as need/defined by seek
+    uint32_t des_pos;
     uint16_t entry;
 };
 
@@ -135,6 +138,7 @@ static errval_t fat32fs_find_dirent(struct fat32_fs *fs, uint32_t cluster, char 
                 dirent->is_dir = 1;
             } else {
                 dirent->is_dir = 0;
+                dirent->size = *(uint32_t *)(entry + FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET);
             }
 
             dirent->dir_clus = cluster;
@@ -292,12 +296,54 @@ errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
 
 errval_t fat32fs_seek(void *handle, enum fs_seekpos whence, off_t offset)
 {
-    USER_PANIC("NYI\n");
+    struct fs_handle *fh = handle;
+    struct fat32fs_dirent *dirent = fh->state;
+
+    if (dirent->is_dir) {
+        USER_PANIC("NYI\n");
+    }
+
+    switch (whence) {
+    case FS_SEEK_SET:
+        assert(offset >= 0);
+
+        dirent->dir_state.des_pos = offset;
+
+        break;
+
+    case FS_SEEK_CUR:
+        assert(offset >= 0 || -offset <= dirent->dir_state.des_pos);
+
+        dirent->dir_state.des_pos += offset;
+
+        break;
+
+    case FS_SEEK_END:
+        assert(offset >= 0 || -offset <= dirent->size);
+
+        dirent->dir_state.des_pos = dirent->size + offset;
+
+        break;
+
+    default:
+        USER_PANIC("Invalid whence argument to fat32fs_seek");
+    }
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_tell(void *handle, size_t *pos)
 {
-    USER_PANIC("NYI\n");
+    struct fs_handle *fh = handle;
+    struct fat32fs_dirent *dirent = fh->state;
+
+    if (dirent->is_dir) {
+        USER_PANIC("NYI\n");
+    } else {
+        *pos = dirent->dir_state.des_pos;
+    }
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_close(void *handle)
