@@ -48,18 +48,15 @@ struct bootinfo *bi;
 
 coreid_t my_core_id;
 
-static int bsp_main(int argc, char *argv[])
+struct ram_info {
+    genpaddr_t bsp_ram_base;
+    size_t bsp_ram_size;
+    genpaddr_t app_ram_base;
+    size_t app_ram_size;
+};
+
+static void split_ram(struct ram_info *ri)
 {
-    errval_t err;
-
-    // Grading
-    grading_setup_bsp_init(argc, argv);
-
-    // First argument contains the bootinfo location, if it's not set
-    bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
-    assert(bi);
-
-    // TODO: Move the value gathering code (below) for starting core 1 into an own function
     genpaddr_t ram_base = -1;
     size_t ram_size = 0;
 
@@ -80,11 +77,42 @@ static int bsp_main(int argc, char *argv[])
 
     size_t cut = ram_size / 2;
     cut = ROUND_DOWN(cut, BASE_PAGE_SIZE);
-    genpaddr_t bsp_ram_base = ram_base;
-    size_t bsp_ram_size = ram_size - cut;
+    ri->bsp_ram_base = ram_base;
+    ri->bsp_ram_size = ram_size - cut;
 
-    genpaddr_t app_ram_base = ROUND_UP(bsp_ram_base + cut, BASE_PAGE_SIZE);
-    size_t app_ram_size = cut;
+    ri->app_ram_base = ROUND_UP(ri->bsp_ram_base + cut, BASE_PAGE_SIZE);
+    ri->app_ram_size = cut;
+}
+
+static int bsp_main(int argc, char *argv[])
+{
+    errval_t err;
+
+    // Grading
+    grading_setup_bsp_init(argc, argv);
+
+    // First argument contains the bootinfo location, if it's not set
+    bi = (struct bootinfo *)strtol(argv[1], NULL, 10);
+    assert(bi);
+
+    struct ram_info ri;
+    split_ram(&ri);
+
+    struct capref mem_cap = {
+        .cnode = cnode_super,
+        .slot = 0,
+    };
+
+    err = initialize_ram_alloc(mem_cap, ri.bsp_ram_base, ri.bsp_ram_size);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "initialize_ram_alloc");
+        return -1;
+    }
+
+    process_init();
+
+    // Grading
+    grading_test_early();
 
     struct frame_identity bootinfo_id;
     err = frame_identify(cap_bootinfo, &bootinfo_id);
@@ -99,29 +127,6 @@ static int bsp_main(int argc, char *argv[])
         DEBUG_ERR(err, "Couldn't identify mmstrings frame\n");
         return -EXIT_FAILURE;
     }
-
-    DEBUG_PRINTF("PASS THESE TO CORE1 RAM %p/%lld\n", app_ram_base, app_ram_size);
-    DEBUG_PRINTF("PASS THESE TO CORE1 BOOTINFO %p/%lld\n", bootinfo_id.base,
-                 bootinfo_id.bytes);
-    DEBUG_PRINTF("PASS THESE TO CORE1 MMSTRINGS  %p/%lld\n", mmstrings_id.base,
-                 mmstrings_id.bytes);
-
-    struct capref mem_cap = {
-        .cnode = cnode_super,
-        .slot = 0,
-    };
-
-    err = initialize_ram_alloc(mem_cap, bsp_ram_base, bsp_ram_size);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "initialize_ram_alloc");
-        return -1;
-    }
-
-    process_init();
-
-    // Grading
-    grading_test_early();
-
     // allocate urpc frame
     struct capref urpc_frame;
     size_t urpc_frame_size;
@@ -150,8 +155,8 @@ static int bsp_main(int argc, char *argv[])
     aos_ump_init(&ump, urpc, urpc + (MON_URPC_SIZE >> 1), 64, 64);
 
     uint64_t ump_buf[INIT_UMP_BUF_COREBOOT_LENGTH];
-    ump_buf[0] = app_ram_base;
-    ump_buf[1] = app_ram_size;
+    ump_buf[0] = ri.app_ram_base;
+    ump_buf[1] = ri.app_ram_size;
     ump_buf[2] = bootinfo_id.base;
     ump_buf[3] = bootinfo_id.bytes;
     ump_buf[4] = mmstrings_id.base;
@@ -160,7 +165,7 @@ static int bsp_main(int argc, char *argv[])
     aos_ump_enqueue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
 
     // boot second core
- //   err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
+    err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't boot second core\n");
         return -1;
