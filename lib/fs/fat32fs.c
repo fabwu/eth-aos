@@ -10,7 +10,7 @@
 
 #define FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET 26
 #define FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET 20
-#define FAT_32_DIR_ENTRY_ATTR_OFFSET 20
+#define FAT_32_DIR_ENTRY_ATTR_OFFSET 11
 #define FAT_32_DIR_ENTRY_ATTR_DIRECTORY 0x10
 
 struct fat32fs_dir_state {
@@ -201,6 +201,8 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
             memcpy(pathbuf, &path[pos], nextlen);
             pathbuf[nextlen] = '\0';
 
+            DEBUG_FAT32FS("fat32fs_resolve_path path_part: %s\n", pathbuf);
+
             bool found;
             err = fat32fs_find_dirent(fs, root, pathbuf, &next_dirent, &found);
             if (err_is_fail(err)) {
@@ -208,10 +210,14 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
             }
 
             if (!found) {
+                DEBUG_FAT32FS("fat32fs_resolve_path not_found path_part: %s\n", pathbuf);
                 return FS_ERR_NOTFOUND;
             }
 
             if (!next_dirent->is_dir && nextsep != NULL) {
+                DEBUG_FAT32FS("fat32fs_resolve_path not_dir but next_sep path_part: %s\n",
+                              pathbuf);
+
                 free(next_dirent->name);
                 free(next_dirent);
 
@@ -221,6 +227,9 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
             if (nextsep == NULL) {
                 break;
             }
+
+            DEBUG_FAT32FS("fat32fs_resolve_path path_part: %s clus: 0x%" PRIx32 "\n",
+                          pathbuf, next_dirent->clus);
 
             root = next_dirent->clus;
 

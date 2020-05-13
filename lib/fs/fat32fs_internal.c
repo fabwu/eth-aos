@@ -268,9 +268,10 @@ uint32_t get_offset_for_fat(struct fat32_fs *fs, uint32_t cluster)
 
 static int fs_is_illegal_character_dir_entry_name(char c)
 {
-    return c < 0x20 || c == 0x22 || c == 0x2A || c == 0x2B || c == 0x2C || c == 0x2E
-           || c == 0x2F || c == 0x3A || c == 0x3B || c == 0x3C || c == 0x3D || c == 0x3E
-           || c == 0x3F || c == 0x5B || c == 0x5C || c == 0x5D || c == 0x7C;
+    // FIXME: Add 0x2E (.) again as illegal character, but need to handle . and .. entries
+    return c < 0x20 || c == 0x22 || c == 0x2A || c == 0x2B || c == 0x2C || c == 0x2F
+           || c == 0x3A || c == 0x3B || c == 0x3C || c == 0x3D || c == 0x3E || c == 0x3F
+           || c == 0x5B || c == 0x5C || c == 0x5D || c == 0x7C;
 }
 
 void fs_process_dir_entry_name(unsigned char *name, unsigned char *eff_name)

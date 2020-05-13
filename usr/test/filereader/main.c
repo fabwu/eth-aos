@@ -33,7 +33,9 @@ static uint64_t systime_to_ms(systime_t time)
 #define SUBDIR "/parent"
 #define SUBDIR_LONG "/parent-directory"
 #define DIR_NOT_EXIST "/not-exist"
-#define FILENAME "/myfile2.txt"
+#define FILENAME "/MYFILE2.TXT"
+#define FILENAME_NESTED "/TEST/MYFILE2.TXT"
+#define ORIG_FILENAME "/myfile2.txt"
 #define LONGFILENAME "/mylongfilenamefile.txt"
 #define LONGFILENAME2 "/mylongfilenamefilesecond.txt"
 #define FILE_NOT_EXIST "/not-exist.txt"
@@ -216,9 +218,11 @@ int main(int argc, char *argv[])
 
     run_test_fail(test_read_dir, DIR_NOT_EXIST);
 
-    run_test(test_fwrite, MOUNTPOINT FILENAME);
+    run_test(test_fread, MOUNTPOINT FILENAME_NESTED);
 
     run_test(test_fread, MOUNTPOINT FILENAME);
+
+    run_test(test_fwrite, MOUNTPOINT ORIG_FILENAME);
 
     return EXIT_SUCCESS;
 }
