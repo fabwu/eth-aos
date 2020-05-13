@@ -454,7 +454,18 @@ errval_t fat32fs_tell(void *handle, size_t *pos)
 
 errval_t fat32fs_close(void *handle)
 {
-    USER_PANIC("NYI\n");
+    struct fs_handle *fh = handle;
+    struct fat32fs_dirent *dirent = fh->state;
+
+    if (dirent->is_dir) {
+        return FS_ERR_NOTFILE;
+    }
+
+    free(dirent->name);
+    free(dirent);
+    free(fh);
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_remove(void *st, const char *path)
