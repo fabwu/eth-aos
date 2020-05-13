@@ -129,12 +129,14 @@ errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32_t sect
 {
     errval_t err;
 
-    cpu_dcache_wbinv_range((genvaddr_t)block->virt, SDHC_BLOCK_SIZE);
+    if (sector != block->sec) {
+        cpu_dcache_wbinv_range((genvaddr_t)block->virt, SDHC_BLOCK_SIZE);
 
-    err = sdhc_read_block(sd, sector, block->phy);
-    assert(err_is_ok(err));
+        err = sdhc_read_block(sd, sector, block->phy);
+        assert(err_is_ok(err));
 
-    block->sec = sector;
+        block->sec = sector;
+    }
 
     // cpu_dcache_inv_range((genvaddr_t)block, ROUND_UP(SDHC_BLOCK_SIZE, BASE_PAGE_SIZE));
 
@@ -264,6 +266,11 @@ uint32_t get_sector_for_fat(struct fat32_fs *fs, uint32_t cluster)
 uint32_t get_offset_for_fat(struct fat32_fs *fs, uint32_t cluster)
 {
     return (cluster * FAT_32_BYTES_PER_CLUSTER_ENTRY) % fs->bytes_per_sec;
+}
+
+uint32_t get_bytes_per_clus(struct fat32_fs *fs)
+{
+    return fs->bytes_per_sec * fs->sec_per_clus;
 }
 
 static int fs_is_illegal_character_dir_entry_name(char c)

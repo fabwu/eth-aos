@@ -17,8 +17,10 @@
 struct fat32fs_dir_state {
     uint32_t clus;
     uint32_t sec;
-    // position in between bytes, as need/defined by seek
+    // Position in between bytes, as need/defined by seek
     uint32_t des_pos;
+    // How many clusters we dereferenced already
+    uint32_t depth;
     uint16_t entry;
 };
 
@@ -33,24 +35,46 @@ struct fat32fs_dirent {
     struct fat32fs_dir_state dir_state;
 };
 
+static bool fat32fs_is_clus_eof(uint32_t clus)
+{
+    return clus == FAT_32_BAD_CLUSTER_ENTRY || clus >= FAT_32_MIN_EOF_CLUSTER_ENTRY;
+}
+
+static errval_t fat32fs_get_next_clus(struct fat32_fs *fs, uint32_t curr_clus,
+                                      uint32_t *next_clus)
+{
+    errval_t err;
+
+    uint32_t curr_fat_sector = get_sector_for_fat(fs, curr_clus);
+    err = fs_read_sector(fs->sd, &fs->fat, curr_fat_sector);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    uint32_t tmp_next_clus = *(uint32_t *)(fs->fat.virt
+                                           + get_offset_for_fat(fs, curr_clus));
+    tmp_next_clus &= FAT_32_CLUSTER_ENTRY_MASK;
+
+    *next_clus = tmp_next_clus;
+
+    return SYS_ERR_OK;
+}
+
 static errval_t fat32fs_next_dir_entry(struct fat32_fs *fs,
                                        struct fat32fs_dir_state *state, void **entry,
                                        bool *end)
 {
     errval_t err;
 
-    if (state->clus == FAT_32_BAD_CLUSTER_ENTRY
-        || state->clus >= FAT_32_MIN_EOF_CLUSTER_ENTRY) {
+    if (fat32fs_is_clus_eof(state->clus)) {
         *end = 1;
         return SYS_ERR_OK;
     }
 
     uint32_t data_sector = state->sec + get_sector_for_data(fs, state->clus);
-    if (data_sector != fs->data.sec) {
-        err = fs_read_sector(fs->sd, &fs->data, data_sector);
-        if (err_is_fail(err)) {
-            return err;
-        }
+    err = fs_read_sector(fs->sd, &fs->data, data_sector);
+    if (err_is_fail(err)) {
+        return err;
     }
 
     *end = 0;
@@ -71,16 +95,10 @@ static errval_t fat32fs_next_dir_entry(struct fat32_fs *fs,
     if (state->sec > fs->sec_per_clus) {
         state->sec = 0;
 
-        uint32_t curr_fat_sector = get_sector_for_fat(fs, state->clus);
-        if (curr_fat_sector != fs->fat.sec) {
-            err = fs_read_sector(fs->sd, &fs->fat, curr_fat_sector);
-            if (err_is_fail(err)) {
-                return err;
-            }
+        err = fat32fs_get_next_clus(fs, state->clus, &state->clus);
+        if (err_is_fail(err)) {
+            return err;
         }
-
-        state->clus = *(uint32_t *)(fs->fat.virt + get_offset_for_fat(fs, state->clus));
-        state->clus &= FAT_32_CLUSTER_ENTRY_MASK;
     }
 
     return SYS_ERR_OK;
@@ -141,6 +159,10 @@ static errval_t fat32fs_find_dirent(struct fat32_fs *fs, uint32_t cluster, char 
                 dirent->size = *(uint32_t *)(entry + FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET);
             }
 
+            dirent->dir_state.clus = dirent->clus;
+            dirent->dir_state.sec = 0;
+            dirent->dir_state.entry = 0;
+
             dirent->dir_clus = cluster;
 
             *ret_dirent = dirent;
@@ -151,7 +173,6 @@ static errval_t fat32fs_find_dirent(struct fat32_fs *fs, uint32_t cluster, char 
         }
     }
 }
-
 
 // TODO: Mostly duplicating resolve_path of ramfs
 static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
@@ -283,9 +304,92 @@ errval_t fat32fs_create(void *st, const char *path, fs_dirhandle_t *ret_handle)
 {
     USER_PANIC("NYI\n");
 }
+
+static bool fat32fs_right_clus(struct fat32_fs *fs, uint32_t des_pos, uint32_t depth)
+{
+    uint32_t current_clus_pos = depth * get_bytes_per_clus(fs);
+    return des_pos >= current_clus_pos
+           && des_pos < current_clus_pos + get_bytes_per_clus(fs);
+}
+
 errval_t fat32fs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_read)
 {
-    USER_PANIC("NYI\n");
+    errval_t err;
+    struct fs_handle *fh = handle;
+    struct fat32fs_dirent *dirent = fh->state;
+    struct fs_mount *mount = fh->mount;
+    struct fat32_fs *fs = mount->state;
+
+    if (dirent->dir_state.des_pos > dirent->size) {
+        USER_PANIC("We seeked past the end, but we can't write yet!");
+    }
+
+    if (dirent->dir_state.des_pos == dirent->size) {
+        *bytes_read = 0;
+        return SYS_ERR_OK;
+    }
+
+    size_t loc_bytes_read = 0;
+    uint32_t bytes_left = dirent->size - dirent->dir_state.des_pos;
+    while (bytes > 0 && bytes_left > 0) {
+        // Are we at the right clus?
+        uint32_t current_clus_pos = dirent->dir_state.depth * get_bytes_per_clus(fs);
+        if (!fat32fs_right_clus(fs, dirent->dir_state.des_pos, dirent->dir_state.depth)) {
+            dirent->dir_state.depth = 0;
+            dirent->dir_state.clus = dirent->clus;
+            while (!fat32fs_right_clus(fs, dirent->dir_state.des_pos,
+                                       dirent->dir_state.depth)) {
+                // If this assert triggers, something with the size is off
+                assert(!fat32fs_is_clus_eof(dirent->dir_state.clus));
+
+                err = fat32fs_get_next_clus(fs, dirent->dir_state.clus,
+                                            &dirent->dir_state.clus);
+                if (err_is_fail(err)) {
+                    return err;
+                }
+                ++dirent->dir_state.depth;
+            }
+
+            current_clus_pos = dirent->dir_state.depth * get_bytes_per_clus(fs);
+        }
+
+        // Are we at the right sec?
+        uint32_t current_sec_pos = current_clus_pos
+                                   + fs->bytes_per_sec * dirent->dir_state.sec;
+        if (dirent->dir_state.des_pos < current_sec_pos
+            || dirent->dir_state.des_pos >= current_sec_pos + fs->bytes_per_sec) {
+            dirent->dir_state.sec = (dirent->dir_state.des_pos - current_clus_pos)
+                                    / fs->bytes_per_sec;
+
+            current_sec_pos = current_clus_pos + fs->bytes_per_sec * dirent->dir_state.sec;
+        }
+
+        uint32_t data_sector = dirent->dir_state.sec
+                               + get_sector_for_data(fs, dirent->dir_state.clus);
+        err = fs_read_sector(fs->sd, &fs->data, data_sector);
+        if (err_is_fail(err)) {
+            return err;
+        }
+
+        size_t max_chunk = fs->bytes_per_sec
+                           - dirent->dir_state.des_pos % fs->bytes_per_sec;
+        max_chunk = max_chunk < bytes_left ? max_chunk : bytes_left;
+
+        size_t chunk = bytes < max_chunk ? bytes : max_chunk;
+
+        memcpy(buffer, fs->data.virt + dirent->dir_state.des_pos % fs->bytes_per_sec,
+               chunk);
+
+        buffer += chunk;
+        bytes -= chunk;
+        dirent->dir_state.des_pos += chunk;
+        loc_bytes_read += chunk;
+        bytes_left -= chunk;
+    }
+
+    *bytes_read = loc_bytes_read;
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
@@ -302,6 +406,8 @@ errval_t fat32fs_seek(void *handle, enum fs_seekpos whence, off_t offset)
     if (dirent->is_dir) {
         USER_PANIC("NYI\n");
     }
+
+    // FIXME: Write holes when seeking to end
 
     switch (whence) {
     case FS_SEEK_SET:
@@ -392,12 +498,6 @@ errval_t fat32fs_readdir(void *handle, char **retname)
 
     if (!dirent->is_dir) {
         return FS_ERR_NOTDIR;
-    }
-
-    if (dirent->dir_state.clus == 0) {
-        dirent->dir_state.clus = dirent->clus;
-        dirent->dir_state.sec = 0;
-        dirent->dir_state.entry = 0;
     }
 
     void *entry;

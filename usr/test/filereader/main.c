@@ -136,7 +136,7 @@ static errval_t test_fread(char *file)
     size_t filesize = ftell(f);
     rewind(f);
 
-    printf("File size is %zu\n", filesize);
+    debug_printf("File size is %zu\n", filesize);
 
     char *buf = calloc(filesize + 2, sizeof(char));
     if (buf == NULL) {
@@ -145,11 +145,22 @@ static errval_t test_fread(char *file)
 
     size_t read = fread(buf, 1, filesize, f);
 
-    printf("read: %s\n", buf);
+    *(buf + read) = '\0';
+    debug_printf("bytes_read: %zx\n", read);
+    debug_printf("read:\n%s\n", buf);
 
     if (read != filesize) {
         return FS_ERR_READ;
     }
+
+    res = fseek(f, filesize / 2, SEEK_SET);
+    if (res) {
+        return FS_ERR_INVALID_FH;
+    }
+    read = fread(buf, 1, filesize, f);
+    *(buf + read) = '\0';
+    debug_printf("bytes_read: %zx\n", read);
+    debug_printf("read:\n%s\n", buf);
 
     rewind(f);
 

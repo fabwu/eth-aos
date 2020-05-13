@@ -40,6 +40,7 @@ errval_t fs_init(struct fs_mount *mount);
 uint32_t get_sector_for_data(struct fat32_fs *fs, uint32_t cluster);
 uint32_t get_sector_for_fat(struct fat32_fs *fs, uint32_t cluster);
 uint32_t get_offset_for_fat(struct fat32_fs *fs, uint32_t cluster);
+uint32_t get_bytes_per_clus(struct fat32_fs *fs);
 errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32_t sector);
 void fs_process_dir_entry_name(unsigned char *name, unsigned char *eff_name);
 

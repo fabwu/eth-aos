@@ -496,6 +496,8 @@ errval_t ramfs_seek(void *handle, enum fs_seekpos whence, off_t offset)
     struct fs_fileinfo info;
     errval_t err;
 
+    // FIXME: Need to write holes when seeking past end
+
     switch (whence) {
     case FS_SEEK_SET:
         assert(offset >= 0);
