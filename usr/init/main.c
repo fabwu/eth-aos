@@ -24,7 +24,6 @@
 #include <aos/lmp_protocol.h>
 #include <aos/aos_protocol.h>
 #include <mm/mm.h>
-#include <spawn/spawn.h>
 #include <grading.h>
 #include <aos/core_state.h>
 #include <aos/coreboot.h>
@@ -34,60 +33,20 @@
 
 #include "mem_alloc.h"
 #include "rpc.h"
+#include "spawn.h"
 #include "process.h"
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 0
 #define INIT_EXECUTE_SPAWNTEST 0
-#define INIT_EXECUTE_NAMESERVERTEST 0
-#define INIT_EXECUTE_SHELL 1
+#define INIT_EXECUTE_NAMESERVICETEST 0
+#define INIT_EXECUTE_SHELL 0
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
 
 struct bootinfo *bi;
 
 coreid_t my_core_id;
-
-struct lmp_state lmp_state;
-
-static errval_t init_spawn(char *name, domainid_t *pid)
-{
-    errval_t err = SYS_ERR_OK;
-    struct spawninfo *si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-    if (si == NULL) {
-        return INIT_ERR_PREPARE_SPAWN;
-    }
-
-    dispatcher_node_ref node_ref;
-    err = rpc_create_child_channel_to_init(&si->initep, &node_ref);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-        goto out;
-    }
-
-    domainid_t domain_id;
-    err = spawn_load_by_name(name, si, &domain_id);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_SPAWN);
-        goto out;
-    }
-
-    if (pid != NULL) {
-        *pid = domain_id;
-    }
-
-    rpc_dispatcher_node_set_pid(node_ref, domain_id);
-
-    err = process_add(domain_id, my_core_id, name);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_SPAWN);
-        goto out;
-    }
-
-out:
-    free(si);
-    return err;
-}
 
 static int bsp_main(int argc, char *argv[])
 {
@@ -158,12 +117,6 @@ static int bsp_main(int argc, char *argv[])
         return -1;
     }
 
-    err = rpc_initialize_lmp(&lmp_state);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "initialize_lmp failed");
-        return -1;
-    }
-
     process_init();
 
     // Grading
@@ -207,20 +160,20 @@ static int bsp_main(int argc, char *argv[])
     aos_ump_enqueue(&ump, ump_buf, INIT_UMP_BUF_COREBOOT_LENGTH * sizeof(uint64_t));
 
     // boot second core
-    err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
+ //   err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't boot second core\n");
         return -1;
     }
 
-    err = init_spawn("nameserver", NULL);
+    err = init_spawn_by_name("nameserver", NULL);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Couldn't spawn nameserver\n");
         return -EXIT_FAILURE;
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {
-        err = init_spawn("memeater", NULL);
+        err = init_spawn_by_name("memeater", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn memeater\n");
         }
@@ -234,21 +187,21 @@ static int bsp_main(int argc, char *argv[])
     }
 
     if (INIT_EXECUTE_SPAWNTEST) {
-        err = init_spawn("spawnTester", NULL);
+        err = init_spawn_by_name("spawnTester", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn spawntester\n");
         }
     }
 
-    if (INIT_EXECUTE_NAMESERVERTEST) {
-        err = init_spawn("nameservicetest", NULL);
+    if (INIT_EXECUTE_NAMESERVICETEST) {
+        err = init_spawn_by_name("nameservicetest", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn nameservicetest\n");
         }
     }
 
     if (INIT_EXECUTE_SHELL) {
-        err = init_spawn("shell", NULL);
+        err = init_spawn_by_name("shell", NULL);
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn shell");
         }
@@ -257,7 +210,6 @@ static int bsp_main(int argc, char *argv[])
     // Grading
     grading_test_late();
 
-    debug_printf("Message handler loop\n");
     aos_protocol_set_ump(&ump);
     rpc_ump_start_handling();
     lmp_protocol_set_ump_dispatch(true);
@@ -358,14 +310,6 @@ static int app_main(int argc, char *argv[])
 
     grading_setup_app_init(bi);
 
-    err = rpc_initialize_lmp(&lmp_state);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "initialize_lmp failed");
-        return -EXIT_FAILURE;
-    }
-
-    process_init();
-
     grading_test_early();
 
     grading_test_late();
@@ -377,55 +321,6 @@ static int app_main(int argc, char *argv[])
 
     // Do event_dispatch and ump dispatch forever
     aos_protocol_wait_for(NULL);
-
-    // struct waitset *default_ws = get_default_waitset();
-    // while (true) {
-    //     if (aos_ump_can_dequeue(&ump)) {
-    //         DEBUG_PRINTF("received ump command\n");
-
-    //         size_t ump_size = aos_ump_get_capacity(&ump);
-    //         size_t cmd_len;
-    //         aos_ump_dequeue(&ump, &cmd_len, sizeof(size_t));
-    //         char *cmdline = (char *)malloc(cmd_len);
-
-    //         for (size_t i = 0; i < cmd_len; i += ump_size) {
-    //             aos_ump_dequeue(&ump, cmdline + i, MIN(cmd_len - i, ump_size));
-    //         }
-
-    //         // FIXME: Hotfix name extraction
-    //         for (size_t i = 1; i < cmd_len; ++i) {
-    //             if (cmdline[i] == ' ') {
-    //                 cmdline[i] = '\0';
-    //             }
-    //         }
-
-    //         domainid_t pid = 0;
-    //         err = init_spawn(cmdline, &pid);
-    //         if (err_is_fail(err)) {
-    //             DEBUG_ERR(err, "Couldn't spawn %s\n", cmdline);
-    //             return -EXIT_FAILURE;
-    //         } else {
-    //             DEBUG_PRINTF("Spawned %s with pid %d\n", cmdline, pid);
-    //         }
-
-    //         // FIXME: Improve (use only 16 bytes instead of ump_size)
-    //         uint8_t ump_buf2[ump_size];
-    //         *((errval_t *)ump_buf2) = err;
-    //         *((domainid_t *)(ump_buf2 + sizeof(errval_t))) = pid;
-    //         err = aos_ump_enqueue(&ump, ump_buf2, ump_size);
-    //         if (err_is_fail(err)) {
-    //             DEBUG_ERR(err, "Couldn't reply pid %d\n", pid);
-    //             return -EXIT_FAILURE;
-    //         }
-    //     } else {
-    //         err = event_dispatch_non_block(default_ws);
-    //         if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
-    //             DEBUG_ERR(err, "in event_dispatch");
-    //             abort();
-    //         }
-    //         thread_yield();
-    //     }
-    // }
 
     return EXIT_SUCCESS;
 }
@@ -445,6 +340,12 @@ int main(int argc, char *argv[])
     }
     printf("\n");
     fflush(stdout);
+
+    // set init selfep
+    err = cap_retype(cap_selfep, cap_dispatcher, 0, ObjType_EndPointLMP, 0, 1);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_RETYPE);
+    }
 
     if (my_core_id == 0)
         return bsp_main(argc, argv);

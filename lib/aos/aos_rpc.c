@@ -19,17 +19,16 @@
 /// RPC channel to init
 static struct aos_rpc rpc_init;
 
-static void aos_rpc_assert(struct aos_rpc *rpc)
+void aos_rpc_init(void)
 {
-    assert(rpc != NULL);
-    assert(rpc->chan.endpoint != NULL);
-    assert(!capref_is_null(rpc->chan.remote_cap));
-    assert(!capref_is_null(rpc->chan.local_cap));
+    //FIXME Use different init on second core
+    rpc_init.recv_id = 0x0;
+    rpc_init.send_id = disp_get_domain_id();
+    set_init_rpc(&rpc_init);
 }
 
-void aos_rpc_set_init_channel(struct lmp_chan chan)
-{
-    rpc_init.chan = chan;
+static uint64_t create_header(struct aos_rpc *rpc, uint16_t msg_type) {
+    return AOS_RPC_HEADER(rpc->send_id, rpc->recv_id, msg_type);
 }
 
 errval_t aos_rpc_send_number(struct aos_rpc *rpc, uintptr_t num)
@@ -37,9 +36,7 @@ errval_t aos_rpc_send_number(struct aos_rpc *rpc, uintptr_t num)
     // Protocol
     // Request: AOS_RPC_SEND_NUMBER, number
     // Response: None
-
-    aos_rpc_assert(rpc);
-    return lmp_protocol_send1(&rpc->chan, AOS_RPC_SEND_NUMBER, num);
+    return lmp_protocol_send1(get_init_chan(), create_header(rpc, AOS_RPC_SEND_NUMBER), num);
 }
 
 errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)
@@ -48,9 +45,7 @@ errval_t aos_rpc_send_string(struct aos_rpc *rpc, const char *string)
     // Requests: send_string(AOS_RPC_SEND_STRING, string)
     // (Up to strlen(string) / 4 + 2 messages are sent)
     // Response: None
-
-    aos_rpc_assert(rpc);
-    return lmp_protocol_send_string(&rpc->chan, AOS_RPC_SEND_STRING, string);
+    return lmp_protocol_send_string(get_init_chan(), create_header(rpc, AOS_RPC_SEND_STRING), string);
 }
 
 errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment,
@@ -62,10 +57,9 @@ errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment
     // Response Cap: Aquired RAM capability
 
     errval_t err;
-    aos_rpc_assert(rpc);
 
     // Request ram cap
-    err = lmp_protocol_send2(&rpc->chan, AOS_RPC_GET_RAM_CAP, bytes, alignment);
+    err = lmp_protocol_send2(get_init_chan(), create_header(rpc, AOS_RPC_GET_RAM_CAP), bytes, alignment);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_RAM_CAP);
     }
@@ -74,7 +68,7 @@ errval_t aos_rpc_get_ram_cap(struct aos_rpc *rpc, size_t bytes, size_t alignment
     uintptr_t ret_size = 0;
     uintptr_t ret_alignment = 0;
     uintptr_t ret_success = 0;
-    err = lmp_protocol_recv_cap3(&rpc->chan, AOS_RPC_GET_RAM_CAP, ret_cap, &ret_size,
+    err = lmp_protocol_recv_cap3(get_init_chan(), create_header(rpc, AOS_RPC_GET_RAM_CAP), ret_cap, &ret_size,
                                  &ret_alignment, &ret_success);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_RAM_CAP);
@@ -102,10 +96,9 @@ errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr)
     // Response: AOS_RPC_FREE_RAM_CAP, physical address, success
 
     errval_t err;
-    aos_rpc_assert(rpc);
 
     // Try freeing RAM
-    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_FREE_RAM_CAP, addr);
+    err = lmp_protocol_send1(get_init_chan(), create_header(rpc, AOS_RPC_FREE_RAM_CAP), addr);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_FREE_RAM_CAP);
     }
@@ -113,7 +106,7 @@ errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr)
     // Handle response
     uintptr_t ret_addr = 0;
     uintptr_t ret_success = 0;
-    err = lmp_protocol_recv2(&rpc->chan, AOS_RPC_FREE_RAM_CAP, &ret_addr, &ret_success);
+    err = lmp_protocol_recv2(get_init_chan(), create_header(rpc, AOS_RPC_FREE_RAM_CAP), &ret_addr, &ret_success);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_FREE_RAM_CAP);
     } else if (!ret_success) {
@@ -134,9 +127,7 @@ errval_t aos_rpc_serial_getchar(struct aos_rpc *rpc, char *retc)
     // FIXME: Not implemented
     // Request: AOS_RPC_SERIAL_GETCHAR
     // TODO: Response: AOS_RPC_SERIAL_GETCHAR, char
-
-    aos_rpc_assert(rpc);
-    return lmp_protocol_send0(&rpc->chan, AOS_RPC_SERIAL_GETCHAR);
+    return lmp_protocol_send0(get_init_chan(), create_header(rpc, AOS_RPC_SERIAL_GETCHAR));
 }
 
 errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c)
@@ -145,9 +136,7 @@ errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c)
     // FIXME: Send pid of process, so serial service can add line buffer per child
     // Request: AOS_RPC_SERIAL_GETCHAR, char
     // Response: None
-
-    aos_rpc_assert(rpc);
-    return lmp_protocol_send1(&rpc->chan, AOS_RPC_SERIAL_PUTCHAR, c);
+    return lmp_protocol_send1(get_init_chan(), create_header(rpc, AOS_RPC_SERIAL_PUTCHAR), c);
 }
 
 errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core,
@@ -160,25 +149,24 @@ errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core
     // Response: AOS_RPC_PROCESS_SPAWN, domain id, success
 
     errval_t err;
-    aos_rpc_assert(rpc);
     assert(newpid != NULL);
     uintptr_t ret_pid = 0;
     uintptr_t ret_success = 0;
 
     // Request process spawn on specified core
-    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_PROCESS_SPAWN, core);
+    err = lmp_protocol_send1(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_SPAWN), core);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
     }
 
     // Send commandline that should be used to spawn process
-    err = lmp_protocol_send_string(&rpc->chan, AOS_RPC_PROCESS_SPAWN_CMD, cmdline);
+    err = lmp_protocol_send_string(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_SPAWN_CMD), cmdline);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
     }
 
     // Get pid and success information
-    err = lmp_protocol_recv2(&rpc->chan, AOS_RPC_PROCESS_SPAWN, &ret_pid, &ret_success);
+    err = lmp_protocol_recv2(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_SPAWN), &ret_pid, &ret_success);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
     } else if (!ret_success) {
@@ -201,15 +189,14 @@ errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **na
     //     recv_string(AOS_RPC_PROCESS_GET_NAME_STR, &name)
 
     errval_t err;
-    aos_rpc_assert(rpc);
 
-    err = lmp_protocol_send1(&rpc->chan, AOS_RPC_PROCESS_GET_NAME, pid);
+    err = lmp_protocol_send1(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_GET_NAME), pid);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_NAME);
     }
 
     uintptr_t success;
-    err = lmp_protocol_recv1(&rpc->chan, AOS_RPC_PROCESS_GET_NAME, &success);
+    err = lmp_protocol_recv1(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_GET_NAME), &success);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_NAME);
     }
@@ -217,8 +204,8 @@ errval_t aos_rpc_process_get_name(struct aos_rpc *rpc, domainid_t pid, char **na
         return AOS_ERR_RPC_GET_NAME;
     }
 
-    char *ret_name;
-    err = lmp_protocol_recv_string(&rpc->chan, AOS_RPC_PROCESS_GET_NAME_STR, &ret_name);
+    char * ret_name;
+    err = lmp_protocol_recv_string(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_GET_NAME_STR), &ret_name);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_NAME);
     }
@@ -238,16 +225,16 @@ errval_t aos_rpc_process_get_all_pids(struct aos_rpc *rpc, domainid_t **pids,
     // Respons: recv_bytes(AOS_RPC_PROCESS_GET_ALL_PIDS, &pid_count, &pids)
 
     errval_t err;
-    aos_rpc_assert(rpc);
 
-    err = lmp_protocol_send0(&rpc->chan, AOS_RPC_PROCESS_GET_ALL_PIDS);
+    err = lmp_protocol_send0(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_GET_ALL_PIDS));
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_PIDS);
     }
 
     size_t size;
-    uint8_t *bytes;
-    err = lmp_protocol_recv_bytes(&rpc->chan, AOS_RPC_PROCESS_GET_ALL_PIDS, &size, &bytes);
+    uint8_t * bytes;
+    err = lmp_protocol_recv_bytes(
+        get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_GET_ALL_PIDS), &size, &bytes);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_PIDS);
     }
@@ -269,8 +256,7 @@ errval_t aos_rpc_process_exit(struct aos_rpc *rpc)
     // Protocol
     // Request: AOS_RPC_PROCESS_EXIT
     // Responses: None
-
-    return lmp_protocol_send0(&rpc->chan, AOS_RPC_PROCESS_EXIT);
+    return lmp_protocol_send0(get_init_chan(), create_header(rpc, AOS_RPC_PROCESS_EXIT));
 }
 
 errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t bytes,
@@ -281,10 +267,9 @@ errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t byte
     // Response: AOS_RPC_GET_DEVICE_CAP, physical address, size, success
     // Response Cap: Aquired Device Cap
     errval_t err;
-    aos_rpc_assert(rpc);
 
     // Request ram cap
-    err = lmp_protocol_send2(&rpc->chan, AOS_RPC_GET_DEVICE_CAP, paddr, bytes);
+    err = lmp_protocol_send2(get_init_chan(), create_header(rpc, AOS_RPC_GET_DEVICE_CAP), paddr, bytes);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_DEVICE_CAP);
     }
@@ -293,7 +278,7 @@ errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t byte
     uintptr_t ret_paddr = 0;
     uintptr_t ret_bytes = 0;
     uintptr_t ret_success = 0;
-    err = lmp_protocol_recv_cap3(&rpc->chan, AOS_RPC_GET_DEVICE_CAP, ret_cap, &ret_paddr,
+    err = lmp_protocol_recv_cap3(get_init_chan(), create_header(rpc, AOS_RPC_GET_DEVICE_CAP), ret_cap, &ret_paddr,
                                  &ret_bytes, &ret_success);
     if (err_is_fail(err)) {
         return err_push(err, AOS_ERR_RPC_GET_RAM_CAP);

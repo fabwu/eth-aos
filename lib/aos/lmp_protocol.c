@@ -13,7 +13,7 @@
 
 struct lmp_msg_state {
     struct lmp_chan *chan;
-    uint16_t message_type;
+    uint64_t header;
     struct capref cap;
     uintptr_t data[3];
     bool done;
@@ -28,13 +28,13 @@ void lmp_protocol_set_ump_dispatch(bool value)
 }
 
 static struct lmp_msg_state make_lmp_msg_state(struct lmp_chan *chan,
-                                               uint16_t message_type, struct capref cap,
+                                               uint64_t header, struct capref cap,
                                                uintptr_t arg1, uintptr_t arg2,
                                                uintptr_t arg3)
 {
     struct lmp_msg_state state;
     state.chan = chan;
-    state.message_type = message_type;
+    state.header = header;
     state.cap = cap;
     state.data[0] = arg1;
     state.data[1] = arg2;
@@ -72,7 +72,7 @@ static void lmp_protocol_send_closure(void *arg)
 
     struct lmp_msg_state *state = (struct lmp_msg_state *)arg;
     err = lmp_chan_send4(state->chan, LMP_SEND_FLAGS_DEFAULT, state->cap,
-                         state->message_type, state->data[0], state->data[1],
+                         state->header, state->data[0], state->data[1],
                          state->data[2]);
 
     if (err_is_ok(err)) {
@@ -120,12 +120,6 @@ static void lmp_protocol_recv_closure(void *arg)
     err = lmp_chan_recv(state->chan, &msg, &state->cap);
 
     if (err_is_ok(err)) {
-        // Check message type
-        assert(msg.words[0] == state->message_type);
-        if (msg.words[0] != state->message_type) {
-            state->failed = true;
-        }
-
         if (!capref_is_null(state->cap)) {
             // Allocate slot for next receive
             err = lmp_chan_alloc_recv_slot(state->chan);
@@ -178,11 +172,10 @@ static errval_t lmp_protocol_recv_state(struct lmp_msg_state *state)
 /**
  * \brief Send given lmp message over given lmp channel.
  */
-errval_t lmp_protocol_send(struct lmp_chan *chan, uint16_t message_type, struct capref cap,
+errval_t lmp_protocol_send(struct lmp_chan *chan, uint64_t header, struct capref cap,
                            uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
-    struct lmp_msg_state state = make_lmp_msg_state(chan, message_type, cap, arg1, arg2,
+    struct lmp_msg_state state = make_lmp_msg_state(chan, header, cap, arg1, arg2,
                                                     arg3);
     return lmp_protocol_send_state(&state);
 }
@@ -194,10 +187,9 @@ errval_t lmp_protocol_recv(struct lmp_chan *chan, uint16_t message_type,
                            struct capref *ret_cap, uintptr_t *ret_arg1,
                            uintptr_t *ret_arg2, uintptr_t *ret_arg3)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     struct lmp_msg_state state;
     state.chan = chan;
-    state.message_type = message_type;
+    state.header = message_type;
 
     errval_t err = lmp_protocol_recv_state(&state);
     if (err_is_fail(err)) {
@@ -227,13 +219,12 @@ errval_t lmp_protocol_recv(struct lmp_chan *chan, uint16_t message_type,
  * messages contain <= 3*8 bytes until all bytes have been sent. The last message contains
  * the remaining bytes followed by 0 entries.
  */
-errval_t lmp_protocol_send_bytes_cap(struct lmp_chan *chan, uint16_t message_type,
+errval_t lmp_protocol_send_bytes_cap(struct lmp_chan *chan, uint64_t header,
                                      struct capref cap, size_t size, const uint8_t *bytes)
 {
     errval_t err;
 
-    assert((message_type & 0xff00) && (message_type & 0xff));
-    struct lmp_msg_state state = make_lmp_msg_state(chan, message_type, cap, size, 0, 0);
+    struct lmp_msg_state state = make_lmp_msg_state(chan, header, cap, size, 0, 0);
 
     memcpy(&state.data[1], bytes, MIN(size, 2 * LMP_PROTOCOL_DATA_ENTRY_SIZE));
     size_t offset = 2 * LMP_PROTOCOL_DATA_ENTRY_SIZE;
@@ -276,15 +267,13 @@ errval_t lmp_protocol_recv_bytes_cap_la(struct lmp_chan *chan, uint16_t message_
 {
     errval_t err;
 
-    assert((message_type & 0xff00) && (message_type & 0xff));
     assert(ret_bytes != NULL);
     struct lmp_msg_state state;
     state.chan = chan;
-    state.message_type = message_type;
+    state.header = message_type;
 
     if (lookahead != NULL) {
         // Use lookahead message instead of receiving a new message
-        assert(message_type == lookahead->words[0]);
         state.data[0] = lookahead->words[1];
         state.data[1] = lookahead->words[2];
         state.data[2] = lookahead->words[3];
@@ -330,12 +319,11 @@ errval_t lmp_protocol_recv_bytes_cap_la(struct lmp_chan *chan, uint16_t message_
 /**
  * \brief Sends the given \0 terminated string over the given lmp channel.
  */
-errval_t lmp_protocol_send_string_cap(struct lmp_chan *chan, uint16_t message_type,
+errval_t lmp_protocol_send_string_cap(struct lmp_chan *chan, uint64_t header,
                                       struct capref cap, const char *string)
 {
     size_t size = strlen(string) + 1;
-    return lmp_protocol_send_bytes_cap(chan, message_type, cap, size,
-                                       (const uint8_t *)string);
+    return lmp_protocol_send_bytes_cap(chan, header, cap, size, (const uint8_t *)string);
 }
 
 /**

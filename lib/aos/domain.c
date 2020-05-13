@@ -158,23 +158,6 @@ void set_current_paging_state(struct paging_state *st)
 }
 
 /**
- * \brief Returns a pointer to the lpm state on the dispatcher priv
- */
-struct lmp_state *get_current_lmp_state(void)
-{
-    dispatcher_handle_t handle = curdispatcher();
-    struct dispatcher_generic *disp = get_dispatcher_generic(handle);
-    return disp->core_state.c.lmp_state;
-}
-
-void set_current_lmp_state(struct lmp_state *st)
-{
-    dispatcher_handle_t handle = curdispatcher();
-    struct dispatcher_generic *disp = get_dispatcher_generic(handle);
-    disp->core_state.c.lmp_state = st;
-}
-
-/**
  * \brief Returns a pointer to the ram_alloc state on the dispatcher priv
  */
 struct ram_alloc_state *get_ram_alloc_state(void)
@@ -195,23 +178,13 @@ struct slot_alloc_state *get_slot_alloc_state(void)
 }
 
 /**
- * \brief set the init client binding on the dispatcher priv
+ * \brief Returns the LMP channel to init on the dispatcher priv
  */
-void set_init_chan(struct aos_chan *initchan)
+struct lmp_chan *get_init_chan(void)
 {
     dispatcher_handle_t handle = curdispatcher();
     struct dispatcher_generic* disp = get_dispatcher_generic(handle);
-    disp->core_state.c.init_chan = initchan;
-}
-
-/**
- * \brief Returns the monitor client binding on the dispatcher priv
- */
-struct aos_chan *get_init_chan(void)
-{
-    dispatcher_handle_t handle = curdispatcher();
-    struct dispatcher_generic* disp = get_dispatcher_generic(handle);
-    return disp->core_state.c.init_chan;
+    return &disp->core_state.c.init_chan;
 }
 
 /**

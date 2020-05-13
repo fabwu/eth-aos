@@ -1,5 +1,6 @@
 #include "process.h"
 #include "rpc.h"
+#include "spawn.h"
 
 static struct process_state state;
 
@@ -24,11 +25,12 @@ void process_init(void)
 }
 
 void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg,
-                                struct dispatcher_node *node)
+                                struct spawn_node *node)
 {
     errval_t err;
+    struct lmp_chan *lmp_chan = &node->chan;
     if (disp_get_core_id() == INIT_PROCESS_PIN_TO_CORE) {
-        struct aos_chan chan = make_aos_chan_lmp(&node->chan);
+        struct aos_chan chan = make_aos_chan_lmp(lmp_chan);
 
         switch (message_type) {
         case AOS_RPC_PROCESS_SPAWN:
@@ -77,7 +79,6 @@ void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg
 
 static errval_t process_spawn_remote(struct aos_chan *chan, size_t msg_length) {
     errval_t err = SYS_ERR_OK;
-    struct spawninfo *si = NULL;
     domainid_t pid;
 
     char *cmdline;
@@ -96,30 +97,13 @@ static errval_t process_spawn_remote(struct aos_chan *chan, size_t msg_length) {
 
     grading_rpc_handler_process_spawn(argv[0], disp_get_core_id());
 
-    si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-    if (si == NULL) {
-        err = INIT_ERR_PREPARE_SPAWN;
-        goto out;
-    }
-
-    dispatcher_node_ref node_ref;
-    err = rpc_create_child_channel_to_init(&si->initep, &node_ref);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-        goto out;
-    }
-
-    err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
+    err = init_spawn_by_argv(argc, argv, &pid);
     if (err_is_fail(err)) {
         err = err_push(err, INIT_ERR_SPAWN);
         goto out;
     }
 
-    rpc_dispatcher_node_set_pid(node_ref, pid);
 out:
-    if (si != NULL) {
-        free(si);
-    }
     if (argv != NULL) {
         free_argv(argv, buf);
     }
@@ -224,7 +208,6 @@ errval_t process_add(domainid_t pid, coreid_t core_id, char *name)
 errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
 {
     errval_t err = SYS_ERR_OK;
-    struct spawninfo *si = NULL;
     domainid_t pid;
 
     char *cmdline;
@@ -244,26 +227,11 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
     grading_rpc_handler_process_spawn(argv[0], core_id);
 
     if (core_id == disp_get_core_id()) {
-        si = (struct spawninfo *)malloc(sizeof(struct spawninfo));
-        if (si == NULL) {
-            err = INIT_ERR_PREPARE_SPAWN;
-            goto out;
-        }
-
-        dispatcher_node_ref node_ref;
-        err = rpc_create_child_channel_to_init(&si->initep, &node_ref);
-        if (err_is_fail(err)) {
-            err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-            goto out;
-        }
-
-        err = spawn_load_by_name_argv(argv[0], argc, argv, si, &pid);
+        err = init_spawn_by_argv(argc, argv, &pid);
         if (err_is_fail(err)) {
             err = err_push(err, INIT_ERR_SPAWN);
             goto out;
         }
-
-        rpc_dispatcher_node_set_pid(node_ref, pid);
     } else {
         size_t cmd_len = strlen(cmdline) + 1;
 
@@ -287,12 +255,19 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
         // Get pid and success information
         uintptr_t ret_pid = 0;
         uintptr_t ret_success = 0;
-        err = aos_protocol_recv2(&remote_chan, AOS_RPC_PROCESS_SPAWN_REMOTE, &ret_pid, &ret_success);
+        err = aos_protocol_recv2(&remote_chan, AOS_RPC_PROCESS_SPAWN_REMOTE, &ret_pid,
+                                 &ret_success);
         if (err_is_fail(err)) {
             err = err_push(err, AOS_ERR_RPC_SPAWN_PROCESS);
             goto out;
         } else if (!ret_success) {
             err = AOS_ERR_RPC_SPAWN_PROCESS;
+            goto out;
+        }
+
+        err = process_add(pid, core_id, argv[0]);
+        if (err_is_fail(err)) {
+            err = err_push(err, INIT_ERR_SPAWN);
             goto out;
         }
 
@@ -302,16 +277,7 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
         DEBUG_PRINTF("Received ump reply from core %u: Spawned pid %d\n", core_id, pid);
     }
 
-    err = process_add(pid, core_id, argv[0]);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_SPAWN);
-        goto out;
-    }
-
 out:
-    if (si != NULL) {
-        free(si);
-    }
     if (argv != NULL) {
         free_argv(argv, buf);
     }

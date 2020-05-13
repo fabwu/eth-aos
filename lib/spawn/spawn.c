@@ -15,9 +15,12 @@
 
 #define L1_NODE_SLOT_OFFSET 50
 
-#define SPAWN_DEBUG_DISPATCHER 0
-#define SPAWN_DEBUG_ELF 0
-#define SPAWN_DEBUG_COPY_CAPS 0
+#if 0
+#    define DEBUG_SPAWN(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_SPAWN(fmt...) ((void)0)
+#endif
+
 
 extern struct bootinfo *bi;
 extern coreid_t my_core_id;
@@ -67,9 +70,7 @@ static errval_t spawn_setup_dispatcher(struct spawninfo *si)
         return err_push(err, SPAWN_ERR_CREATE_DISPATCHER_FRAME);
     }
 
-    if (SPAWN_DEBUG_DISPATCHER) {
-        DEBUG_PRINTF("Created dispatcher DCB and frame\n");
-    }
+    DEBUG_SPAWN("Created dispatcher DCB and frame\n");
 
     return SYS_ERR_OK;
 }
@@ -194,6 +195,7 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
 
 static errval_t spawn_child_cspace_set_initep(struct spawninfo *si)
 {
+    // add init ep to domain cnode
     struct capref task_cnode_cap;
     task_cnode_cap.cnode = si->task_cnode_ref;
     task_cnode_cap.slot = TASKCN_SLOT_INITEP;
@@ -272,11 +274,9 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
         assert(false);
     }
 
-#if SPAWN_DEBUG_ELF
-    DEBUG_PRINTF("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
+    DEBUG_SPAWN("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
                  "frame flags 0x%x\n",
                  base, size, flags, frame_flags);
-#endif
 
     genvaddr_t aligned_base = ROUND_DOWN(base, BASE_PAGE_SIZE);
     size_t aligned_size = ROUND_UP(size + (base - aligned_base), BASE_PAGE_SIZE);
@@ -420,12 +420,10 @@ static errval_t spawn_dispatch(struct spawninfo *si, domainid_t pid)
     disp_gen->eh_frame_hdr = 0;
     disp_gen->eh_frame_hdr_size = 0;
 
-    if (SPAWN_DEBUG_DISPATCHER) {
-        DEBUG_PRINTF("Dispatcher setup completed\n");
-        dump_dispatcher(disp);
-    }
+    DEBUG_SPAWN("Dispatcher setup completed\n");
+    //dump_dispatcher(disp);
 
-        struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
+    struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
     err = invoke_dispatcher(si->dispatcher, cap_dispatcher, si->cspace, vspace,
                             si->child_dispframe, true);
     if (err_is_fail(err)) {
@@ -459,23 +457,7 @@ static errval_t spawn_free(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
-/**
- * \brief Spawn a new dispatcher called 'argv[0]' with 'argc' arguments.
- *
- * This function spawns a new dispatcher running the ELF binary called
- * 'argv[0]' with 'argc' - 1 additional arguments. It fills out 'si'
- * and 'pid'.
- *
- * \param argc The number of command line arguments. Must be > 0.
- * \param argv An array storing 'argc' command line arguments.
- * \param si A pointer to the spawninfo struct representing
- * the child. It will be filled out by this function. Must not be NULL.
- * \param pid A pointer to a domainid_t variable that will be
- * assigned to by this function. Must not be NULL.
- * \return Either SYS_ERR_OK if no error occured or an error
- * indicating what went wrong otherwise.
- */
-errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
+static errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
 {
     assert(argv[0]);
     errval_t err;
@@ -494,13 +476,11 @@ errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_
     }
 
     // currently the location of the binary is given by si->module_base and si->module_size
-#if SPAWN_DEBUG_ELF
-    DEBUG_PRINTF("Located ELF binary at address %p with size %d\n", si->module_base,
+    DEBUG_SPAWN("Located ELF binary at address %p with size %d\n", si->module_base,
                  si->module_size);
-#endif
 
     uint8_t magic_number = *(uint8_t *)si->module_base;
-    // DEBUG_PRINTF("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
+    DEBUG_SPAWN("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
     if (magic_number != 0x7f) {
         return ELF_ERR_HEADER;
     }
@@ -570,10 +550,8 @@ static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char
         return err_push(err, SPAWN_ERR_MAP_MODULE);
     }
 
-#if SPAWN_DEBUG_ELF
-    DEBUG_PRINTF("Found image of type %d and size %d at paddress %p with data diff %d\n",
+    DEBUG_SPAWN("Found image of type %d and size %d at paddress %p with data diff %d\n",
                  module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
-#endif
 
     // spawn binary
     err = spawn_load_argv(argc, argv, si, pid);
@@ -591,9 +569,8 @@ static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char
 }
 
 /**
- * \brief Spawn a new dispatcher executing 'binary_name'
+ * \brief Spawn a new dispatcher executing argv[0]
  *
- * \param binary_name The name of the binary.
  * \param argc The number of command line arguments. Must be > 0.
  * \param argv An array storing 'argc' command line arguments.
  * \param si A pointer to a spawninfo struct that will be
@@ -604,11 +581,14 @@ static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char
  * \return Either SYS_ERR_OK if no error occured or an error
  * indicating what went wrong otherwise.
  */
-errval_t spawn_load_by_name_argv(char *binary_name, int argc, char *argv[],
-                                 struct spawninfo *si, domainid_t *pid)
+errval_t spawn_load_by_argv(int argc, char *argv[], struct spawninfo *si,
+                                 domainid_t *pid)
 {
+    assert(argc > 0);
+    assert(argv[0]);
+
     // find multiboot image
-    struct mem_region *module = multiboot_find_module(bi, binary_name);
+    struct mem_region *module = multiboot_find_module(bi, argv[0]);
     if (module == NULL) {
         return SPAWN_ERR_FIND_MODULE;
     }
@@ -618,6 +598,8 @@ errval_t spawn_load_by_name_argv(char *binary_name, int argc, char *argv[],
 
 /**
  * \brief Spawn a new dispatcher executing 'binary_name'
+ *
+ * Arguments are parsed from the multiboot image.
  *
  * \param binary_name The name of the binary.
  * \param si A pointer to a spawninfo struct that will be

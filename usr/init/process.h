@@ -16,17 +16,16 @@
 #include <machine/atomic.h>
 #include <grading.h>
 
+#include "spawn.h"
 
 #define INIT_PROCESS_PIN_TO_CORE 0
 
-// TODO: Could be improved by using an AVL tree or similar instead of a linked list
 struct process_node {
     domainid_t pid;
     coreid_t core_id;
     char name[DISP_NAME_LEN];
     struct process_node *next;
 };
-
 
 struct process_state {
     struct slab_allocator slabs;
@@ -40,7 +39,7 @@ struct process_state {
 void process_init(void);
 
 void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg,
-                           struct dispatcher_node *node);
+                           struct spawn_node *node);
 
 void process_handle_ump_request(uintptr_t message_type, uint8_t *buf);
 
@@ -48,6 +47,11 @@ void process_handle_ump_request(uintptr_t message_type, uint8_t *buf);
  * \brief Spawns process.
  */
 errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id);
+
+/**
+ * \brief Get LMP channel for the given pid.
+ */
+errval_t process_get_lmp_chan(domainid_t pid, struct lmp_chan *chan);
 
 /**
  * \brief Add process to running processes.

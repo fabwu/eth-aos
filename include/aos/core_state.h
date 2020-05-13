@@ -64,18 +64,6 @@ struct slot_alloc_state {
     struct single_slot_allocator rootca;
 };
 
-struct dispatcher_node {
-    struct lmp_chan chan;
-    enum { DISPATCHER_DISCONNECTED, DISPATCHER_CONNECTED } state;
-    struct dispatcher_node *next;
-    domainid_t pid;  ///< PID of the referenced process
-};
-
-struct lmp_state {
-    struct slab_allocator slabs;
-    struct dispatcher_node *head;
-};
-
 struct terminal_state;
 struct domain_state;
 struct spawn_state;
@@ -84,16 +72,14 @@ struct mem_rpc_client;
 struct spawn_rpc_client;
 struct paging_state;
 
-
 struct core_state_generic {
     struct waitset default_waitset;
-    struct aos_chan *init_chan;
+    struct lmp_chan init_chan;
     struct aos_rpc *init_rpc;
     struct morecore_state morecore_state;
     struct paging_state *paging_state;
     struct ram_alloc_state ram_alloc_state;
     struct slot_alloc_state slot_alloc_state;
-    struct lmp_state *lmp_state;
 };
 
 #endif

@@ -20,9 +20,6 @@
 
 
 struct spawninfo {
-    // the next in the list of spawned domains
-    struct spawninfo *next;
-
     // Information about the binary
     char *binary_name;  // Name of the binary
 
@@ -50,11 +47,7 @@ struct spawninfo {
 // Start a child process using the multiboot command line. Fills in si.
 errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, uint32_t *pid);
 
-// Start a child with an explicit command line. Fills in si.
-errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid);
-
 // Start a child process using the multiboot information, but custom arguments.
-errval_t spawn_load_by_name_argv(char *binary_name, int argc, char *argv[],
-                                 struct spawninfo *si, domainid_t *pid);
+errval_t spawn_load_by_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid);
 
 #endif /* _INIT_SPAWN_H_ */

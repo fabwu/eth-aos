@@ -18,6 +18,14 @@
 #include <aos/aos.h>
 #include <aos/lmp_protocol.h>
 
+// Header
+
+#define AOS_RPC_HEADER(sender, receiver, type) ( \
+            ( (uint64_t) (sender   & 0xffffff) << 40 ) | \
+            ( (uint64_t) (receiver & 0xffffff) << 16 ) | \
+            ( type & 0xffff ) \
+        )
+
 // Message types
 
 #define AOS_RPC_MSG_SEND_NUMBER          0x01
@@ -64,18 +72,14 @@
 
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {
-    struct lmp_chan chan;
+    domainid_t send_id;
+    domainid_t recv_id;
 };
-
-/**
- * \brief Initialize an aos_rpc struct.
- */
-errval_t aos_rpc_init(struct aos_rpc *rpc);
 
 /**
  * \brief Set channel to init
  */
-void aos_rpc_set_init_channel(struct lmp_chan chan);
+void aos_rpc_init(void);
 
 /**
  * \brief Send a number.

@@ -223,7 +223,7 @@ void rpc_ump_start_handling(void)
 static void rpc_handler_recv_closure(void *arg)
 {
     errval_t err;
-    struct dispatcher_node *node = (struct dispatcher_node *)arg;
+    struct spawn_node *node = (struct spawn_node *)arg;
     struct lmp_chan *chan = &node->chan;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
@@ -235,52 +235,80 @@ static void rpc_handler_recv_closure(void *arg)
         if (!capref_is_null(cap)) {
             lmp_chan_alloc_recv_slot(chan);
         }
-        uintptr_t message_type = msg.words[0];
-        switch (message_type) {
-        case AOS_RPC_SEND_NUMBER:
-            rpc_print_number(msg.words[1]);
-            break;
-        case AOS_RPC_SEND_STRING:
-            rpc_print_string(chan, &msg);
-            break;
-        case AOS_RPC_GET_RAM_CAP:
-            err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "rpc_send_ram failed");
+        uint64_t header = msg.words[0];
+        domainid_t sender = (header >> 40);
+        domainid_t receiver = (header >> 16) & 0xffffff;
+        uintptr_t message_type = header & 0xffff;
+
+        if(receiver == disp_get_domain_id()) {
+            // init is receiver -> handle message
+            switch (message_type) {
+            case AOS_RPC_SEND_NUMBER:
+                rpc_print_number(msg.words[1]);
+                break;
+            case AOS_RPC_SEND_STRING:
+                rpc_print_string(chan, &msg);
+                break;
+            case AOS_RPC_GET_RAM_CAP:
+                err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
+                if (err_is_fail(err)) {
+                    DEBUG_ERR(err, "rpc_send_ram failed");
+                }
+                break;
+            case AOS_RPC_FREE_RAM_CAP:
+                err = rpc_free_ram(chan, msg.words[1]);
+                if (err_is_fail(err)) {
+                    DEBUG_ERR(err, "rpc_free_ram failed");
+                }
+                break;
+            case AOS_RPC_GET_DEVICE_CAP:
+                err = rpc_send_device(chan, msg.words[1], msg.words[2]);
+                if (err_is_fail(err)) {
+                    DEBUG_ERR(err, "rpc_send_device failed");
+                }
+                break;
+             case AOS_RPC_SERIAL_GETCHAR:
+                err = rpc_serial_getchar();
+                if (err_is_fail(err)) {
+                    DEBUG_ERR(err, "rpc_serial_getchar failed");
+                }
+                break;
+             case AOS_RPC_SERIAL_PUTCHAR:
+                err = rpc_serial_putchar(msg.words[1]);
+                if (err_is_fail(err)) {
+                    DEBUG_ERR(err, "rpc_serial_putchar failed");
+                }
+                break;
+            case AOS_RPC_PROCESS_SPAWN:
+            case AOS_RPC_PROCESS_GET_ALL_PIDS:
+            case AOS_RPC_PROCESS_GET_NAME:
+            case AOS_RPC_PROCESS_EXIT:
+                process_handle_lmp_request(message_type, &msg, node);
+                break;
+            default:
+                debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
             }
-            break;
-        case AOS_RPC_FREE_RAM_CAP:
-            err = rpc_free_ram(chan, msg.words[1]);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "rpc_free_ram failed");
+        } else {
+            // Route message to receiver
+            DEBUG_PRINTF("init got message from %p to %p with type %p\n", sender, receiver, message_type);
+            coreid_t recv_core_id = (receiver >> 20);
+
+            if(recv_core_id == disp_get_current_core_id()) {
+                // use lmp to forward message
+                struct lmp_chan *recv_chan;
+                init_spawn_get_lmp_chan(receiver, &recv_chan);
+                if(recv_chan == NULL) {
+                    USER_PANIC("Couldn't find lmp chan");
+                }
+                
+                err = lmp_protocol_send(recv_chan, msg.words[0], cap, msg.words[1], msg.words[2], msg.words[3]); 
+                if(err_is_fail(err)) {
+                    USER_PANIC_ERR(err, "Couldn't forward\n");
+                }
+            } else {
+                // use ump to forward message
+                USER_PANIC("UMP routing NYI!");
             }
-            break;
-        case AOS_RPC_GET_DEVICE_CAP:
-            err = rpc_send_device(chan, msg.words[1], msg.words[2]);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "rpc_send_device failed");
-            }
-            break;
-        case AOS_RPC_SERIAL_GETCHAR:
-            err = rpc_serial_getchar();
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "rpc_serial_getchar failed");
-            }
-            break;
-        case AOS_RPC_SERIAL_PUTCHAR:
-            err = rpc_serial_putchar(msg.words[1]);
-            if (err_is_fail(err)) {
-                DEBUG_ERR(err, "rpc_serial_putchar failed");
-            }
-            break;
-        case AOS_RPC_PROCESS_SPAWN:
-        case AOS_RPC_PROCESS_GET_ALL_PIDS:
-        case AOS_RPC_PROCESS_GET_NAME:
-        case AOS_RPC_PROCESS_EXIT:
-            process_handle_lmp_request(message_type, &msg, node);
-            break;
-        default:
-            debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
         }
 
         // Want to receive further messages
@@ -318,10 +346,11 @@ static void rpc_setup_recv_closure(void *arg)
 {
     errval_t err;
 
-    struct dispatcher_node *node = (struct dispatcher_node *)arg;
+    struct spawn_node *node = (struct spawn_node *) arg;
+    struct lmp_chan *chan = &node->chan;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
-    err = lmp_chan_recv(&node->chan, &msg, &cap);
+    err = lmp_chan_recv(chan, &msg, &cap);
 
     DEBUG_RPC_SETUP("rpc_setup_recv_closure called!\n");
 
@@ -330,23 +359,22 @@ static void rpc_setup_recv_closure(void *arg)
         // Check if setup message
         assert(msg.words[0] == AOS_RPC_SETUP);
 
-        node->chan.remote_cap = cap;
-        node->state = DISPATCHER_CONNECTED;
+        chan->remote_cap = cap;
 
-        err = lmp_chan_alloc_recv_slot(&node->chan);
+        err = lmp_chan_alloc_recv_slot(chan);
         if (err_is_fail(err)) {
             goto fail;
         }
 
         DEBUG_RPC_SETUP("rpc_setup_recv_closure success!\n");
 
-        err = lmp_protocol_send0(&node->chan, AOS_RPC_SETUP);
+        err = lmp_protocol_send0(chan, AOS_RPC_SETUP);
         if (err_is_fail(err)) {
             goto fail;
         }
 
         // Channel to child is setup, switch to child handler
-        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
+        err = lmp_chan_register_recv(chan, get_default_waitset(),
                                      MKCLOSURE(rpc_handler_recv_closure, arg));
         if (err_is_fail(err)) {
             goto fail;
@@ -357,7 +385,7 @@ static void rpc_setup_recv_closure(void *arg)
         DEBUG_RPC_SETUP("rpc_setup_recv_closure retry!\n");
 
         // Want to receive further messages
-        err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
+        err = lmp_chan_register_recv(chan, get_default_waitset(),
                                      MKCLOSURE(rpc_setup_recv_closure, arg));
         if (err_is_ok(err)) {
             return;
@@ -365,32 +393,20 @@ static void rpc_setup_recv_closure(void *arg)
     }
 
 fail:
-    // FIXME: Handle error case better
     DEBUG_ERR(err, "rpc_setup_recv_closure failed hard!\n");
 }
 
 /**
  * Creates a unique channel to a child (to be spawned)
  */
-errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap,
-                                          dispatcher_node_ref *node_ref)
+errval_t rpc_create_child_channel_to_init(struct spawn_node *node)
 {
     errval_t err = SYS_ERR_OK;
 
-    assert(ret_init_ep_cap != NULL);
-    struct lmp_state *st = get_current_lmp_state();
-    assert(st != NULL);
+    struct lmp_chan *chan = &node->chan;
+    lmp_chan_init(chan);
 
-    struct dispatcher_node *node = slab_alloc(&st->slabs);
-    if (node == NULL) {
-        return LIB_ERR_SLAB_ALLOC_FAIL;
-    }
-
-    node->state = DISPATCHER_DISCONNECTED;
-    lmp_chan_init(&node->chan);
-
-    err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &node->chan.local_cap,
-                          &node->chan.endpoint);
+    err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &chan->local_cap, &chan->endpoint);
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_ENDPOINT_CREATE);
         goto out;
@@ -398,66 +414,29 @@ errval_t rpc_create_child_channel_to_init(struct capref *ret_init_ep_cap,
 
     // Preallocate first receive slot
     // lmp_protocol will preallocate new slots when the current slot is used up
-    err = lmp_chan_alloc_recv_slot(&node->chan);
+    err = lmp_chan_alloc_recv_slot(chan);
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
         goto out;
     }
 
     // Needs to be non-blocking, so lmp_protocol is not used here
-    err = lmp_chan_register_recv(&node->chan, get_default_waitset(),
+    err = lmp_chan_register_recv(chan, get_default_waitset(),
                                  MKCLOSURE(rpc_setup_recv_closure, node));
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
         goto out;
     }
 
-    // Add node to dispatcher list
-    // Done as late as possible so there's no unfinished node in the list
-    node->next = st->head;
-    st->head = node;
-
-    assert(!capref_is_null(node->chan.local_cap));
-    *ret_init_ep_cap = node->chan.local_cap;
-    if (node_ref != NULL) {
-        *node_ref = (dispatcher_node_ref)node;
-    }
-
+    assert(!capref_is_null(chan->local_cap));
+    node->si.initep = chan->local_cap;
 out:
     if (err_is_fail(err)) {
-        if (!capref_is_null(node->chan.endpoint->recv_slot)) {
-            cap_destroy(node->chan.endpoint->recv_slot);
+        if (!capref_is_null(chan->endpoint->recv_slot)) {
+            cap_destroy(chan->endpoint->recv_slot);
         }
-        lmp_chan_destroy(&node->chan);
-        slab_free(&st->slabs, node);
+        lmp_chan_destroy(chan);
     }
     return err;
-}
-
-void rpc_dispatcher_node_set_pid(dispatcher_node_ref node_ref, domainid_t pid)
-{
-    struct dispatcher_node *node = (struct dispatcher_node *)node_ref;
-    node->pid = pid;
-}
-
-errval_t rpc_initialize_lmp(struct lmp_state *st)
-{
-    errval_t err;
-    st->head = NULL;
-    slab_init(&st->slabs, sizeof(struct dispatcher_node), slab_default_refill);
-    err = slab_default_refill(&st->slabs);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_SLAB_REFILL);
-    }
-
-    // init doesn't get a cap_selfep
-    err = cap_retype(cap_selfep, cap_dispatcher, 0, ObjType_EndPointLMP, 0, 1);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_CAP_RETYPE);
-    }
-
-    set_current_lmp_state(st);
-
-    return SYS_ERR_OK;
 }
 
