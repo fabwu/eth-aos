@@ -1,6 +1,5 @@
 #include "spawn.h"
 #include "rpc.h"
-#include "process.h"
 
 struct spawn_node *head;
 
@@ -23,17 +22,9 @@ static errval_t prepare_spawn(struct spawn_node **node) {
 
 static errval_t finish_spawn(struct spawn_node *node, domainid_t *pid)
 {
-    errval_t err;
-
     // add spawn info to linked list
     node->next = head;
     head = node;
-
-    err = process_add(node->pid, disp_get_core_id(), node->si.binary_name);
-    if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_SPAWN);
-        return err;
-    }
 
     if(pid != NULL) {
         *pid = node->pid;

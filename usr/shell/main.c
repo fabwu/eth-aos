@@ -48,8 +48,8 @@ int main(int argc, char *argv[])
     DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline, coreid);
     err = aos_rpc_process_spawn(process_rpc, cmdline, coreid, &pid);
     if (err_is_fail(err)) {
-        DEBUG_PRINTF("starting '%s' failed.\n", cmdline);
-        return EXIT_FAILURE;
+        DEBUG_ERR(err, "starting '%s' failed.\n", cmdline);
+        return -EXIT_FAILURE;
     }
     DEBUG_PRINTF("'%s' started successfully\n", cmdline);
 
@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
             DEBUG_PRINTF("failed to get name of process 0x%lx\n", pids[i]);
             return EXIT_FAILURE;
         }
-        DEBUG_PRINTF("  %s (PID = %u, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
+        DEBUG_PRINTF("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }
 
     return EXIT_SUCCESS;

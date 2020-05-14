@@ -36,7 +36,7 @@ void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg
         case AOS_RPC_PROCESS_SPAWN:
             err = process_spawn_rpc(&chan, (coreid_t)msg->words[1]);
             if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Failed to spawn process in rpc_spawn_process()");
+                DEBUG_ERR(err, "Failed to spawn process in process_spawn_rpc()");
             }
             break;
         case AOS_RPC_PROCESS_GET_ALL_PIDS:
@@ -205,6 +205,28 @@ errval_t process_add(domainid_t pid, coreid_t core_id, char *name)
     return SYS_ERR_OK;
 }
 
+errval_t process_spawn_init(char *name)
+{
+    // only init should call this function
+    assert(disp_get_domain_id() == 0x0);
+    assert(disp_get_core_id() == 0);
+
+    errval_t err;
+
+    domainid_t did;
+    err = init_spawn_by_name(name, &did);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_SPAWN_BY_NAME);
+    }
+
+    err = process_add(did, 0, name);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_PROCESS_ADD);
+    }
+
+    return SYS_ERR_OK;
+}
+
 errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
 {
     errval_t err = SYS_ERR_OK;
@@ -265,7 +287,7 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
             goto out;
         }
 
-        err = process_add(pid, core_id, argv[0]);
+        err = process_add(ret_pid, core_id, argv[0]);
         if (err_is_fail(err)) {
             err = err_push(err, INIT_ERR_SPAWN);
             goto out;
@@ -274,7 +296,7 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
         // Not passing newpid directly because of mismatching types
         pid = ret_pid;
 
-        DEBUG_PRINTF("Received ump reply from core %u: Spawned pid %d\n", core_id, pid);
+        DEBUG_PRINTF("Received ump reply from core %u: Spawned pid %llx\n", core_id, pid);
     }
 
 out:

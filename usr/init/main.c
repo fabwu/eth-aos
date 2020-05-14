@@ -33,14 +33,13 @@
 
 #include "mem_alloc.h"
 #include "rpc.h"
-#include "spawn.h"
 #include "process.h"
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 0
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVICETEST 0
-#define INIT_EXECUTE_SHELL 0
+#define INIT_EXECUTE_SHELL 1
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
 
@@ -187,13 +186,13 @@ static int bsp_main(int argc, char *argv[])
         USER_PANIC_ERR(err, "Couldn't boot second core\n");
     }
 
-    err = init_spawn_by_name("nameserver", NULL);
+    err = process_spawn_init("nameserver");
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {
-        err = init_spawn_by_name("memeater", NULL);
+        err = process_spawn_init("memeater");
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn memeater\n");
             return -EXIT_FAILURE;
@@ -208,7 +207,7 @@ static int bsp_main(int argc, char *argv[])
     }
 
     if (INIT_EXECUTE_SPAWNTEST) {
-        err = init_spawn_by_name("spawnTester", NULL);
+        err = process_spawn_init("spawnTester");
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn spawntester\n");
             return -EXIT_FAILURE;
@@ -216,7 +215,7 @@ static int bsp_main(int argc, char *argv[])
     }
 
     if (INIT_EXECUTE_NAMESERVICETEST) {
-        err = init_spawn_by_name("nameservicetest", NULL);
+        err = process_spawn_init("nameservicetest");
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn nameservicetest\n");
             return -EXIT_FAILURE;
@@ -224,7 +223,7 @@ static int bsp_main(int argc, char *argv[])
     }
 
     if (INIT_EXECUTE_SHELL) {
-        err = init_spawn_by_name("shell", NULL);
+        err = process_spawn_init("shell");
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn shell");
             return -EXIT_FAILURE;

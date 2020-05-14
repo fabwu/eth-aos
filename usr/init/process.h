@@ -44,6 +44,11 @@ void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg
 void process_handle_ump_request(uintptr_t message_type, uint8_t *buf);
 
 /**
+ * \brief Can be called by init on bsp core to spawn a process
+ */
+errval_t process_spawn_init(char *name);
+
+/**
  * \brief Spawns process.
  */
 errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id);
