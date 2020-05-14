@@ -200,7 +200,7 @@ static int bsp_main(int argc, char *argv[])
     }
 
     if (INIT_EXECUTE_FS) {
-        err = init_spawn("filereader", NULL);
+        err = process_spawn_init("filereader");
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't initialise filesystem\n");
         }
