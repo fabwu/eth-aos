@@ -178,13 +178,23 @@ struct slot_alloc_state *get_slot_alloc_state(void)
 }
 
 /**
- * \brief Returns the LMP channel to init on the dispatcher priv
+ * \brief Returns the client LMP channel to init on the dispatcher priv
  */
-struct lmp_chan *get_init_chan(void)
+struct lmp_chan *get_init_client_chan(void)
 {
     dispatcher_handle_t handle = curdispatcher();
     struct dispatcher_generic* disp = get_dispatcher_generic(handle);
-    return &disp->core_state.c.init_chan;
+    return &disp->core_state.c.init_client_chan;
+}
+
+/**
+ * \brief Returns the server LMP channel to init on the dispatcher priv
+ */
+struct lmp_chan *get_init_server_chan(void)
+{
+    dispatcher_handle_t handle = curdispatcher();
+    struct dispatcher_generic* disp = get_dispatcher_generic(handle);
+    return &disp->core_state.c.init_server_chan;
 }
 
 /**

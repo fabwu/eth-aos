@@ -42,12 +42,12 @@ struct lmp_chan {
 
     /// connection state
     enum {LMP_DISCONNECTED,     ///< Disconnected
-          LMP_BIND_WAIT,        ///< Waiting for bind reply
-          LMP_MONITOR_ACCEPT,   ///< Special case for monitor binding: waiting for cap
+          LMP_BIND_WAIT,        ///< Waiting for ep caps send by child
           LMP_CONNECTED,        ///< Connection established
     } connstate;
 
     size_t buflen_words;    ///< requested LMP buffer length, in words
+    domainid_t did;         ///< id of the domain this channel is associated
 };
 
 void lmp_chan_init(struct lmp_chan *lc);

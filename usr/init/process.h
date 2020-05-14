@@ -39,7 +39,7 @@ struct process_state {
 void process_init(void);
 
 void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg,
-                           struct spawn_node *node);
+                           struct lmp_chan *lmp_chan);
 
 void process_handle_ump_request(uintptr_t message_type, uint8_t *buf);
 

@@ -25,10 +25,9 @@ void process_init(void)
 }
 
 void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg,
-                                struct spawn_node *node)
+                                struct lmp_chan *lmp_chan)
 {
     errval_t err;
-    struct lmp_chan *lmp_chan = &node->chan;
     if (disp_get_core_id() == INIT_PROCESS_PIN_TO_CORE) {
         struct aos_chan chan = make_aos_chan_lmp(lmp_chan);
 
@@ -52,7 +51,7 @@ void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg
             }
             break;
         case AOS_RPC_PROCESS_EXIT:
-            err = process_exit(node->pid);
+            err = process_exit(lmp_chan->did);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Failed in rpc_process_exit()");
             }
@@ -70,7 +69,7 @@ void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg
         case AOS_RPC_PROCESS_GET_ALL_PIDS:
         case AOS_RPC_PROCESS_GET_NAME:
         case AOS_RPC_PROCESS_EXIT:
-            chan = make_aos_chan_ump(node->pid, 0);
+            chan = make_aos_chan_ump(lmp_chan->did, 0);
             aos_protocol_send(&chan, message_type, NULL_CAP, msg->words[1], msg->words[2], msg->words[3]);
             break;
         }

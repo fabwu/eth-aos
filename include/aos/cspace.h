@@ -21,10 +21,11 @@
 #define ROOTCN_FREE_SLOTS       (ROOTCN_SLOTS_USER+0)   ///< free slots to place EPs
 
 /* Task CNode */
-#define TASKCN_SLOT_SELFEP      (TASKCN_SLOTS_USER+0)   ///< Endpoint to self
-#define TASKCN_SLOT_INITEP      (TASKCN_SLOTS_USER+1)   ///< End Point to init (for monitor and memserv)
-#define TASKCN_SLOT_MONITOREP   (TASKCN_SLOTS_USER+1)   ///< lrpc endpoint to monitor (for all other domains)
-#define TASKCN_SLOTS_FREE       (TASKCN_SLOTS_USER+2)   ///< first free slot in taskcn
+#define TASKCN_SLOT_SELFEP          (TASKCN_SLOTS_USER+0)   ///< Endpoint to self
+#define TASKCN_SLOT_INIT_CLIENT_EP  (TASKCN_SLOTS_USER+1)   ///< End Point to init (if domains acts as client)
+#define TASKCN_SLOT_MONITOREP       (TASKCN_SLOTS_USER+1)   ///< lrpc endpoint to monitor (for all other domains)
+#define TASKCN_SLOT_INIT_SERVER_EP  (TASKCN_SLOTS_USER+2)   ///< End Point to init (if domain acts as server)
+#define TASKCN_SLOTS_FREE           (TASKCN_SLOTS_USER+3)   ///< first free slot in taskcn
 
 // taskcn appears at the beginning of cspace, so the cptrs match the slot numbers
 #define CPTR_ROOTCN     TASKCN_SLOT_ROOTCN      ///< Cptr to init's root CNode

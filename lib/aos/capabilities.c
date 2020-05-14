@@ -139,10 +139,16 @@ struct capref cap_perfmon = {
     .slot  = TASKCN_SLOT_PERF_MON
 };
 
-/// Capability for endpoint to init (only in monitor/mem_serv)
-struct capref cap_initep = {
+/// Capability for endpoint to init (if domain acts as client)
+struct capref cap_init_client_ep = {
     .cnode = TASK_CNODE_INIT,
-    .slot  = TASKCN_SLOT_INITEP
+    .slot  = TASKCN_SLOT_INIT_CLIENT_EP
+};
+
+/// Capability for endpoint to init (if domain acts as server)
+struct capref cap_init_server_ep = {
+    .cnode = TASK_CNODE_INIT,
+    .slot  = TASKCN_SLOT_INIT_SERVER_EP
 };
 
 /// Capability to the URPC frame

@@ -131,6 +131,43 @@ void barrelfish_libc_glue_init(void)
     setvbuf(stdout, buf, _IOLBF, sizeof(buf));
 }
 
+static errval_t send_ep_to_init(struct lmp_chan *chan, struct capref cap_init)
+{
+    errval_t err;
+
+    err = lmp_chan_accept(chan, DEFAULT_LMP_BUF_WORDS, cap_init);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_CHAN_ACCEPT);
+    }
+
+    // Registers initial slot (in aos_rpc another slot is reserved as soon as this
+    // slot is used up)
+    err = lmp_chan_alloc_recv_slot(chan);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
+    }
+
+    // allocate a receive slot to refill slot allocator via RPC
+    err = slot_alloc(&chan->reserved_recv_slot);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLOT_ALLOC);
+    }
+
+    // send local ep to init
+    err = lmp_protocol_send_cap(chan, AOS_RPC_SETUP, chan->local_cap);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_INIT_SETUP_INITEP);
+    }
+
+    // Wait for init to acknowledge receiving the endpoint
+    err = lmp_protocol_recv0(chan, AOS_RPC_SETUP);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_INIT_SETUP_INITEP);
+    }
+
+    return SYS_ERR_OK;
+}
+
 /** \brief Initialise libbarrelfish.
  *
  * This runs on a thread in every domain, after the dispatcher is setup but
@@ -176,59 +213,27 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
     lmp_endpoint_init();
 
     if (!init_domain) {
-        struct lmp_chan *chan_to_init = get_init_chan();
-        lmp_chan_init(chan_to_init);
-
-        /* create local endpoint */
-        err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &chan_to_init->local_cap,
-                              &chan_to_init->endpoint);
+        err = send_ep_to_init(get_init_client_chan(), cap_init_client_ep);
         if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_ENDPOINT_CREATE);
+            return err;
         }
 
-        /* set remote endpoint to init's endpoint */
-        chan_to_init->remote_cap = cap_initep;
-
-        // Registers initial slot (in aos_rpc another slot is reserved as soon as this
-        // slot is used up)
-        err = lmp_chan_alloc_recv_slot(chan_to_init);
+        err = send_ep_to_init(get_init_server_chan(), cap_init_server_ep);
         if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_LMP_CHAN_ALLOC_RECV_SLOT);
+            return err;
         }
 
-        /* allocate a receive slot to refill slot allocator via RPC */
-        err = slot_alloc(&chan_to_init->reserved_recv_slot);
-        if (err_is_fail(err)) {
-            return err_push(err, LIB_ERR_SLOT_ALLOC);
-        }
-
-        /* send local ep to init */
-        err = lmp_protocol_send_cap(chan_to_init, AOS_RPC_SETUP, chan_to_init->local_cap);
-        if (err_is_fail(err)) {
-            return err_push(err, AOS_ERR_INIT_SETUP_INITEP);
-        }
-
-        /* Wait for init to acknowledge receiving the endpoint */
-        err = lmp_protocol_recv0(chan_to_init, AOS_RPC_SETUP);
-        if (err_is_fail(err)) {
-            return err_push(err, AOS_ERR_INIT_SETUP_INITEP);
-        }
-
-        /* initialize init RPC client with lmp channel */
-        /* set init RPC client in our program state */
+        // initialize init RPC client with lmp channel
+        // set init RPC client in our program state
         aos_rpc_init();
 
         // Get ram_alloc to use remote allocator
         ram_alloc_set(NULL);
         ram_free_set(NULL);
-
-        // right now we don't have the nameservice & don't need the terminal
-        // and domain spanning, so we return here
     }
 
     return SYS_ERR_OK;
 }
-
 
 /**
  *  \brief Initialise libbarrelfish, while disabled.

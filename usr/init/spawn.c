@@ -3,19 +3,27 @@
 
 struct spawn_node *head;
 
-static errval_t prepare_spawn(struct spawn_node **node) {
+static errval_t prepare_spawn(struct spawn_node **ret_node) {
     errval_t err;
 
-    *node = (struct spawn_node *)malloc(sizeof(struct spawn_node));
+    struct spawn_node *node = (struct spawn_node *)malloc(sizeof(struct spawn_node));
     if (node == NULL) {
         return INIT_ERR_PREPARE_SPAWN;
     }
 
-    err = rpc_create_child_channel_to_init(*node);
+    err = rpc_create_child_channel_to_init(&node->client_chan);
     if (err_is_fail(err)) {
-        err = err_push(err, INIT_ERR_PREPARE_SPAWN);
-        return err;
+        return err_push(err, INIT_ERR_PREPARE_SPAWN);
     }
+    node->si.init_client_ep = node->client_chan.local_cap;
+
+    err = rpc_create_child_channel_to_init(&node->server_chan);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_PREPARE_SPAWN);
+    }
+    node->si.init_server_ep = node->server_chan.local_cap;
+
+    *ret_node = node;
 
     return SYS_ERR_OK;
 }
@@ -25,6 +33,9 @@ static errval_t finish_spawn(struct spawn_node *node, domainid_t *pid)
     // add spawn info to linked list
     node->next = head;
     head = node;
+
+    node->client_chan.did = node->pid;
+    node->server_chan.did = node->pid;
 
     if(pid != NULL) {
         *pid = node->pid;
@@ -94,7 +105,7 @@ void init_spawn_get_lmp_chan(domainid_t pid, struct lmp_chan **chan) {
 
     while(current != NULL) {
         if(current->pid == pid) {
-            *chan = &current->chan;
+            *chan = &current->client_chan;
             return;
         }
         current = current->next;

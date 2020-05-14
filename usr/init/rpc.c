@@ -223,8 +223,7 @@ void rpc_ump_start_handling(void)
 static void rpc_handler_recv_closure(void *arg)
 {
     errval_t err;
-    struct spawn_node *node = (struct spawn_node *)arg;
-    struct lmp_chan *chan = &node->chan;
+    struct lmp_chan *chan = (struct lmp_chan *)arg;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
     err = lmp_chan_recv(chan, &msg, &cap);
@@ -283,7 +282,7 @@ static void rpc_handler_recv_closure(void *arg)
             case AOS_RPC_PROCESS_GET_ALL_PIDS:
             case AOS_RPC_PROCESS_GET_NAME:
             case AOS_RPC_PROCESS_EXIT:
-                process_handle_lmp_request(message_type, &msg, node);
+                process_handle_lmp_request(message_type, &msg, chan);
                 break;
             default:
                 debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
@@ -346,8 +345,7 @@ static void rpc_setup_recv_closure(void *arg)
 {
     errval_t err;
 
-    struct spawn_node *node = (struct spawn_node *) arg;
-    struct lmp_chan *chan = &node->chan;
+    struct lmp_chan *chan = (struct lmp_chan *)arg;
     struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
     struct capref cap;
     err = lmp_chan_recv(chan, &msg, &cap);
@@ -397,13 +395,12 @@ fail:
 }
 
 /**
- * Creates a unique channel to a child (to be spawned)
+ * Creates a channel to a child (to be spawned)
  */
-errval_t rpc_create_child_channel_to_init(struct spawn_node *node)
+errval_t rpc_create_child_channel_to_init(struct lmp_chan *chan)
 {
     errval_t err = SYS_ERR_OK;
 
-    struct lmp_chan *chan = &node->chan;
     lmp_chan_init(chan);
 
     err = endpoint_create(DEFAULT_LMP_BUF_WORDS, &chan->local_cap, &chan->endpoint);
@@ -411,6 +408,8 @@ errval_t rpc_create_child_channel_to_init(struct spawn_node *node)
         err = err_push(err, LIB_ERR_ENDPOINT_CREATE);
         goto out;
     }
+
+    chan->connstate = LMP_BIND_WAIT;
 
     // Preallocate first receive slot
     // lmp_protocol will preallocate new slots when the current slot is used up
@@ -422,14 +421,13 @@ errval_t rpc_create_child_channel_to_init(struct spawn_node *node)
 
     // Needs to be non-blocking, so lmp_protocol is not used here
     err = lmp_chan_register_recv(chan, get_default_waitset(),
-                                 MKCLOSURE(rpc_setup_recv_closure, node));
+                                 MKCLOSURE(rpc_setup_recv_closure, chan));
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
         goto out;
     }
 
     assert(!capref_is_null(chan->local_cap));
-    node->si.initep = chan->local_cap;
 out:
     if (err_is_fail(err)) {
         if (!capref_is_null(chan->endpoint->recv_slot)) {
