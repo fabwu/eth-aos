@@ -2,7 +2,7 @@
 #include "fs_internal.h"
 #include "fat32fs_internal.h"
 
-#if 1
+#if 0
 #    define DEBUG_FAT32FS(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_FAT32FS(fmt...) ((void)0)
