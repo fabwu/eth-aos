@@ -46,6 +46,11 @@ struct lmp_chan {
           LMP_CONNECTED,        ///< Connection established
     } connstate;
 
+    /// channel type
+    enum {LMP_CLIENT = 1,       ///< channel if domain acts as client of a service
+          LMP_SERVER,           ///< channel if domain acts as server of a service
+    } type;
+
     size_t buflen_words;    ///< requested LMP buffer length, in words
     domainid_t did;         ///< id of the domain this channel is associated
 };

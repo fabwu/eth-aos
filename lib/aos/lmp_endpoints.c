@@ -492,4 +492,9 @@ void lmp_endpoint_init(void)
 
     heap_init(&d->lmp_endpoint_heap, buf, buflen, NULL);
     disp_enable(handle);
+
+    struct lmp_chan *client_chan = get_init_client_chan();
+    client_chan->type = LMP_CLIENT;
+    struct lmp_chan *server_chan = get_init_server_chan();
+    server_chan->type = LMP_SERVER;
 }

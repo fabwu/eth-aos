@@ -234,10 +234,10 @@ static void rpc_handler_recv_closure(void *arg)
         if (!capref_is_null(cap)) {
             lmp_chan_alloc_recv_slot(chan);
         }
-        uint64_t header = msg.words[0];
+        aos_rpc_header_t header = msg.words[0];
         domainid_t sender = AOS_RPC_HEADER_SEND(header);
         domainid_t receiver = AOS_RPC_HEADER_RECV(header);
-        uint16_t message_type = AOS_RPC_HEADER_MSG(header);
+        aos_rpc_msg_t message_type = AOS_RPC_HEADER_MSG(header);
 
         if(receiver == disp_get_domain_id()) {
             // init is receiver -> handle message
@@ -289,18 +289,31 @@ static void rpc_handler_recv_closure(void *arg)
             }
         } else {
             // Route message to receiver
-            DEBUG_PRINTF("init got message from %p to %p with type %p\n", sender, receiver, message_type);
-            coreid_t recv_core_id = (receiver >> 20);
+            DEBUG_PRINTF("init got message from %p over %d to %p with type %p\n", sender,
+                         chan->type, receiver, message_type);
+            coreid_t recv_core_id = AOS_RPC_CORE_ID(receiver);
 
-            if(recv_core_id == disp_get_current_core_id()) {
+            if (recv_core_id == disp_get_current_core_id()) {
                 // use lmp to forward message
                 struct lmp_chan *recv_chan;
-                init_spawn_get_lmp_chan(receiver, &recv_chan);
-                if(recv_chan == NULL) {
+
+                if (chan->type == LMP_CLIENT) {
+                    // msg is from client -> forward to server
+                    init_spawn_get_lmp_server_chan(receiver, &recv_chan);
+                } else if (chan->type == LMP_SERVER) {
+                    // msg is from server -> forward to client
+                    init_spawn_get_lmp_client_chan(receiver, &recv_chan);
+                } else {
+                    USER_PANIC("Unknown channel type\n");
+                }
+
+                if (recv_chan == NULL) {
                     USER_PANIC("Couldn't find lmp chan");
                 }
-                err = lmp_protocol_send(recv_chan, msg.words[0], cap, msg.words[1], msg.words[2], msg.words[3]); 
-                if(err_is_fail(err)) {
+
+                err = lmp_protocol_send(recv_chan, msg.words[0], cap, msg.words[1],
+                                        msg.words[2], msg.words[3]);
+                if (err_is_fail(err)) {
                     USER_PANIC_ERR(err, "Couldn't forward\n");
                 }
             } else {
