@@ -235,9 +235,9 @@ static void rpc_handler_recv_closure(void *arg)
             lmp_chan_alloc_recv_slot(chan);
         }
         uint64_t header = msg.words[0];
-        domainid_t sender = (header >> 40);
-        domainid_t receiver = (header >> 16) & 0xffffff;
-        uintptr_t message_type = header & 0xffff;
+        domainid_t sender = AOS_RPC_HEADER_SEND(header);
+        domainid_t receiver = AOS_RPC_HEADER_RECV(header);
+        uint16_t message_type = AOS_RPC_HEADER_MSG(header);
 
         if(receiver == disp_get_domain_id()) {
             // init is receiver -> handle message
@@ -299,7 +299,6 @@ static void rpc_handler_recv_closure(void *arg)
                 if(recv_chan == NULL) {
                     USER_PANIC("Couldn't find lmp chan");
                 }
-                
                 err = lmp_protocol_send(recv_chan, msg.words[0], cap, msg.words[1], msg.words[2], msg.words[3]); 
                 if(err_is_fail(err)) {
                     USER_PANIC_ERR(err, "Couldn't forward\n");

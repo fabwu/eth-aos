@@ -18,6 +18,10 @@
 #include <aos/aos.h>
 #include <aos/lmp_protocol.h>
 
+typedef uintptr_t aos_rpc_header_t;
+
+#define AOS_RPC_BUFFER_SIZE             3*sizeof(uintptr_t)
+
 // Header
 
 #define AOS_RPC_HEADER(sender, receiver, type) ( \
@@ -25,6 +29,15 @@
             ( (uint64_t) (receiver & 0xffffff) << 16 ) | \
             ( type & 0xffff ) \
         )
+
+// extract sender from header
+#define AOS_RPC_HEADER_SEND(header) ((header >> 40) & 0xffffff)
+
+// extract receiver from header
+#define AOS_RPC_HEADER_RECV(header) ((header >> 16) & 0xffffff)
+
+// extract message type from header
+#define AOS_RPC_HEADER_MSG(header) (header & 0xffff)
 
 // Message types
 
@@ -40,6 +53,7 @@
 #define AOS_RPC_MSG_GET_DEVICE_CAP       0x0a
 #define AOS_RPC_MSG_PROCESS_EXIT         0x0b
 #define AOS_RPC_MSG_PROCESS_SPAWN_REMOTE 0x0c
+#define AOS_RPC_MSG_NS_REGISTER          0x0d
 
 #define AOS_RPC_MSG_SETUP                0x10
 

@@ -8,6 +8,8 @@
 
 #include <aos/aos.h>
 
+#define AOS_NS_REGISTER_OK 0x1
+
 typedef void* nameservice_chan_t;
 
 ///< handler which is called when a message is received over the registered channel
@@ -15,6 +17,7 @@ typedef void(nameservice_receive_handler_t)(void *st,
 										    void *message, size_t bytes,
 										    void **response, size_t *response_bytes,
                                             struct capref tx_cap, struct capref *rx_cap);
+errval_t nameservice_init(void);
 
 /**
  * @brief sends a message back to the client who sent us a message

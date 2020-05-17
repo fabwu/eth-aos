@@ -105,7 +105,7 @@ void init_spawn_get_lmp_chan(domainid_t pid, struct lmp_chan **chan) {
 
     while(current != NULL) {
         if(current->pid == pid) {
-            *chan = &current->client_chan;
+            *chan = &current->server_chan;
             return;
         }
         current = current->next;

@@ -82,6 +82,9 @@ static void run_server(void)
 {
     errval_t err;
 
+    err = nameservice_init();
+    PANIC_IF_FAIL(err, "failed to init nameservice\n");
+
     debug_printf("register with nameservice '%s'\n", SERVICE_NAME);
     err = nameservice_register(SERVICE_NAME, server_recv_handler, NULL);
     PANIC_IF_FAIL(err, "failed to register...\n");

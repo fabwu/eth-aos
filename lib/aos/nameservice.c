@@ -12,6 +12,12 @@
 
 #include <hashtable/hashtable.h>
 
+#if 1
+#    define DEBUG_NS(fmt...) debug_printf(fmt);
+#else
+#    define DEBUG_NS(fmt...) ((void)0)
+#endif
+
 struct srv_entry {
     const char *name;
     nameservice_receive_handler_t *recv_handler;
@@ -22,6 +28,50 @@ struct nameservice_chan {
     struct aos_rpc rpc;
     char *name;
 };
+
+struct hashtable *ht;
+
+static void nameservice_handler(void *arg)
+{
+    assert(arg == NULL);
+
+    errval_t err;
+
+    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
+    err = lmp_chan_recv(get_init_server_chan(), &msg, NULL);
+
+    if (err_is_ok(err)) {
+        DEBUG_PRINTF("Received msg with header %p\n", msg.words[0]);
+        return;
+    } else if (lmp_err_is_transient(err)) {
+        // Receive further messages
+        err = lmp_chan_register_recv(get_init_server_chan(), get_default_waitset(),
+                                     MKCLOSURE(nameservice_handler, arg));
+        if (err_is_fail(err)) {
+            goto fail;
+        }
+
+        return;
+    }
+
+fail:
+    DEBUG_ERR(err, "nameservice_handler failed hard");
+}
+
+errval_t nameservice_init(void)
+{
+    errval_t err;
+
+    ht = create_hashtable();
+
+    err = lmp_chan_register_recv(get_init_server_chan(), get_default_waitset(),
+                                 MKCLOSURE(nameservice_handler, NULL));
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
+    }
+
+    return SYS_ERR_OK;
+}
 
 /**
  * @brief sends a message back to the client who sent us a message
@@ -53,6 +103,34 @@ errval_t nameservice_rpc(nameservice_chan_t chan, void *message, size_t bytes,
 errval_t nameservice_register(const char *name,
                               nameservice_receive_handler_t recv_handler, void *st)
 {
+    errval_t err;
+
+    struct lmp_chan *chan = get_init_client_chan();
+
+    size_t trunc_size = MIN(strlen(name), AOS_RPC_BUFFER_SIZE - 1);
+    uintptr_t buf[3];
+
+    memset(buf, 0, AOS_RPC_BUFFER_SIZE);
+    memcpy(buf, name, trunc_size);
+
+    DEBUG_NS("Sending register request %s to NS\n", buf);
+
+    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), 0x1, AOS_RPC_MSG_NS_REGISTER);
+    err = lmp_protocol_send3(chan, header, buf[0], buf[1], buf[2]);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);
+    }
+
+    uintptr_t ret;
+    err = lmp_protocol_recv1(chan, AOS_RPC_MSG_NS_REGISTER, &ret);
+    if(err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
+    }
+
+    if(ret != AOS_NS_REGISTER_OK) {
+        return LIB_ERR_NS_REGISTER;
+    }
+
     return LIB_ERR_NOT_IMPLEMENTED;
 }
 

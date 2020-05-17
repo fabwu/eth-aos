@@ -407,7 +407,13 @@ errors libaos LIB_ERR_ {
     failure UMP_ENQUEUE          "Failure in aos_ump_enqueue()",
 
     failure LMP_CHAN_REGISTER_RECV          "Failure in lmp_chan_register_recv()",
-    failure LMP_CHAN_ALLOC_RECV_SLOT          "Failure in lmp_chan_alloc_recv_slot()",
+    failure LMP_CHAN_ALLOC_RECV_SLOT        "Failure in lmp_chan_alloc_recv_slot()",
+
+    // LMP protocol
+    failure LMP_PROTOCOL_SEND1              "Failure in lmp_protocol_send1()",
+    failure LMP_PROTOCOL_SEND3              "Failure in lmp_protocol_send3()",
+    failure LMP_PROTOCOL_SEND_STRING        "Failure in lmp_protocol_send_string()",
+    failure LMP_PROTOCOL_RECV1              "Failure in lmp_protocol_recv1()",
 
     // IDC binding/export and Monitor client interface
     failure MONITOR_CLIENT_BIND "Error in monitor_client_lmp_bind()",
@@ -495,6 +501,9 @@ errors libaos LIB_ERR_ {
     failure COREBOOT_LOAD_ELF_BINARY    "Failure in load_elf_binary()",
     failure COREBOOT_RELOCATE_ELF       "Failure in relocate_elf()",
     failure COREBOOT_FIND_EP            "Couldn't find entry point symbol",
+
+    // Nameservice
+    failure NS_REGISTER                 "Couldn't register service",
 };
 
 // errors in Flounder-generated bindings
