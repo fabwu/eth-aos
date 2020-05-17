@@ -115,23 +115,36 @@ errval_t nameservice_register(const char *name,
 
     DEBUG_NS("Sending register request %s to NS\n", buf);
 
+    // send register request to NS
     uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), 0x1, AOS_RPC_MSG_NS_REGISTER);
     err = lmp_protocol_send3(chan, header, buf[0], buf[1], buf[2]);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);
     }
 
+    // wait for ack
     uintptr_t ret;
     err = lmp_protocol_recv1(chan, AOS_RPC_MSG_NS_REGISTER, &ret);
-    if(err_is_fail(err)) {
+    if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
     }
 
-    if(ret != AOS_NS_REGISTER_OK) {
+    if (ret != AOS_NS_REGISTER_OK) {
         return LIB_ERR_NS_REGISTER;
     }
 
-    return LIB_ERR_NOT_IMPLEMENTED;
+    // ack received save handler and state in hashtable
+    struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
+    entry->name = name;
+    entry->recv_handler = recv_handler;
+    entry->st = st;
+
+    err = ht->d.put_word(&ht->d, entry->name, strlen(entry->name), (uintptr_t)entry);
+    if (err_is_fail(err)) {
+        return HT_ERR_PUT_WORD;
+    }
+
+    return SYS_ERR_OK;
 }
 
 /**

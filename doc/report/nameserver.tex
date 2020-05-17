@@ -1,0 +1,9 @@
+\chapter{Nameserver}
+
+\begin{itemize}
+    \item implemented multi hop over init (URPC was not mature enough + is extra challenge)
+    \item Init route messages based on did
+    \item every domain has two channels (only one handler per channel per domain)
+    \item one channel is used if domain acts as client (can block)
+    \item the other channel is used if domain acts as server (handler was registered) 
+\end{itemize}

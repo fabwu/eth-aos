@@ -56,7 +56,11 @@ static void handler(void *arg)
         struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
         entry->name = string;
         entry->did = AOS_RPC_HEADER_SEND(header);
-        ht->d.put_word(&ht->d, entry->name, strlen(entry->name), (uintptr_t)entry);
+        err = ht->d.put_word(&ht->d, entry->name, strlen(entry->name), (uintptr_t)entry);
+        if (err_is_fail(err)) {
+            err = HT_ERR_PUT_WORD;
+            goto fail;
+        }
 
         DEBUG_NS("Received register request with name %s from %p\n", entry->name,
                  entry->did);

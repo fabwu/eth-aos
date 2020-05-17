@@ -1467,6 +1467,11 @@ errors aos AOS_ERR_ {
     failure INIT_SETUP_INITEP      "Failed to setup lmp between init and the process",
 };
 
+// hashtable
+errors hashtable HT_ERR_ {
+    failure PUT_WORD                "Failure in hashtable put_word()",
+};
+
 // errors NIC driver
 errors sata ENET_ERR_ {
     failure DEV_RESET        "Device reset failed",
