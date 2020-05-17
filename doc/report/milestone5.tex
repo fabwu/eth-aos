@@ -101,3 +101,35 @@ Now we have done all the required steps to start the second core. We simply call
 and the kernel will do the rest for us. As mentioned before we couldn't start the core after the first attempt
 because we picked the wrong address for the CPU driver entry point but after some debugging we finally got the
 second core up.
+
+\section{Multicore Memory Management}
+
+Before setting up a communication channel between the two cores, we wanted to spawn a new process to see if the 
+memory management and the rest of the spawning code work as expected. For this initial prototype, we divided 
+the memory into two blocks, one for each core. Both cores run a separate memory allocator, which only allocates 
+memory from his designated block. Obviously, this is not the best way to distribute the memory between the two 
+cores but it is sufficient to see if we can spawn a new process. A better solution will be if all memory is 
+handled by the boot core memory allocator and more memory is given on demand to the other cores. This allows 
+for more fine-grained resource management but also requires a proper communication channel that we didn't have 
+at this point.
+
+Now we had to pass the base address and the size of the reserved block to the second core. The easiest way of 
+doing this is to just hard-coding the addresses in the init function of the second core. That worked pretty well 
+to get started and later on we can easily transmit these values over UMP. As we tried to initialize the memory 
+allocator, we noticed that the second core lacks the following capabilities: 
+\begin{itemize}
+    \item RAM capability for the previously reserved memory
+    \item Frame capability to bootinfo struct
+    \item Module Cnode with device frame capabilities for each multiboot module
+\end{itemize}
+All of these capabilities can be created using the dangerous \verb|*_forge| functions which take a base address 
+and a size. We've already had the RAM cap address and got the bootinfo frame address on the boot core. The 
+location of the multiboot modules is available in the bootinfo struct so we can collect them directly on the 
+second core.
+
+After we created all the necessary capabilities we were able to spawn a process without errors, but quickly 
+noticed race conditions in the paging code. Debugging and fixing the errors was quite hard and we were glad that 
+we skipped inter-core communication so less moving parts were involved.
+
+The problem with the paging code...
+ 
