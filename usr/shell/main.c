@@ -53,12 +53,13 @@ int main(int argc, char *argv[])
     }
     DEBUG_PRINTF("'%s' started successfully\n", cmdline);
 
-    domainid_t *pids;
+    // I get a null pointer with this code (works on nameservicetest...)
+/*    domainid_t *pids;
     size_t pid_count;
     DEBUG_PRINTF("calling aos_rpc_process_get_all_pids()\n");
     err = aos_rpc_process_get_all_pids(process_rpc, &pids, &pid_count);
     if (err_is_fail(err)) {
-        DEBUG_PRINTF("receiving PIDs failed\n", cmdline);
+        DEBUG_PRINTF("receiving PIDs failed\n");
         return EXIT_FAILURE;
     }
     DEBUG_PRINTF("List of processes:\n");
@@ -70,7 +71,7 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
         DEBUG_PRINTF("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
-    }
+    }*/
 
     return EXIT_SUCCESS;
 }

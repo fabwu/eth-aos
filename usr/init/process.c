@@ -286,16 +286,16 @@ errval_t process_spawn_rpc(struct aos_chan *chan, coreid_t core_id)
             goto out;
         }
 
-        err = process_add(ret_pid, core_id, argv[0]);
-        if (err_is_fail(err)) {
-            err = err_push(err, INIT_ERR_SPAWN);
-            goto out;
-        }
-
         // Not passing newpid directly because of mismatching types
         pid = ret_pid;
 
         DEBUG_PRINTF("Received ump reply from core %u: Spawned pid %llx\n", core_id, pid);
+    }
+
+    err = process_add(pid, core_id, argv[0]);
+    if (err_is_fail(err)) {
+        err = err_push(err, INIT_ERR_SPAWN);
+        goto out;
     }
 
 out:
