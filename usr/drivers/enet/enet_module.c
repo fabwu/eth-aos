@@ -26,6 +26,9 @@
 #include <maps/imx8x_map.h>
 
 
+#include <netutil/htons.h>
+#include "consts.h"
+
 #include "enet.h"
 
 #define PHY_ID 0x2
@@ -638,6 +641,56 @@ int main(int argc, char *argv[])
     if (err_is_fail(err)) {
         return err;
     }
+
+    void * tx_va_base;
+    err = paging_map_frame_attr(get_current_paging_state(), &tx_va_base, 512 * 2048, st->tx_mem,
+                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not map transmit region");
+        return err;
+    }
+
+    struct eth_hdr *eth = (struct eth_hdr *)tx_va_base;
+    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
+        eth->dst.addr[i] = 0xff;
+    }
+    int tmp_shift = ETH_ADDR_LEN * 8;
+    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
+        tmp_shift -= 8;
+        eth->src.addr[i] = (st->mac >> tmp_shift) & 0xff;
+    }
+    eth->type = htons(ETH_TYPE_ARP);
+
+    struct arp_hdr *arp = (struct arp_hdr *)(tx_va_base + sizeof(struct eth_hdr));
+    arp->hwtype = htons(ARP_HW_TYPE_ETH);
+    arp->proto = htons(ARP_PROT_IP);
+    arp->hwlen = 0x6;
+    arp->protolen = 0x4;
+    arp->opcode = htons(ARP_OP_REQ);
+    tmp_shift = ETH_ADDR_LEN * 8;
+    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
+        tmp_shift -= 8;
+        arp->eth_src.addr[i] = (st->mac >> tmp_shift) & 0xff;
+    }
+    arp->ip_src = 0;
+    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
+        arp->eth_dst.addr[i] = 0xff;
+    }
+    arp->ip_dst = htonl(ENET_STATIC_IP);
+
+    DEBUG_PRINTF("TX TEST\n");
+    struct devq_buf txb;
+    err = devq_enqueue((struct devq *)st->txq, rid, 0, 2048, 0, 1000, 0);
+    if (err_is_ok(err)) {
+        DEBUG_PRINTF("OK\n");
+        err = devq_dequeue((struct devq *)st->txq, &txb.rid, &txb.offset, &txb.length,
+                        &txb.valid_data, &txb.valid_length, &txb.flags);
+        assert(err_is_ok(err));
+        DEBUG_PRINTF("OK2\n");
+    } else {
+        DEBUG_ERR(err, "NOK");
+    }
+
     struct devq_buf buf;
     while (true) {
         err = devq_dequeue((struct devq *)st->rxq, &buf.rid, &buf.offset, &buf.length,

@@ -25,7 +25,7 @@
 #define ETH_ADDR_LEN 6
 
 struct eth_addr {
-    uint8_t addr[6];
+    uint8_t addr[ETH_ADDR_LEN];
 } __attribute__((__packed__));
 
 struct eth_hdr {
