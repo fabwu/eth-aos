@@ -76,8 +76,8 @@ static errval_t handle_lookup(char *name, domainid_t server_did)
     DEBUG_NS("Received lookup request with name %s from %p\n", name, server_did);
 
     struct srv_entry *entry;
-    uintptr_t success;
-    uintptr_t did = -1;
+    uintptr_t success = 0;
+    uintptr_t did = 0;
 
     ht->d.get(&ht->d, name, strlen(name), (void **)&entry);
 
