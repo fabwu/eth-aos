@@ -27,4 +27,14 @@ errval_t arp_send_probe(void);
  */
 errval_t arp_send(uint32_t ip_addr);
 
+/**
+ * \brief Lookup ip in arp cache. The ip address has to be in host byte order.
+ */
+bool arp_lookup_ip(uint32_t ip, struct eth_addr **ret_addr);
+
+/**
+ * \brief Print the arp cache table to the standard output.
+ */
+void arp_print_cache(void);
+
 #endif  // ARP_H_

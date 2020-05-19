@@ -684,7 +684,6 @@ int main(int argc, char *argv[])
         err = devq_dequeue((struct devq *)st->rxq, &buf.rid, &buf.offset, &buf.length,
                            &buf.valid_data, &buf.valid_length, &buf.flags);
         if (err_is_ok(err)) {
-            debug_printf("Received Packet of size %lu \n", buf.valid_length);
             err = ethernet_handle_frame(&buf);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Failed to handle ethernet frame");
@@ -692,6 +691,8 @@ int main(int argc, char *argv[])
             err = devq_enqueue((struct devq *)st->rxq, buf.rid, buf.offset, buf.length,
                                buf.valid_data, buf.valid_length, buf.flags);
             assert(err_is_ok(err));
+        } else if (err != DEVQ_ERR_QUEUE_EMPTY) {
+            DEBUG_ERR(err, "Polling from ethernet receive queue failed");
         }
     }
 }
