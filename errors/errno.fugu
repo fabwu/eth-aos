@@ -504,6 +504,7 @@ errors libaos LIB_ERR_ {
 
     // Nameservice
     failure NS_REGISTER                 "Couldn't register service",
+    failure NS_LOOKUP                   "Couldn't lookup service",
 };
 
 // errors in Flounder-generated bindings

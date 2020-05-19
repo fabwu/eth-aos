@@ -57,6 +57,7 @@ typedef uint16_t  aos_rpc_msg_t;
 #define AOS_RPC_MSG_PROCESS_EXIT         0x0b
 #define AOS_RPC_MSG_PROCESS_SPAWN_REMOTE 0x0c
 #define AOS_RPC_MSG_NS_REGISTER          0x0d
+#define AOS_RPC_MSG_NS_LOOKUP            0x0e
 
 #define AOS_RPC_MSG_SETUP                0x10
 

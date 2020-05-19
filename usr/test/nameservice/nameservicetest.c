@@ -28,6 +28,7 @@
     }
 
 #define SERVICE_NAME "myservicename"
+#define UNKNOWN_SERVICE "???WHAT???"
 #define TEST_BINARY  "nameservicetest"
 /*
  * ============================================================================
@@ -43,6 +44,13 @@ static void run_client(void)
 
     /* look up service using name server */
     nameservice_chan_t chan;
+    err = nameservice_lookup(UNKNOWN_SERVICE, &chan);
+    if (err == err_no(LIB_ERR_NS_LOOKUP)) {
+        debug_printf("Got error when looking up unknown service\n");
+    } else {
+        PANIC_IF_FAIL(err, "no or wrong error for unknown service\n");
+    }
+
     err = nameservice_lookup(SERVICE_NAME, &chan);
     PANIC_IF_FAIL(err, "failed to lookup service\n");
     debug_printf("Got the service %p. Sending request '%s'\n", chan, myrequest);

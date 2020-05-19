@@ -8,7 +8,7 @@
 
 #include <aos/aos.h>
 
-#define AOS_NS_REGISTER_OK 0x1
+#define AOS_NS_OK 0x1
 
 typedef void* nameservice_chan_t;
 

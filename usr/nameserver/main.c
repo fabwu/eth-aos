@@ -36,6 +36,66 @@ struct srv_entry {
 
 struct hashtable *ht;
 
+static errval_t handle_register(char *name, domainid_t server_did)
+{
+    errval_t err;
+
+    struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
+    entry->name = name;
+    entry->did = server_did;
+    err = ht->d.put_word(&ht->d, entry->name, strlen(entry->name), (uintptr_t)entry);
+    if (err_is_fail(err)) {
+        err = HT_ERR_PUT_WORD;
+        goto fail_entry;
+    }
+
+    DEBUG_NS("Received register request with name %s from %p\n", entry->name, entry->did);
+
+    aos_rpc_header_t header = AOS_RPC_HEADER(disp_get_domain_id(), server_did,
+                                             AOS_RPC_MSG_NS_REGISTER);
+    err = lmp_protocol_send1(get_init_server_chan(), header, AOS_NS_OK);
+    if (err_is_fail(err)) {
+        err = err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
+        goto fail_send;
+    }
+    return SYS_ERR_OK;
+
+fail_send:
+    ht->d.remove(&ht->d, entry->name, strlen(entry->name));
+
+fail_entry:
+    free(entry);
+
+    return err;
+}
+
+static errval_t handle_lookup(char *name, domainid_t server_did)
+{
+    errval_t err;
+
+    DEBUG_NS("Received lookup request with name %s from %p\n", name, server_did);
+
+    struct srv_entry *entry;
+    uintptr_t success;
+    uintptr_t did = -1;
+
+    ht->d.get(&ht->d, name, strlen(name), (void **)&entry);
+
+    if (entry != NULL) {
+        did = entry->did;
+        success = AOS_NS_OK;
+    }
+
+    aos_rpc_header_t header = AOS_RPC_HEADER(disp_get_domain_id(), server_did,
+                                             AOS_RPC_MSG_NS_LOOKUP);
+    err = lmp_protocol_send2(get_init_server_chan(), header, success, did);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
+    }
+
+    return SYS_ERR_OK;
+}
+
 static void handler(void *arg)
 {
     assert(arg == NULL);
@@ -48,28 +108,36 @@ static void handler(void *arg)
 
     if (err_is_ok(err)) {
         aos_rpc_header_t header = msg.words[0];
+        domainid_t sender = AOS_RPC_HEADER_SEND(header);
+        domainid_t receiver = AOS_RPC_HEADER_RECV(header);
+        aos_rpc_msg_t message_type = AOS_RPC_HEADER_MSG(header);
+
+        assert(receiver == disp_get_domain_id());
+
         uintptr_t *buf = msg.words + 1;
+        char name[AOS_RPC_BUFFER_SIZE];
+        memcpy(name, buf, AOS_RPC_BUFFER_SIZE);
 
-        char string[AOS_RPC_BUFFER_SIZE];
-        memcpy(string, buf, AOS_RPC_BUFFER_SIZE);
-
-        struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
-        entry->name = string;
-        entry->did = AOS_RPC_HEADER_SEND(header);
-        err = ht->d.put_word(&ht->d, entry->name, strlen(entry->name), (uintptr_t)entry);
-        if (err_is_fail(err)) {
-            err = HT_ERR_PUT_WORD;
-            goto fail;
+        switch (message_type) {
+        case AOS_RPC_MSG_NS_REGISTER:;
+            err = handle_register(name, sender);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed to handle AOS_RPC_MSG_NS_REGISTER\n");
+            }
+            break;
+        case AOS_RPC_MSG_NS_LOOKUP:;
+            err = handle_lookup(name, sender);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed to handle AOS_RPC_MSG_NS_LOOKUP\n");
+            }
+            break;
+        default:
+            USER_PANIC("Nameserver received unknown msg\n");
         }
 
-        DEBUG_NS("Received register request with name %s from %p\n", entry->name,
-                 entry->did);
-
-        header = AOS_RPC_HEADER(disp_get_domain_id(), entry->did, AOS_RPC_MSG_NS_REGISTER);
-        err = lmp_protocol_send1(chan, header, AOS_NS_REGISTER_OK);
+        // Want to receive further messages
+        err = lmp_chan_register_recv(chan, get_default_waitset(), MKCLOSURE(handler, arg));
         if (err_is_fail(err)) {
-            err = err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
-            // TODO Clean up entry
             goto fail;
         }
 

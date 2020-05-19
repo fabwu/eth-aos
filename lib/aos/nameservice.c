@@ -26,7 +26,7 @@ struct srv_entry {
 
 struct nameservice_chan {
     struct aos_rpc rpc;
-    char *name;
+    const char *name;
 };
 
 struct hashtable *ht;
@@ -60,6 +60,7 @@ fail:
 
 errval_t nameservice_init(void)
 {
+    //TODO Do this when register is the first time called
     errval_t err;
 
     ht = create_hashtable();
@@ -129,7 +130,7 @@ errval_t nameservice_register(const char *name,
         return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
     }
 
-    if (ret != AOS_NS_REGISTER_OK) {
+    if (ret != AOS_NS_OK) {
         return LIB_ERR_NS_REGISTER;
     }
 
@@ -167,9 +168,54 @@ errval_t nameservice_deregister(const char *name)
  *
  * @return  SYS_ERR_OK on success, errval on failure
  */
-errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan)
+errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan_ref)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    assert(name != NULL);
+    assert(nschan_ref != NULL);
+
+    errval_t err;
+
+    struct lmp_chan *chan = get_init_client_chan();
+
+    // prepare service name
+    size_t trunc_size = MIN(strlen(name), AOS_RPC_BUFFER_SIZE - 1);
+    uintptr_t buf[3];
+
+    memset(buf, 0, AOS_RPC_BUFFER_SIZE);
+    memcpy(buf, name, trunc_size);
+
+    DEBUG_NS("Sending lookup request %s to NS\n", buf);
+
+    // send register request to NS
+    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), 0x1, AOS_RPC_MSG_NS_LOOKUP);
+    err = lmp_protocol_send3(chan, header, buf[0], buf[1], buf[2]);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);
+    }
+
+    // wait for ack
+    uintptr_t ret1;
+    uintptr_t ret2;
+    err = lmp_protocol_recv2(chan, AOS_RPC_MSG_NS_LOOKUP, &ret1, &ret2);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
+    }
+
+    if (ret1 != AOS_NS_OK) {
+        return LIB_ERR_NS_LOOKUP;
+    }
+
+    domainid_t service_did = (domainid_t)ret2;
+
+    DEBUG_NS("Service is running at %p\n", service_did);
+
+    struct nameservice_chan *nschan = (struct nameservice_chan *)nschan_ref;
+
+    nschan->name = name;
+    nschan->rpc.recv_id = service_did;
+    nschan->rpc.send_id = disp_get_domain_id();
+
+    return SYS_ERR_OK;
 }
 
 /**
