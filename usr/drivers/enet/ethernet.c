@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <netutil/etharp.h>
+#include <netutil/htons.h>
 #include <devif/queue_interface_backend.h>
 #include "enet.h"
+#include "arp.h"
 
 #include "ethernet.h"
 
@@ -52,7 +54,20 @@ errval_t ethernet_init(void *rx_base, void *tx_base, struct enet_queue *txq,
 
 errval_t ethernet_handle_frame(struct devq_buf *buf)
 {
-    // FIXME:
+    struct eth_hdr *eth = state.rx_base + buf->offset + buf->valid_data;
+    // FIXME: Only allow own mac and broadcast as destination
+    switch (ntohs(eth->type)) {
+    case ETH_TYPE_ARP:
+        return arp_handle_package((struct arp_hdr *)(eth + 1));
+    case ETH_TYPE_IP:
+        // TOOD
+        DEBUG_PRINTF("IP PACKAGE\n");
+        break;
+    default:
+        ENET_DEBUG("Unknown package (type=0x%x): drop\n", ntohs(eth->type));
+        break;
+    }
+
     return SYS_ERR_OK;
 }
 
@@ -73,8 +88,7 @@ errval_t ethernet_start_send_frame(struct eth_addr dest, struct eth_addr src,
             assert(buf.offset % ENET_MAX_BUF_SIZE == 0);
             assert(state.tx_rid == buf.rid);
             size_t offset_index = buf.offset / ENET_MAX_BUF_SIZE;
-            struct ethernet_tx_node *node
-                = state.all_nodes + offset_index * sizeof(struct ethernet_tx_node);
+            struct ethernet_tx_node *node = state.all_nodes + offset_index;
             assert(node->base == state.tx_base + buf.offset);
             node->next = state.nodes;
             state.nodes = node;

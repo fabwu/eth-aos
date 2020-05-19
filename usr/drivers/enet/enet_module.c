@@ -677,12 +677,18 @@ int main(int argc, char *argv[])
         return err;
     }
 
+    arp_send(0x0a000001);
+
     struct devq_buf buf;
     while (true) {
         err = devq_dequeue((struct devq *)st->rxq, &buf.rid, &buf.offset, &buf.length,
                            &buf.valid_data, &buf.valid_length, &buf.flags);
         if (err_is_ok(err)) {
             debug_printf("Received Packet of size %lu \n", buf.valid_length);
+            err = ethernet_handle_frame(&buf);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed to handle ethernet frame");
+            }
             err = devq_enqueue((struct devq *)st->rxq, buf.rid, buf.offset, buf.length,
                                buf.valid_data, buf.valid_length, buf.flags);
             assert(err_is_ok(err));

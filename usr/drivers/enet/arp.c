@@ -29,18 +29,13 @@ errval_t arp_init(uint64_t mac)
     return SYS_ERR_OK;
 }
 
-errval_t arp_handle_package(struct arp_hdr *package)
-{
-    // FIXME:
-    return SYS_ERR_OK;
-}
-
-static errval_t arp_send_raw(uint32_t dest_ip, uint32_t src_ip)
+static errval_t arp_send_raw(uint32_t dest_ip, uint32_t src_ip, uint16_t opcode,
+                             struct eth_addr dest_eth)
 {
     struct ethernet_frame_id *frame;
     struct arp_hdr *arp;
-    errval_t err = ethernet_start_send_frame(state.broadcast, state.mac,
-                                             htons(ETH_TYPE_ARP), &frame, (void **)&arp);
+    errval_t err = ethernet_start_send_frame(dest_eth, state.mac, htons(ETH_TYPE_ARP),
+                                             &frame, (void **)&arp);
     if (err_is_fail(err)) {
         return err;
     }
@@ -49,22 +44,48 @@ static errval_t arp_send_raw(uint32_t dest_ip, uint32_t src_ip)
     arp->proto = htons(ARP_PROT_IP);
     arp->hwlen = 0x6;
     arp->protolen = 0x4;
-    arp->opcode = htons(ARP_OP_REQ);
+    arp->opcode = opcode;
     arp->eth_src = state.mac;
-    arp->ip_src = htonl(src_ip);
-    arp->eth_dst = state.broadcast;
-    arp->ip_dst = htonl(dest_ip);
+    arp->ip_src = src_ip;
+    arp->eth_dst = dest_eth;
+    arp->ip_dst = dest_ip;
 
     return ethernet_send_frame(frame, sizeof(struct arp_hdr));
+}
+
+errval_t arp_handle_package(struct arp_hdr *package)
+{
+    ARP_DEBUG("ARP package: 0x%x -> 0x%x [0x%x]\n", ntohl(package->ip_src),
+              ntohl(package->ip_dst), ntohs(package->opcode));
+    switch (ntohs(package->opcode)) {
+    case ARP_OP_REQ:
+        if (package->ip_dst == htonl(ENET_STATIC_IP)) {
+            // Send response to arp request for our static ip
+            errval_t err = arp_send_raw(package->ip_src, htonl(ENET_STATIC_IP),
+                                        htons(ARP_OP_REP), package->eth_src);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Could not answer arp request");
+            }
+        }
+        break;
+    case ARP_OP_REP:
+        // add to hashtable
+        break;
+    default:
+        ARP_DEBUG("Unknown arp opcode: 0x%x\n", ntohs(package->opcode));
+        break;
+    }
+    return SYS_ERR_OK;
 }
 
 errval_t arp_send_probe(void)
 {
     // Probe is a regular ARP request with empty source and the own ip as destination
-    return arp_send_raw(ENET_STATIC_IP, 0);
+    return arp_send_raw(htonl(ENET_STATIC_IP), 0, htons(ARP_OP_REQ), state.broadcast);
 }
 
 errval_t arp_send(uint32_t ip_addr)
 {
-    return arp_send_raw(ip_addr, ENET_STATIC_IP);
+    return arp_send_raw(htonl(ip_addr), htonl(ENET_STATIC_IP), htons(ARP_OP_REQ),
+                        state.broadcast);
 }
