@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
     errval_t err;
     char cmdline[CMDLINE_LEN];
     coreid_t coreid = 1;
-    uint32_t pid;
+    domainid_t pid;
 
     struct aos_rpc *process_rpc = aos_rpc_get_process_channel();
     if (!process_rpc) {

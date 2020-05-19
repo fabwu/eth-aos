@@ -88,7 +88,7 @@ typedef uint8_t	coreid_t;
 #define PRIxCOREID  PRIx8
 
 #ifndef MAX_COREID
-#define MAX_COREID  254 // limit of coreid_t type (see comment above)
+#define MAX_COREID  15 // limit of coreid_t type (see comment above)
 #endif
 
 /* node id type */
@@ -118,10 +118,10 @@ typedef uint32_t rsrcid_t;
 #define PRIxRSRCID  PRIx32
 
 /* Domain ID */
-typedef uint32_t     domainid_t;
-#define MAX_DOMAINID 0xffffffff
-#define PRIuDOMAINID    PRIu32
-#define PRIxDOMAINID    PRIx32
+typedef uint16_t     domainid_t;
+#define MAX_DOMAINID 0xffff
+#define PRIuDOMAINID    PRIu16
+#define PRIxDOMAINID    PRIx16
 
 /* Performance counter */
 // Performance counter

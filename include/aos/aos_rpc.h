@@ -19,74 +19,54 @@
 #include <aos/lmp_protocol.h>
 
 typedef uintptr_t aos_rpc_header_t;
-typedef uint16_t  aos_rpc_msg_t;
+typedef uint8_t  aos_rpc_msg_t;
 
 #define AOS_RPC_BUFFER_SIZE             3*sizeof(uintptr_t)
 
 // Header
-
+// 64-bit word
+// 8-bit msg type (lsb)
+// 16-bit sender did
+// 16-bit recv did
+// 24-bit not used
 #define AOS_RPC_HEADER(sender, receiver, type) ( \
-            ( (aos_rpc_header_t) (sender   & 0xffffff) << 40 ) | \
-            ( (aos_rpc_header_t) (receiver & 0xffffff) << 16 ) | \
-            ( type & 0xffff ) \
+            ( (aos_rpc_header_t) (sender   & 0xffff) << 24 ) | \
+            ( (aos_rpc_header_t) (receiver & 0xffff) << 8 )  | \
+            ( type & 0xff ) \
         )
 
 // extract sender from header
-#define AOS_RPC_HEADER_SEND(header) ((header >> 40) & 0xffffff)
+#define AOS_RPC_HEADER_SEND(header) ((header >> 24) & 0xffff)
 
 // extract receiver from header
-#define AOS_RPC_HEADER_RECV(header) ((header >> 16) & 0xffffff)
+#define AOS_RPC_HEADER_RECV(header) ((header >> 8) & 0xffff)
 
 // extract message type from header
-#define AOS_RPC_HEADER_MSG(header) (header & 0xffff)
+#define AOS_RPC_HEADER_MSG(header) (header & 0xff)
 
-#define AOS_RPC_CORE_ID(domainid) ( (domainid & 0xffffff) >> 20 )
+#define AOS_RPC_CORE_ID(domainid) ( (domainid & 0xffff) >> 15)
 
 // Message types
 
-#define AOS_RPC_MSG_SEND_NUMBER          0x01
-#define AOS_RPC_MSG_SEND_STRING          0x02
-#define AOS_RPC_MSG_GET_RAM_CAP          0x03
-#define AOS_RPC_MSG_FREE_RAM_CAP         0x04
-#define AOS_RPC_MSG_SERIAL_GETCHAR       0x05
-#define AOS_RPC_MSG_SERIAL_PUTCHAR       0x06
-#define AOS_RPC_MSG_PROCESS_SPAWN        0x07
-#define AOS_RPC_MSG_PROCESS_GET_NAME     0x08
-#define AOS_RPC_MSG_PROCESS_GET_ALL_PIDS 0x09
-#define AOS_RPC_MSG_GET_DEVICE_CAP       0x0a
-#define AOS_RPC_MSG_PROCESS_EXIT         0x0b
-#define AOS_RPC_MSG_PROCESS_SPAWN_REMOTE 0x0c
-#define AOS_RPC_MSG_NS_REGISTER          0x0d
-#define AOS_RPC_MSG_NS_LOOKUP            0x0e
+#define AOS_RPC_SEND_NUMBER              0x01
+#define AOS_RPC_SEND_STRING              0x02
+#define AOS_RPC_GET_RAM_CAP              0x03
+#define AOS_RPC_FREE_RAM_CAP             0x04
+#define AOS_RPC_SERIAL_GETCHAR           0x05
+#define AOS_RPC_SERIAL_PUTCHAR           0x06
+#define AOS_RPC_PROCESS_SPAWN            0x07
+#define AOS_RPC_PROCESS_SPAWN_CMD        0x08
+#define AOS_RPC_PROCESS_GET_NAME         0x09
+#define AOS_RPC_PROCESS_GET_NAME_STR     0x0a
+#define AOS_RPC_PROCESS_GET_ALL_PIDS     0x0b
+#define AOS_RPC_GET_DEVICE_CAP           0x0c
+#define AOS_RPC_PROCESS_EXIT             0x0d
+#define AOS_RPC_PROCESS_SPAWN_REMOTE     0x0e
+#define AOS_RPC_PROCESS_SPAWN_REMOTE_CMD 0x0f
+#define AOS_RPC_MSG_NS_REGISTER          0x10
+#define AOS_RPC_MSG_NS_LOOKUP            0x11
 
-#define AOS_RPC_MSG_SETUP                0x10
-
-// Message subtypes
-
-#define AOS_RPC_CMB(msg, submsg) ((((msg) & 0xff) << 8) | ((submsg) & 0xff))
-#define AOS_RPC_SUBMSG_DEFAULT 0x01
-
-#define AOS_RPC_SEND_NUMBER          AOS_RPC_CMB(AOS_RPC_MSG_SEND_NUMBER, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_SEND_STRING          AOS_RPC_CMB(AOS_RPC_MSG_SEND_STRING, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_GET_RAM_CAP          AOS_RPC_CMB(AOS_RPC_MSG_GET_RAM_CAP, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_GET_DEVICE_CAP       AOS_RPC_CMB(AOS_RPC_MSG_GET_DEVICE_CAP, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_FREE_RAM_CAP         AOS_RPC_CMB(AOS_RPC_MSG_FREE_RAM_CAP, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_SERIAL_GETCHAR       AOS_RPC_CMB(AOS_RPC_MSG_SERIAL_GETCHAR, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_SERIAL_PUTCHAR       AOS_RPC_CMB(AOS_RPC_MSG_SERIAL_PUTCHAR, AOS_RPC_SUBMSG_DEFAULT)
-
-#define AOS_RPC_PROCESS_SPAWN        AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_SPAWN, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_PROCESS_SPAWN_CMD    AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_SPAWN, 0x02)
-#define AOS_RPC_PROCESS_SPAWN_REMOTE AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_SPAWN_REMOTE, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_PROCESS_SPAWN_REMOTE_CMD  AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_SPAWN_REMOTE, 0x02)
-
-#define AOS_RPC_PROCESS_GET_NAME     AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_NAME, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_PROCESS_GET_NAME_STR AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_NAME, 0x02)
-
-#define AOS_RPC_PROCESS_GET_ALL_PIDS AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_GET_ALL_PIDS, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_GET_DEVICE_CAP       AOS_RPC_CMB(AOS_RPC_MSG_GET_DEVICE_CAP, AOS_RPC_SUBMSG_DEFAULT)
-#define AOS_RPC_PROCESS_EXIT         AOS_RPC_CMB(AOS_RPC_MSG_PROCESS_EXIT, AOS_RPC_SUBMSG_DEFAULT)
-
-#define AOS_RPC_SETUP                AOS_RPC_CMB(AOS_RPC_MSG_SETUP, AOS_RPC_SUBMSG_DEFAULT)
+#define AOS_RPC_SETUP                    0xff
 
 /* An RPC binding, which may be transported over LMP or UMP. */
 struct aos_rpc {

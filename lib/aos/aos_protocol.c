@@ -149,7 +149,6 @@ static errval_t aos_protocol_recv_state(domainid_t pid, struct ump_msg_state *st
 errval_t aos_protocol_send(struct aos_chan *chan, uint16_t message_type, struct capref cap,
                            uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     if (chan->is_lmp) {
         return lmp_protocol_send(chan->lmp, message_type, cap, arg1, arg2, arg3);
     }
@@ -170,7 +169,6 @@ errval_t aos_protocol_recv(struct aos_chan *chan, uint16_t message_type,
                            struct capref *ret_cap, uintptr_t *ret_arg1,
                            uintptr_t *ret_arg2, uintptr_t *ret_arg3)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     if (chan->is_lmp) {
         return lmp_protocol_recv(chan->lmp, message_type, ret_cap, ret_arg1, ret_arg2,
                                  ret_arg3);
@@ -207,7 +205,6 @@ errval_t aos_protocol_recv(struct aos_chan *chan, uint16_t message_type,
 errval_t aos_protocol_send_bytes_cap(struct aos_chan *chan, uint16_t message_type,
                                      struct capref cap, size_t size, const uint8_t *bytes)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     if (chan->is_lmp) {
         return lmp_protocol_send_bytes_cap(chan->lmp, message_type, cap, size, bytes);
     }
@@ -237,7 +234,6 @@ errval_t aos_protocol_recv_bytes_cap(struct aos_chan *chan, uint16_t message_typ
                                      struct capref *ret_cap, size_t *ret_size,
                                      uint8_t **ret_bytes)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     assert(ret_bytes != NULL);
     if (chan->is_lmp) {
         return lmp_protocol_recv_bytes_cap(chan->lmp, message_type, ret_cap, ret_size,
@@ -291,7 +287,6 @@ errval_t aos_protocol_recv_bytes_cap(struct aos_chan *chan, uint16_t message_typ
 errval_t aos_protocol_send_string_cap(struct aos_chan *chan, uint16_t message_type,
                                       struct capref cap, const char *string)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     if (chan->is_lmp) {
         return lmp_protocol_send_string_cap(chan->lmp, message_type, cap, string);
     }
@@ -305,7 +300,6 @@ errval_t aos_protocol_send_string_cap(struct aos_chan *chan, uint16_t message_ty
 errval_t aos_protocol_recv_string_cap(struct aos_chan *chan, uint16_t message_type,
                                       struct capref *ret_cap, char **ret_string)
 {
-    assert((message_type & 0xff00) && (message_type & 0xff));
     if (chan->is_lmp) {
         return lmp_protocol_recv_string_cap(chan->lmp, message_type, ret_cap, ret_string);
     }

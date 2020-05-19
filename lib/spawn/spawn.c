@@ -473,9 +473,8 @@ static errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, do
     si->binary_name = argv[0];
 
     // Set pid (core specific)
-    assert(disp_get_core_id() <= 0xff);
-    assert(next_pid <= 0xffffff);
-    domainid_t domain_id = (next_pid & 0xffffff) | ((disp_get_core_id() & 0xff) << 24);
+    assert(disp_get_core_id() <= 0xf);
+    domainid_t domain_id = (next_pid & 0xffff) | ((disp_get_core_id() & 0xf) << 16);
     next_pid += 1;
 
     if (pid != NULL) {

@@ -46,7 +46,7 @@ struct spawninfo {
 };
 
 // Start a child process using the multiboot command line. Fills in si.
-errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, uint32_t *pid);
+errval_t spawn_load_by_name(char *binary_name, struct spawninfo *si, domainid_t *pid);
 
 // Start a child process using the multiboot information, but custom arguments.
 errval_t spawn_load_by_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid);

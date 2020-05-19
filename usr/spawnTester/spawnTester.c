@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
 
         if (level > 0) {
             errval_t err;
-            uint32_t spawnTester_pid;
+            domainid_t spawnTester_pid;
             char cmdline[64];
             sprintf(cmdline, "spawnTester %s", utostr(level - 1));
             // spawn another spawnTester with the level decreased by 1 on the same core
