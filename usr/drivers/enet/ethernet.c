@@ -15,9 +15,9 @@ struct ethernet_state {
     void *tx_base;
     struct enet_queue *txq;
     regionid_t tx_rid;
-    struct ethernet_tx_node *nodes;      ///< Linked list of free send buffers
+    struct ethernet_tx_node *nodes;      ///< Linked list of free send buffers.
     struct ethernet_tx_node *all_nodes;  ///< Array containing all send buffer nodes (free
-                                         ///< and allocated ones)
+                                         ///< and allocated ones).
 };
 
 static struct ethernet_state state;
@@ -44,7 +44,7 @@ errval_t ethernet_init(void *rx_base, void *tx_base, struct enet_queue *txq,
         nodes->next = state.nodes;
         state.nodes = nodes;
         tx_buffers += ENET_MAX_BUF_SIZE;
-        nodes += sizeof(struct ethernet_tx_node);
+        nodes += 1;
     }
 
     return SYS_ERR_OK;
@@ -52,6 +52,7 @@ errval_t ethernet_init(void *rx_base, void *tx_base, struct enet_queue *txq,
 
 errval_t ethernet_handle_frame(struct devq_buf *buf)
 {
+    // FIXME:
     return SYS_ERR_OK;
 }
 
@@ -90,7 +91,7 @@ errval_t ethernet_start_send_frame(struct eth_addr dest, struct eth_addr src,
 
     *ret_frame = (struct ethernet_frame_id *)state.nodes;
     struct eth_hdr *eth = state.nodes->base;
-    *ret_data = state.nodes->base + sizeof(struct eth_hdr);
+    *ret_data = state.nodes->base + 1;
     state.nodes = state.nodes->next;
 
     eth->dst = dest;
@@ -104,7 +105,7 @@ errval_t ethernet_send_frame(struct ethernet_frame_id *frame, size_t size)
 {
     assert(size + sizeof(struct eth_hdr) <= ENET_MAX_PKT_SIZE);
     struct ethernet_tx_node *node = (struct ethernet_tx_node *)frame;
-    return devq_enqueue((struct devq *)state.txq, state.tx_rid, (lvaddr_t)node->base,
-                        ENET_MAX_BUF_SIZE, (lvaddr_t)node->base + sizeof(struct eth_hdr),
-                        size, 0);
+    return devq_enqueue((struct devq *)state.txq, state.tx_rid,
+                        (lvaddr_t)node->base - (lvaddr_t)state.tx_base, ENET_MAX_BUF_SIZE,
+                        0, sizeof(struct eth_hdr) + size, 0);
 }
