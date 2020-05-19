@@ -24,10 +24,8 @@
 #include <dev/imx8x/enet_dev.h>
 #include <netutil/etharp.h>
 #include <maps/imx8x_map.h>
-
-
-#include <netutil/htons.h>
-#include "consts.h"
+#include "ethernet.h"
+#include "arp.h"
 
 #include "enet.h"
 
@@ -613,7 +611,7 @@ int main(int argc, char *argv[])
     }
 
     // Add some memory to receive stuffa
-    err = frame_alloc(&st->rx_mem, 512 * 2048, NULL);
+    err = frame_alloc(&st->rx_mem, RX_RING_SIZE * ENET_RX_FRSIZE, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -626,13 +624,23 @@ int main(int argc, char *argv[])
 
     // Enqueue buffers
     for (int i = 0; i < st->rxq->size - 1; i++) {
-        err = devq_enqueue((struct devq *)st->rxq, rid, i * (2048), 2048, 0, 2048, 0);
+        err = devq_enqueue((struct devq *)st->rxq, rid, i * ENET_RX_FRSIZE,
+                           ENET_RX_FRSIZE, 0, ENET_RX_FRSIZE, 0);
         if (err_is_fail(err)) {
             return err;
         }
     }
 
-    err = frame_alloc(&st->tx_mem, 512 * 2048, NULL);
+    void *rx_va_base;
+    err = paging_map_frame_attr(get_current_paging_state(), &rx_va_base,
+                                RX_RING_SIZE * ENET_RX_FRSIZE, st->rx_mem,
+                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not map receive region");
+        return err;
+    }
+
+    err = frame_alloc(&st->tx_mem, TX_RING_SIZE * ENET_MAX_BUF_SIZE, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -642,53 +650,31 @@ int main(int argc, char *argv[])
         return err;
     }
 
-    void * tx_va_base;
-    err = paging_map_frame_attr(get_current_paging_state(), &tx_va_base, 512 * 2048, st->tx_mem,
+    void *tx_va_base;
+    err = paging_map_frame_attr(get_current_paging_state(), &tx_va_base,
+                                TX_RING_SIZE * ENET_MAX_BUF_SIZE, st->tx_mem,
                                 VREGION_FLAGS_READ_WRITE, NULL, NULL);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not map transmit region");
         return err;
     }
 
-    struct eth_hdr *eth = (struct eth_hdr *)tx_va_base;
-    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
-        eth->dst.addr[i] = 0xff;
+    err = ethernet_init(rx_va_base, tx_va_base, st->txq, rid);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not initialise ethernet abstraction");
+        return err;
     }
-    int tmp_shift = ETH_ADDR_LEN * 8;
-    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
-        tmp_shift -= 8;
-        eth->src.addr[i] = (st->mac >> tmp_shift) & 0xff;
-    }
-    eth->type = htons(ETH_TYPE_ARP);
 
-    struct arp_hdr *arp = (struct arp_hdr *)(tx_va_base + sizeof(struct eth_hdr));
-    arp->hwtype = htons(ARP_HW_TYPE_ETH);
-    arp->proto = htons(ARP_PROT_IP);
-    arp->hwlen = 0x6;
-    arp->protolen = 0x4;
-    arp->opcode = htons(ARP_OP_REQ);
-    tmp_shift = ETH_ADDR_LEN * 8;
-    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
-        tmp_shift -= 8;
-        arp->eth_src.addr[i] = (st->mac >> tmp_shift) & 0xff;
+    err = arp_init(st->mac);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not initialise arp abstraction");
+        return err;
     }
-    arp->ip_src = 0;
-    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
-        arp->eth_dst.addr[i] = 0xff;
-    }
-    arp->ip_dst = htonl(ENET_STATIC_IP);
 
-    DEBUG_PRINTF("TX TEST\n");
-    struct devq_buf txb;
-    err = devq_enqueue((struct devq *)st->txq, rid, 0, 2048, 0, 1000, 0);
-    if (err_is_ok(err)) {
-        DEBUG_PRINTF("OK\n");
-        err = devq_dequeue((struct devq *)st->txq, &txb.rid, &txb.offset, &txb.length,
-                        &txb.valid_data, &txb.valid_length, &txb.flags);
-        assert(err_is_ok(err));
-        DEBUG_PRINTF("OK2\n");
-    } else {
-        DEBUG_ERR(err, "NOK");
+    err = arp_send_probe();
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not send out arp probe request");
+        return err;
     }
 
     struct devq_buf buf;

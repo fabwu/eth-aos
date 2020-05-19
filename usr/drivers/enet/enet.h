@@ -10,6 +10,9 @@
 #ifndef ENET_H_
 #define ENET_H_
 
+#include <devif/queue_interface_backend.h>
+#include <driverkit/driverkit.h>
+#include <dev/imx8x/enet_dev.h>
 
 #define ENET_DEBUG_OPTION 1
 
