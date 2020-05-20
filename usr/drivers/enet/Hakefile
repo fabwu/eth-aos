@@ -25,6 +25,7 @@
     target = "enet",
     cFiles = [ 
                 "enet_module.c",
+                "consts.c",
                 "ethernet.c",
                 "arp.c",
                 "ip.c"

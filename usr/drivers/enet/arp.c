@@ -6,12 +6,11 @@
 #include <collections/hash_table.h>
 #include "consts.h"
 #include "ethernet.h"
+#include "ip.h"
 
 #include "arp.h"
 
 struct arp_state {
-    struct eth_addr mac;  ///< The mac address in network byte order.
-    struct eth_addr broadcast;
     collections_hash_table *cache;  ///< ARP cache with ip as key and mac address in
                                     ///< network byte order as entry.
 };
@@ -19,18 +18,8 @@ struct arp_state {
 static struct arp_state state;
 
 
-errval_t arp_init(uint64_t mac)
+errval_t arp_init(void)
 {
-    // Convert mac to network byte order
-    for (int i = ETH_ADDR_LEN - 1; i >= 0; --i) {
-        state.mac.addr[i] = mac & 0xff;
-        mac >>= 8;
-    }
-
-    for (int i = 0; i < ETH_ADDR_LEN; ++i) {
-        state.broadcast.addr[i] = 0xff;
-    }
-
     // Create arp cache table
     collections_hash_create(&state.cache, NULL);
     assert(state.cache != NULL);
@@ -43,7 +32,7 @@ static errval_t arp_send_raw(ip_addr_t dest_ip, ip_addr_t src_ip, uint16_t opcod
 {
     struct ethernet_frame_id *frame;
     struct arp_hdr *arp;
-    errval_t err = ethernet_start_send_frame(dest_eth, state.mac, htons(ETH_TYPE_ARP),
+    errval_t err = ethernet_start_send_frame(dest_eth, consts_eth_self, htons(ETH_TYPE_ARP),
                                              &frame, (void **)&arp);
     if (err_is_fail(err)) {
         return err;
@@ -54,7 +43,7 @@ static errval_t arp_send_raw(ip_addr_t dest_ip, ip_addr_t src_ip, uint16_t opcod
     arp->hwlen = 0x6;
     arp->protolen = 0x4;
     arp->opcode = opcode;
-    arp->eth_src = state.mac;
+    arp->eth_src = consts_eth_self;
     arp->ip_src = src_ip;
     arp->eth_dst = dest_eth;
     arp->ip_dst = dest_ip;
@@ -87,8 +76,12 @@ errval_t arp_handle_package(struct arp_hdr *package)
                 entry = malloc(sizeof(struct eth_addr));
                 collections_hash_insert(state.cache, ip, (void *)entry);
             }
+
             // Write new address (overwrite if entry already existed)
             *entry = package->eth_src;
+
+            // Notify ip protocoll so pending packages can be sent
+            ip_send_waiting_packages(ntohl(package->ip_src), package->eth_src);
         }
         break;
     default:
@@ -101,13 +94,13 @@ errval_t arp_handle_package(struct arp_hdr *package)
 errval_t arp_send_probe(void)
 {
     // Probe is a regular ARP request with empty source and the own ip as destination
-    return arp_send_raw(htonl(ENET_STATIC_IP), 0, htons(ARP_OP_REQ), state.broadcast);
+    return arp_send_raw(htonl(ENET_STATIC_IP), 0, htons(ARP_OP_REQ), consts_eth_broadcast);
 }
 
 errval_t arp_send(ip_addr_t ip_addr)
 {
     return arp_send_raw(htonl(ip_addr), htonl(ENET_STATIC_IP), htons(ARP_OP_REQ),
-                        state.broadcast);
+                        consts_eth_broadcast);
 }
 
 struct eth_addr *arp_lookup_ip(ip_addr_t ip)

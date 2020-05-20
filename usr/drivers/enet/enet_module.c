@@ -24,6 +24,7 @@
 #include <dev/imx8x/enet_dev.h>
 #include <netutil/etharp.h>
 #include <maps/imx8x_map.h>
+#include "consts.h"
 #include "ethernet.h"
 #include "arp.h"
 
@@ -659,13 +660,15 @@ int main(int argc, char *argv[])
         return err;
     }
 
+    consts_init(st->mac);
+
     err = ethernet_init(rx_va_base, tx_va_base, st->txq, rid);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not initialise ethernet abstraction");
         return err;
     }
 
-    err = arp_init(st->mac);
+    err = arp_init();
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not initialise arp abstraction");
         return err;

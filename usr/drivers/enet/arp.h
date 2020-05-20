@@ -5,7 +5,7 @@
 #include <netutil/etharp.h>
 #include <netutil/ip.h>
 
-errval_t arp_init(uint64_t mac);
+errval_t arp_init(void);
 
 errval_t arp_handle_package(struct arp_hdr *package);
 

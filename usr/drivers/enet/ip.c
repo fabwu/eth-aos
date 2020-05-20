@@ -68,11 +68,11 @@ errval_t ip_start_send_package(ip_addr_t dest_ip, struct ip_package_id **ret_pac
     assert(ret_package != NULL);
     assert(ret_data != NULL);
 
-    *ret_package = malloc(sizeof(struct ip_package_id));
-    if (*ret_package == NULL) {
+    struct ip_package_id *package = malloc(sizeof(struct ip_package_id));
+    if (package == NULL) {
         return LIB_ERR_MALLOC_FAIL;
     }
-    (*ret_package)->id.ip_node = NULL;
+    package->id.ip_node = NULL;
 
     struct eth_addr *dest_eth = arp_lookup_ip(dest_ip);
     struct ip_hdr *ip = NULL;
@@ -82,20 +82,19 @@ errval_t ip_start_send_package(ip_addr_t dest_ip, struct ip_package_id **ret_pac
             err = ENET_ERR_IP_BUFFER_FULL;
             goto out;
         }
-        (*ret_package)->is_frame = false;
-        (*ret_package)->id.ip_node = malloc(sizeof(struct ip_waiting_node));
-        if ((*ret_package)->id.ip_node == NULL) {
+        package->is_frame = false;
+        package->id.ip_node = malloc(sizeof(struct ip_waiting_node));
+        if (package->id.ip_node == NULL) {
             err = LIB_ERR_MALLOC_FAIL;
             goto out;
         }
-        (*ret_package)->id.ip_node->ip = dest_ip;
-        (*ret_package)->id.ip_node->next = NULL;
-        ip = (struct ip_hdr *)&(*ret_package)->id.ip_node->data;
+        package->id.ip_node->ip = dest_ip;
+        package->id.ip_node->next = NULL;
+        ip = (struct ip_hdr *)&package->id.ip_node->data;
     } else {
-        // FIXME: Get source eth addr
-        (*ret_package)->is_frame = true;
-        err = ethernet_start_send_frame(*dest_eth, *dest_eth, htons(ETH_TYPE_IP),
-                                        &(*ret_package)->id.frame, (void **)&ip);
+        package->is_frame = true;
+        err = ethernet_start_send_frame(*dest_eth, consts_eth_self, htons(ETH_TYPE_IP),
+                                        &package->id.frame, (void **)&ip);
         if (err_is_fail(err)) {
             goto out;
         }
@@ -112,17 +111,19 @@ errval_t ip_start_send_package(ip_addr_t dest_ip, struct ip_package_id **ret_pac
     ip->src = htonl(ENET_STATIC_IP);
     ip->dest = htonl(dest_ip);
 
-    (*ret_package)->ip = ip;
-    *ret_data = ip + 1;
+    package->ip = ip;
+    *ret_package = package;
+    *ret_data = (void *)(ip + 1);
 out:
     if (err_is_fail(err)) {
-        if (*ret_package != NULL) {
-            if (!(*ret_package)->is_frame && (*ret_package)->id.ip_node != NULL) {
-                free((*ret_package)->id.ip_node);
+        if (package != NULL) {
+            if (!package->is_frame && package->id.ip_node != NULL) {
+                free(package->id.ip_node);
             }
-            free(*ret_package);
-            *ret_package = NULL;
+            free(package);
         }
+        *ret_package = NULL;
+        *ret_data = NULL;
     }
 
     return err;
@@ -135,10 +136,9 @@ void ip_send_waiting_packages(ip_addr_t dest_ip, struct eth_addr dest_eth)
     struct ip_waiting_node *cur = state.waiting_nodes;
     while (cur != NULL) {
         if (cur->ip == dest_ip) {
-            // FIXME: src_eth
             struct ethernet_frame_id *frame;
             void *data;
-            err = ethernet_start_send_frame(dest_eth, dest_eth, htons(ETH_TYPE_IP),
+            err = ethernet_start_send_frame(dest_eth, consts_eth_self, htons(ETH_TYPE_IP),
                                             &frame, &data);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Could not start sending pending ip package");
