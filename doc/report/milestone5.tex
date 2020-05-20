@@ -129,7 +129,21 @@ second core.
 
 After we created all the necessary capabilities we were able to spawn a process without errors, but quickly 
 noticed race conditions in the paging code. Debugging and fixing the errors was quite hard and we were glad that 
-we skipped inter-core communication so less moving parts were involved.
+we skipped inter-core communication so less moving parts were involved. We eventually tracked down two latent 
+issues in our paging code.
 
-The problem with the paging code...
+The first was related to recursion in the slot allocator.
+When mapping in a page table, we needed to allocate a slot for the new table.
+However, if the slot allocator happened to run out of slots, it would itself recursively call the paging code.
+This could end up mapping the same table a second time, unsuccessfully.
+To solve the problem, we made sure to allocate all slots before starting a mapping operation, to avoid any recursive mapping operations.
+
+The second issue was in our implementation of \verb|paging_unmap|.
+While marking a virtual page as unmapped in our bookkeeping structures, we had forgotten to unmap it in hardware by invoking \verb|vnode_unmap|.
+As such, when the page was re-allocated later, the mapping operation would fail, as the old mapping was still active.
+
+Booting a second core proved to be a useful stress test for our work in previous milestones.
+With the issues resolved, we were able to continue with ...
+
+
  
