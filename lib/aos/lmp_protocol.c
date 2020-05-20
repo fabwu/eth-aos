@@ -51,10 +51,11 @@ static errval_t lmp_protocol_wait_for(bool *ready_bit)
     struct waitset *default_ws = get_default_waitset();
     if (!do_ump_dispatch) {
         while (!(*ready_bit)) {
-            err = event_dispatch(default_ws);
-            if (err_is_fail(err)) {
+            err = event_dispatch_non_block(default_ws);
+            if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
                 return err_push(err, LIB_ERR_EVENT_DISPATCH);
             }
+            thread_yield();
         }
     } else {
         aos_protocol_wait_for(ready_bit);
