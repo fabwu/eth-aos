@@ -61,10 +61,10 @@ errval_t ethernet_handle_frame(struct devq_buf *buf)
         return arp_handle_package((struct arp_hdr *)(eth + 1));
     case ETH_TYPE_IP:
         // TOOD
-        DEBUG_PRINTF("IP PACKAGE\n");
+        ETHARP_DEBUG("IP PACKAGE\n");
         break;
     default:
-        ENET_DEBUG("Unknown package (type=0x%x): drop\n", ntohs(eth->type));
+        ETHARP_DEBUG("Unknown package (type=0x%x): drop\n", ntohs(eth->type));
         break;
     }
 
@@ -100,7 +100,7 @@ errval_t ethernet_start_send_frame(struct eth_addr dest, struct eth_addr src,
     }
 
     if (state.nodes == NULL) {
-        return ENET_ERR_ETH_NO_FREE_BUFFER;
+        return ENET_ERR_ETH_BUFFER_FULL;
     }
 
     *ret_frame = (struct ethernet_frame_id *)state.nodes;

@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <netutil/etharp.h>
+#include <netutil/ip.h>
 #include <netutil/htons.h>
 #include <collections/hash_table.h>
 #include "consts.h"
@@ -37,7 +38,7 @@ errval_t arp_init(uint64_t mac)
     return SYS_ERR_OK;
 }
 
-static errval_t arp_send_raw(uint32_t dest_ip, uint32_t src_ip, uint16_t opcode,
+static errval_t arp_send_raw(ip_addr_t dest_ip, ip_addr_t src_ip, uint16_t opcode,
                              struct eth_addr dest_eth)
 {
     struct ethernet_frame_id *frame;
@@ -63,8 +64,8 @@ static errval_t arp_send_raw(uint32_t dest_ip, uint32_t src_ip, uint16_t opcode,
 
 errval_t arp_handle_package(struct arp_hdr *package)
 {
-    ARP_DEBUG("ARP package: 0x%x -> 0x%x [0x%x]\n", ntohl(package->ip_src),
-              ntohl(package->ip_dst), ntohs(package->opcode));
+    ETHARP_DEBUG("ARP package: 0x%x -> 0x%x [0x%x]\n", ntohl(package->ip_src),
+                 ntohl(package->ip_dst), ntohs(package->opcode));
     switch (ntohs(package->opcode)) {
     case ARP_OP_REQ:
         if (package->ip_dst == htonl(ENET_STATIC_IP)) {
@@ -91,7 +92,7 @@ errval_t arp_handle_package(struct arp_hdr *package)
         }
         break;
     default:
-        ARP_DEBUG("Unknown arp opcode: 0x%x\n", ntohs(package->opcode));
+        ETHARP_DEBUG("Unknown arp opcode: 0x%x\n", ntohs(package->opcode));
         break;
     }
     return SYS_ERR_OK;
@@ -103,17 +104,15 @@ errval_t arp_send_probe(void)
     return arp_send_raw(htonl(ENET_STATIC_IP), 0, htons(ARP_OP_REQ), state.broadcast);
 }
 
-errval_t arp_send(uint32_t ip_addr)
+errval_t arp_send(ip_addr_t ip_addr)
 {
     return arp_send_raw(htonl(ip_addr), htonl(ENET_STATIC_IP), htons(ARP_OP_REQ),
                         state.broadcast);
 }
 
-bool arp_lookup_ip(uint32_t ip, struct eth_addr **ret_addr)
+struct eth_addr *arp_lookup_ip(ip_addr_t ip)
 {
-    assert(ret_addr != NULL);
-    *ret_addr = collections_hash_find(state.cache, (uint64_t)ip);
-    return (*ret_addr) != NULL;
+    return collections_hash_find(state.cache, (uint64_t)ip);
 }
 
 void arp_print_cache(void)
@@ -133,10 +132,10 @@ void arp_print_cache(void)
             break;
         }
 
-        printf("%d.%d.%d.%d    %02x:%02x:%02x:%02x:%02x:%02x\n",
-               (uint32_t)ip >> 24, ((uint32_t)ip >> 16) & 0xff,
-               ((uint32_t)ip >> 8) & 0xff, (uint32_t)ip & 0xff, eth->addr[0],
-               eth->addr[1], eth->addr[2], eth->addr[3], eth->addr[4], eth->addr[5]);
+        printf("%d.%d.%d.%d    %02x:%02x:%02x:%02x:%02x:%02x\n", (ip_addr_t)ip >> 24,
+               ((ip_addr_t)ip >> 16) & 0xff, ((ip_addr_t)ip >> 8) & 0xff,
+               (ip_addr_t)ip & 0xff, eth->addr[0], eth->addr[1], eth->addr[2],
+               eth->addr[3], eth->addr[4], eth->addr[5]);
     }
 
     collections_hash_traverse_end(state.cache);

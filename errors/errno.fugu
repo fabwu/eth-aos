@@ -1482,7 +1482,8 @@ errors sata ENET_ERR_ {
     failure PHY_RESET            "Phy reset failed",
     failure MDIO_WRITE           "Timeout while trying to write to MDIO",
     failure MDIO_READ            "Timeout while trying to reading from MDIO",
-    failure ETH_NO_FREE_BUFFER   "There is no free ethernet frame buffer. Try again later",
+    failure ETH_BUFFER_FULL      "There is no free ethernet frame buffer. Try again later",
+    failure IP_BUFFER_FULL       "hw address unkown for given ip and ip buffer full. Try again later",
 };
 
 // errors LPUART driver
