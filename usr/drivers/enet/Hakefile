@@ -28,7 +28,8 @@
                 "consts.c",
                 "ethernet.c",
                 "arp.c",
-                "ip.c"
+                "ip.c",
+                "icmp.c"
             ],
     mackerelDevices = ["imx8x/enet"],
     addLibraries = libDeps ["driverkit", "devif_backend_enet", "netutil"],

@@ -4,6 +4,7 @@
 #include <devif/queue_interface_backend.h>
 #include "enet.h"
 #include "arp.h"
+#include "ip.h"
 
 #include "ethernet.h"
 
@@ -60,9 +61,7 @@ errval_t ethernet_handle_frame(struct devq_buf *buf)
     case ETH_TYPE_ARP:
         return arp_handle_package((struct arp_hdr *)(eth + 1));
     case ETH_TYPE_IP:
-        // TOOD
-        ETHARP_DEBUG("IP PACKAGE\n");
-        break;
+        return ip_handle_package((struct ip_hdr *)(eth + 1));
     default:
         ETHARP_DEBUG("Unknown package (type=0x%x): drop\n", ntohs(eth->type));
         break;

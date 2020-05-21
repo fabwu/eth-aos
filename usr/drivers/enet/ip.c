@@ -8,6 +8,7 @@
 #include "consts.h"
 #include "ethernet.h"
 #include "arp.h"
+#include "icmp.h"
 
 #include "ip.h"
 
@@ -38,39 +39,39 @@ errval_t ip_init(void)
 errval_t ip_handle_package(struct ip_hdr *ip)
 {
     uint16_t checksum = inet_checksum((void *)ip, IPH_HL(ip) * 4);
-    if (!checksum) {
+    if (checksum != 0) {
         IP_DEBUG("Checksum invalid 0x%x\n", checksum);
     }
 
     if (IPH_V(ip) != 4) {
         IP_DEBUG("Dropping package of ip version: %d\n", IPH_V(ip));
-        return;
+        return ENET_ERR_IP_DROPPING;
     }
 
     if (ip->offset != 0 && ip->offset != htons(IP_DF)) {
         IP_DEBUG("Dropping fragmented package\n");
-        return;
+        return ENET_ERR_IP_DROPPING;
     }
 
     if (ip->dest != htonl(ENET_STATIC_IP)
-        && ntohl(ip->dest) & ENET_STATIC_SUBNET != ~ENET_STATIC_SUBNET) {
+        && (ntohl(ip->dest) & ENET_STATIC_SUBNET) != ~ENET_STATIC_SUBNET) {
         IP_DEBUG("Dropping ip package: Destination is neither us nor broadcast "
                  "(dest=0x%x)\n",
                  ip->dest);
-        return;
+        return ENET_ERR_IP_DROPPING;
     }
 
-    // FIXME: Handle IHL field (variable length of header)
+    void *data = ((void *)ip) + IPH_HL(ip) * 4;
     switch (ip->proto) {
     case IP_PROTO_ICMP:
-
+        icmp_handle_package(data, ntohl(ip->src), ntohs(ip->len) - IPH_HL(ip) * 4);
         break;
     case IP_PROTO_UDP:
         IP_DEBUG("TODO UDP\n");
         break;
     default:
         IP_DEBUG("Unkown ip protocol (type=0x%x)\n", ip->proto);
-        break;
+        return ENET_ERR_IP_DROPPING;
     }
 
     return SYS_ERR_OK;
@@ -185,8 +186,8 @@ errval_t ip_send_package(struct ip_package_id *package, size_t size)
 
     package->ip->len = htons((uint16_t)size);
     package->ip->chksum = 0;
-    uint16_t checksum = inet_checksum(package->ip, sizeof(struct ip_hdr));
-    package->ip->chksum = htons(checksum);
+    package->ip->chksum = inet_checksum(package->ip, sizeof(struct ip_hdr));
+    IP_DEBUG("checksum: %x\n", package->ip->chksum);
 
     if (package->is_frame) {
         err = ethernet_send_frame(package->id.frame, size);

@@ -1484,6 +1484,8 @@ errors sata ENET_ERR_ {
     failure MDIO_READ            "Timeout while trying to reading from MDIO",
     failure ETH_BUFFER_FULL      "There is no free ethernet frame buffer. Try again later",
     failure IP_BUFFER_FULL       "hw address unkown for given ip and ip buffer full. Try again later",
+    failure IP_DROPPING          "Dropping incoming ip package. Turn on IP_DEBUG for more details",
+    failure ICMP_DROPPING        "Dropping incoming icmp package. Turn on ICMP_DEBUG for more details",
 };
 
 // errors LPUART driver

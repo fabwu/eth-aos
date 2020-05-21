@@ -2,6 +2,7 @@
 #define ENET_IP_H_
 
 #include <errno.h>
+#include <netutil/etharp.h>
 #include <netutil/ip.h>
 
 #define IP_MAX_WAITING_NODES 100
