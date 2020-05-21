@@ -5,8 +5,19 @@
 #include <netutil/ip.h>
 
 #define IP_MAX_WAITING_NODES 100
+#define IP_TTL 0x40
 
-struct ip_package_id;
+struct ethernet_frame_id;
+struct ip_waiting_node;
+
+struct ip_package_id {
+    bool is_frame;
+    union {
+        struct ethernet_frame_id *frame;
+        struct ip_waiting_node *ip_node;
+    } id;
+    struct ip_hdr *ip;
+};
 
 errval_t ip_init(void);
 
@@ -28,8 +39,8 @@ void ip_send_waiting_packages(ip_addr_t dest_ip, struct eth_addr dest_eth);
  * \brief Fetches or creates a buffer to which the data of an ip package can be written
  * to. The ip address has to be in host byte order.
  */
-errval_t ip_start_send_package(ip_addr_t dest_ip, struct ip_package_id **ret_package,
-                               void **ret_data);
+errval_t ip_start_send_package(ip_addr_t dest_ip, uint8_t protocol,
+                               struct ip_package_id *package, void **ret_data);
 
 /**
  * \brief Sends an ip package which was started with ip_start_send_package. In case the

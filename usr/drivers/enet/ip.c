@@ -4,6 +4,7 @@
 #include <netutil/etharp.h>
 #include <netutil/ip.h>
 #include <netutil/htons.h>
+#include <netutil/checksum.h>
 #include "consts.h"
 #include "ethernet.h"
 #include "arp.h"
@@ -21,15 +22,7 @@ struct ip_state {
     struct ip_waiting_node *waiting_nodes;  ///< Linked list of ip packages that are
                                             ///< waiting on arp to be sent.
     size_t waiting_nodes_length;
-};
-
-struct ip_package_id {
-    bool is_frame;
-    union {
-        struct ethernet_frame_id *frame;
-        struct ip_waiting_node *ip_node;
-    } id;
-    struct ip_hdr *ip;
+    uint16_t next_id;  ///< Giving each package an id by counting up.
 };
 
 static struct ip_state state;
@@ -38,14 +31,36 @@ errval_t ip_init(void)
 {
     state.waiting_nodes = NULL;
     state.waiting_nodes_length = 0;
+    state.next_id = 1;
     return SYS_ERR_OK;
 }
 
 errval_t ip_handle_package(struct ip_hdr *ip)
 {
+    uint16_t checksum = inet_checksum((void *)ip, IPH_HL(ip) * 4);
+    if (!checksum) {
+        IP_DEBUG("Checksum invalid 0x%x\n", checksum);
+    }
+
+    if (IPH_V(ip) != 4) {
+        IP_DEBUG("Dropping package of ip version: %d\n", IPH_V(ip));
+        return;
+    }
+
     if (ip->offset != 0 && ip->offset != htons(IP_DF)) {
         IP_DEBUG("Dropping fragmented package\n");
+        return;
     }
+
+    if (ip->dest != htonl(ENET_STATIC_IP)
+        && ntohl(ip->dest) & ENET_STATIC_SUBNET != ~ENET_STATIC_SUBNET) {
+        IP_DEBUG("Dropping ip package: Destination is neither us nor broadcast "
+                 "(dest=0x%x)\n",
+                 ip->dest);
+        return;
+    }
+
+    // FIXME: Handle IHL field (variable length of header)
     switch (ip->proto) {
     case IP_PROTO_ICMP:
 
@@ -61,32 +76,36 @@ errval_t ip_handle_package(struct ip_hdr *ip)
     return SYS_ERR_OK;
 }
 
-errval_t ip_start_send_package(ip_addr_t dest_ip, struct ip_package_id **ret_package,
-                               void **ret_data)
+errval_t ip_start_send_package(ip_addr_t dest_ip, uint8_t protocol,
+                               struct ip_package_id *package, void **ret_data)
 {
-    errval_t err = SYS_ERR_OK;
-    assert(ret_package != NULL);
+    errval_t err;
+    assert(package != NULL);
     assert(ret_data != NULL);
 
-    struct ip_package_id *package = malloc(sizeof(struct ip_package_id));
-    if (package == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
     package->id.ip_node = NULL;
 
     struct eth_addr *dest_eth = arp_lookup_ip(dest_ip);
-    struct ip_hdr *ip = NULL;
+    struct ip_hdr *ip;
 
     if (dest_eth == NULL) {
-        if (state.waiting_nodes_length >= IP_MAX_WAITING_NODES) {
-            err = ENET_ERR_IP_BUFFER_FULL;
-            goto out;
+        // Send arp request to discover unkown hw address for given ip address
+        err = arp_send(dest_ip);
+        if (err_is_fail(err)) {
+            IP_DEBUG("Could not send arp request for unkown ip 0x%x\n", dest_ip);
+            return err;
         }
+
+        // Reached limit of packages that are buffered (client has to retry later)
+        if (state.waiting_nodes_length >= IP_MAX_WAITING_NODES) {
+            return ENET_ERR_IP_BUFFER_FULL;
+        }
+
+        // Buffer ip package in memory and send it as soon as hw address is discovered
         package->is_frame = false;
         package->id.ip_node = malloc(sizeof(struct ip_waiting_node));
         if (package->id.ip_node == NULL) {
-            err = LIB_ERR_MALLOC_FAIL;
-            goto out;
+            return LIB_ERR_MALLOC_FAIL;
         }
         package->id.ip_node->ip = dest_ip;
         package->id.ip_node->next = NULL;
@@ -96,37 +115,27 @@ errval_t ip_start_send_package(ip_addr_t dest_ip, struct ip_package_id **ret_pac
         err = ethernet_start_send_frame(*dest_eth, consts_eth_self, htons(ETH_TYPE_IP),
                                         &package->id.frame, (void **)&ip);
         if (err_is_fail(err)) {
-            goto out;
+            return err;
         }
     }
 
-    // ip->v_hl =
-    // ip->tos =
+    // 4 = IPv4, IP_HLEN / 4 = 5 integers = no options
+    IPH_VHL_SET(ip, 4, IP_HLEN / 4);
+    ip->tos = 0;
     // ip->len is set when finishing the package
-    // ip->id =
+    ip->id = state.next_id;
+    ++state.next_id;
     ip->offset = htons(IP_DF);
-    // ip->ttl =
-    // ip->proto =
+    ip->ttl = IP_TTL;
+    ip->proto = protocol;
     // ip->chksum is set when finishing the package
     ip->src = htonl(ENET_STATIC_IP);
     ip->dest = htonl(dest_ip);
 
     package->ip = ip;
-    *ret_package = package;
     *ret_data = (void *)(ip + 1);
-out:
-    if (err_is_fail(err)) {
-        if (package != NULL) {
-            if (!package->is_frame && package->id.ip_node != NULL) {
-                free(package->id.ip_node);
-            }
-            free(package);
-        }
-        *ret_package = NULL;
-        *ret_data = NULL;
-    }
 
-    return err;
+    return SYS_ERR_OK;
 }
 
 void ip_send_waiting_packages(ip_addr_t dest_ip, struct eth_addr dest_eth)
@@ -175,7 +184,9 @@ errval_t ip_send_package(struct ip_package_id *package, size_t size)
     assert(size + sizeof(struct eth_hdr) <= ENET_MAX_PKT_SIZE);
 
     package->ip->len = htons((uint16_t)size);
-    // FIXME: package->ip->chksum
+    package->ip->chksum = 0;
+    uint16_t checksum = inet_checksum(package->ip, sizeof(struct ip_hdr));
+    package->ip->chksum = htons(checksum);
 
     if (package->is_frame) {
         err = ethernet_send_frame(package->id.frame, size);
@@ -195,8 +206,6 @@ errval_t ip_send_package(struct ip_package_id *package, size_t size)
             ip_send_waiting_packages(package->id.ip_node->ip, *dest_eth);
         }
     }
-
-    free(package);
 
     return SYS_ERR_OK;
 }
