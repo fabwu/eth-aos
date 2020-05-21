@@ -635,7 +635,7 @@ int main(int argc, char *argv[])
     void *rx_va_base;
     err = paging_map_frame_attr(get_current_paging_state(), &rx_va_base,
                                 RX_RING_SIZE * ENET_RX_FRSIZE, st->rx_mem,
-                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
+                                VREGION_FLAGS_READ_WRITE_NOCACHE, NULL, NULL);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not map receive region");
         return err;
@@ -654,7 +654,7 @@ int main(int argc, char *argv[])
     void *tx_va_base;
     err = paging_map_frame_attr(get_current_paging_state(), &tx_va_base,
                                 TX_RING_SIZE * ENET_MAX_BUF_SIZE, st->tx_mem,
-                                VREGION_FLAGS_READ_WRITE, NULL, NULL);
+                                VREGION_FLAGS_READ_WRITE_NOCACHE, NULL, NULL);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not map transmit region");
         return err;
