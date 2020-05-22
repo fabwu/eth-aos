@@ -7,6 +7,9 @@
 
 errval_t arp_init(void);
 
+/**
+ * \brief Handle incoming arp package.
+ */
 errval_t arp_handle_package(struct arp_hdr *package);
 
 /**

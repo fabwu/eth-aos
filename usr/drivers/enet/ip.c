@@ -9,6 +9,7 @@
 #include "ethernet.h"
 #include "arp.h"
 #include "icmp.h"
+#include "udp.h"
 
 #include "ip.h"
 
@@ -38,6 +39,7 @@ errval_t ip_init(void)
 
 errval_t ip_handle_package(struct ip_hdr *ip)
 {
+    IP_DEBUG("Handling ip package\n");
     uint16_t checksum = inet_checksum((void *)ip, IPH_HL(ip) * 4);
     if (checksum != 0) {
         IP_DEBUG("Checksum invalid 0x%x\n", checksum);
@@ -61,20 +63,19 @@ errval_t ip_handle_package(struct ip_hdr *ip)
         return ENET_ERR_IP_DROPPING;
     }
 
+    IP_DEBUG("From 0x%x to 0x%x\n", ntohl(ip->src), ntohl(ip->dest));
     void *data = ((void *)ip) + IPH_HL(ip) * 4;
     switch (ip->proto) {
     case IP_PROTO_ICMP:
-        icmp_handle_package(data, ntohl(ip->src), ntohs(ip->len) - IPH_HL(ip) * 4);
-        break;
+        IP_DEBUG("ICMP\n");
+        return icmp_handle_package(data, ntohl(ip->src), ntohs(ip->len) - IPH_HL(ip) * 4);
     case IP_PROTO_UDP:
-        IP_DEBUG("TODO UDP\n");
-        break;
+        IP_DEBUG("UDP\n");
+        return udp_handle_package(data, ntohl(ip->src));
     default:
         IP_DEBUG("Unkown ip protocol (type=0x%x)\n", ip->proto);
         return ENET_ERR_IP_DROPPING;
     }
-
-    return SYS_ERR_OK;
 }
 
 errval_t ip_start_send_package(ip_addr_t dest_ip, uint8_t protocol,

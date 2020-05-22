@@ -27,6 +27,7 @@
 #include "consts.h"
 #include "ethernet.h"
 #include "arp.h"
+#include "udp.h"
 
 #include "enet.h"
 
@@ -674,10 +675,15 @@ int main(int argc, char *argv[])
         return err;
     }
 
+    err = udp_init();
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not initialise udp abstraction");
+        return err;
+    }
+
     err = arp_send_probe();
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not send out arp probe request");
-        return err;
     }
 
     struct devq_buf buf;
