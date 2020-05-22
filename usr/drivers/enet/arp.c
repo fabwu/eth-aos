@@ -32,8 +32,8 @@ static errval_t arp_send_raw(ip_addr_t dest_ip, ip_addr_t src_ip, uint16_t opcod
 {
     struct ethernet_frame_id *frame;
     struct arp_hdr *arp;
-    errval_t err = ethernet_start_send_frame(dest_eth, consts_eth_self, htons(ETH_TYPE_ARP),
-                                             &frame, (void **)&arp);
+    errval_t err = ethernet_start_send_frame(dest_eth, consts_eth_self,
+                                             htons(ETH_TYPE_ARP), &frame, (void **)&arp);
     if (err_is_fail(err)) {
         return err;
     }
@@ -67,7 +67,15 @@ errval_t arp_handle_package(struct arp_hdr *package)
         }
         break;
     case ARP_OP_REP:
-        if (package->ip_dst == htonl(ENET_STATIC_IP)) {
+        if (package->ip_dst == 0 || package->ip_dst == htonl(ENET_STATIC_IP)) {
+            // Abort if our static ip is already in use
+            // Because we send a probe message we should get an answer if our ip was in use
+            if (package->ip_src == htonl(ENET_STATIC_IP)) {
+                DEBUG_PRINTF("Stopping ip driver: Static ip address is already in use in "
+                             "this network\n");
+                assert(0);
+            }
+
             // Add to hashtable
             uint64_t ip = (uint64_t)ntohl(package->ip_src);
             struct eth_addr *entry = collections_hash_find(state.cache, ip);

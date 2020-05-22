@@ -680,8 +680,6 @@ int main(int argc, char *argv[])
         return err;
     }
 
-    arp_send(0x0a000001);
-
     struct devq_buf buf;
     while (true) {
         err = devq_dequeue((struct devq *)st->rxq, &buf.rid, &buf.offset, &buf.length,
