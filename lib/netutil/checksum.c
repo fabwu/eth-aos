@@ -1,5 +1,6 @@
 #include <netutil/checksum.h>
 #include <netutil/htons.h>
+#include <netutil/ip.h>
 
 
 static uint16_t
@@ -37,6 +38,49 @@ lwip_standard_chksum(void *dataptr, uint16_t len)
      instead of ntohs() since it has a little less call overhead.
      The caller must invert bits for Internet sum ! */
   return htons((uint16_t)acc);
+};
+
+uint16_t inet_checksum_ip_pseudo(void *dataptr, uint16_t len, struct ip_hdr *ip)
+{
+    uint32_t acc;
+    uint16_t src;
+    uint8_t *octetptr;
+
+    // Somehow src, dest and len have to be in host byte order...
+    {
+        uint32_t addr = ntohl(ip->src);
+        acc = (addr >> 16) + (addr & 0x0000ffffUL);
+        addr = ntohl(ip->dest);
+        acc = acc + (addr >> 16) + (addr & 0x0000ffffUL);
+        acc += ip->proto;
+        acc += len;
+    }
+    /* dataptr may be at odd or even addresses */
+    octetptr = (uint8_t *)dataptr;
+    while (len > 1) {
+        /* declare first octet as most significant
+           thus assume network order, ignoring host order */
+        src = (*octetptr) << 8;
+        octetptr++;
+        /* declare second octet as least significant */
+        src |= (*octetptr);
+        octetptr++;
+        acc += src;
+        len -= 2;
+    }
+    if (len > 0) {
+        /* accumulate remaining octet */
+        src = (*octetptr) << 8;
+        acc += src;
+    }
+    /* add deferred carry bits */
+    acc = (acc >> 16) + (acc & 0x0000ffffUL);
+    if ((acc & 0xffff0000UL) != 0) {
+        acc = (acc >> 16) + (acc & 0x0000ffffUL);
+    }
+    /* This maybe a little confusing: reorder sum using htons()
+       instead of ntohs() since it has a little less call overhead. */
+    return ~(htons((uint16_t)acc));
 };
 
 /**

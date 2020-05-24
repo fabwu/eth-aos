@@ -16,7 +16,8 @@ errval_t udp_init(void)
 errval_t udp_handle_package(struct udp_hdr *package, ip_addr_t src)
 {
     // TODO: Allow clients to register udp ports and receive datagrams
-    return SYS_ERR_NOT_IMPLEMENTED;
+    UDP_DEBUG("Handling udp datagram\n");
+    return SYS_ERR_OK;
 }
 
 errval_t udp_start_send_datagram(ip_addr_t dest_ip, uint16_t dest_port, uint16_t src_port,
@@ -44,7 +45,8 @@ errval_t udp_send_datagram(struct udp_datagram_id *datagram, size_t size)
     size += sizeof(struct udp_hdr);
     datagram->udp->len = htons((uint16_t)size);
     datagram->udp->chksum = 0;
-    datagram->udp->chksum = inet_checksum(datagram->udp, size);
+    datagram->udp->chksum = inet_checksum_ip_pseudo(datagram->udp, size,
+                                                    datagram->package.ip);
 
     return ip_send_package(&datagram->package, size);
 }
