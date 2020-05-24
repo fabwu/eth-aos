@@ -2,6 +2,7 @@
 #include <netutil/etharp.h>
 #include <netutil/htons.h>
 #include <devif/queue_interface_backend.h>
+#include "consts.h"
 #include "enet.h"
 #include "arp.h"
 #include "ip.h"
@@ -53,15 +54,34 @@ errval_t ethernet_init(void *rx_base, void *tx_base, struct enet_queue *txq,
     return SYS_ERR_OK;
 }
 
+static inline bool ethernet_eq(struct eth_addr a1, struct eth_addr a2)
+{
+    return a1.addr[0] == a2.addr[0] && a1.addr[1] == a2.addr[1]
+           && a1.addr[2] == a2.addr[2] && a1.addr[3] == a2.addr[3]
+           && a1.addr[4] == a2.addr[4] && a1.addr[5] == a2.addr[5];
+}
+
 errval_t ethernet_handle_frame(struct devq_buf *buf)
 {
+    errval_t err;
     struct eth_hdr *eth = state.rx_base + buf->offset + buf->valid_data;
-    // FIXME: Only allow own mac and broadcast as destination
+
+    if (!ethernet_eq(eth->dst, consts_eth_self)
+        && !ethernet_eq(eth->dst, consts_eth_broadcast)
+        && !ethernet_eq(eth->dst, consts_eth_zeros)) {
+        ETHARP_DEBUG("Dropping ethernet frame: Invalid destination\n");
+        return SYS_ERR_OK;
+    }
+
     switch (ntohs(eth->type)) {
     case ETH_TYPE_ARP:
         return arp_handle_package((struct arp_hdr *)(eth + 1));
     case ETH_TYPE_IP:
-        return ip_handle_package((struct ip_hdr *)(eth + 1));
+        err = ip_handle_package((struct ip_hdr *)(eth + 1));
+        if (err == ENET_ERR_IP_DROPPING) {
+            return SYS_ERR_OK;
+        }
+        return err;
     default:
         ETHARP_DEBUG("Unknown package (type=0x%x): drop\n", ntohs(eth->type));
         break;

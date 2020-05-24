@@ -14,8 +14,8 @@
 #include "ip.h"
 
 struct ip_waiting_node {
-    ip_addr_t ip;
-    uint16_t length;
+    ip_addr_t ip;  ///< Target address in host byte order
+    uint16_t length; ///< Length of ip package including header
     struct ip_waiting_node *next;
     uint8_t data[ENET_MAX_PKT_SIZE - sizeof(struct eth_hdr)];
 };
@@ -39,6 +39,7 @@ errval_t ip_init(void)
 
 errval_t ip_handle_package(struct ip_hdr *ip)
 {
+    errval_t err;
     IP_DEBUG("Handling ip package\n");
     uint16_t checksum = inet_checksum((void *)ip, IPH_HL(ip) * 4);
     if (checksum != 0) {
@@ -56,10 +57,10 @@ errval_t ip_handle_package(struct ip_hdr *ip)
     }
 
     if (ip->dest != htonl(ENET_STATIC_IP)
-        && (ntohl(ip->dest) & ENET_STATIC_SUBNET) != ~ENET_STATIC_SUBNET) {
+        && (ntohl(ip->dest) & ~ENET_STATIC_SUBNET) != ~ENET_STATIC_SUBNET) {
         IP_DEBUG("Dropping ip package: Destination is neither us nor broadcast "
                  "(dest=0x%x)\n",
-                 ip->dest);
+                 ntohl(ip->dest));
         return ENET_ERR_IP_DROPPING;
     }
 
@@ -68,7 +69,11 @@ errval_t ip_handle_package(struct ip_hdr *ip)
     switch (ip->proto) {
     case IP_PROTO_ICMP:
         IP_DEBUG("ICMP\n");
-        return icmp_handle_package(data, ntohl(ip->src), ntohs(ip->len) - IPH_HL(ip) * 4);
+        err = icmp_handle_package(data, ntohl(ip->src), ntohs(ip->len) - IPH_HL(ip) * 4);
+        if (err == ENET_ERR_ICMP_DROPPING) {
+            return SYS_ERR_OK;
+        }
+        return err;
     case IP_PROTO_UDP:
         IP_DEBUG("UDP\n");
         return udp_handle_package(data, ntohl(ip->src));
@@ -188,7 +193,6 @@ errval_t ip_send_package(struct ip_package_id *package, size_t size)
     package->ip->len = htons((uint16_t)size);
     package->ip->chksum = 0;
     package->ip->chksum = inet_checksum(package->ip, sizeof(struct ip_hdr));
-    IP_DEBUG("checksum: %x\n", package->ip->chksum);
 
     if (package->is_frame) {
         err = ethernet_send_frame(package->id.frame, size);

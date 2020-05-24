@@ -5,8 +5,7 @@
 #include <netutil/etharp.h>
 #include "enet.h"
 
-struct ethernet_frame_id {
-};
+struct ethernet_frame_id;
 
 /**
  * \brief Setup ethernet handling.
