@@ -199,7 +199,6 @@ static errval_t fat32fs_next_dir_entry(struct fat32_fs *fs,
                 return err;
             }
             if (!fat32fs_is_clus_eof(tmp_clus)) {
-                assert(0);
                 state->entry = 0;
                 state->sec = 0;
                 state->clus = tmp_clus;
@@ -268,7 +267,6 @@ static errval_t fat32fs_get_free_dir_entry(struct fat32_fs *fs,
         }
     } while (!end && *(uint8_t *)*entry != FAT_32_HOLE_DIR_ENTRY);
 
-    // FIXME: Need to expand with another cluster
     if (*(uint8_t *)*entry != FAT_32_HOLE_DIR_ENTRY
         && *(uint8_t *)*entry != FAT_32_ONLY_FREE_DIR_ENTRY) {
         uint32_t new_clus;
@@ -297,8 +295,9 @@ static errval_t fat32fs_get_free_dir_entry(struct fat32_fs *fs,
     return SYS_ERR_OK;
 }
 
-static errval_t fat32fs_create_dirent(void *entry, struct fat32fs_dirent **ret_dirent,
-                                      char *name, uint32_t parent_clus)
+static errval_t fat32fs_create_dirent(uint32_t clus, char *name, uint32_t parent_clus,
+                                      bool is_dir, bool size,
+                                      struct fat32fs_dirent **ret_dirent)
 {
     struct fat32fs_dirent *dirent = calloc(1, sizeof(struct fat32fs_dirent));
     if (dirent == NULL) {
@@ -306,30 +305,43 @@ static errval_t fat32fs_create_dirent(void *entry, struct fat32fs_dirent **ret_d
     }
 
     dirent->name = name;
-    dirent->clus = *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET);
-    dirent->clus |= *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) << 16;
+    dirent->clus = clus;
 
-    uint8_t dir_attr = *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET);
-    if (dir_attr & FAT_32_DIR_ENTRY_ATTR_DIRECTORY) {
-        dirent->is_dir = 1;
-    } else {
-        dirent->is_dir = 0;
-        dirent->size = *(uint32_t *)(entry + FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET);
-    }
+    dirent->is_dir = is_dir;
+    dirent->size = size;
 
     dirent->dir_state.clus = dirent->clus;
     dirent->dir_state.sec = 0;
     dirent->dir_state.entry = 0;
     dirent->dir_state.is_eof = false;
 
-    DEBUG_FAT32FS("fat32fs_cretae_dirent start_clus: 0x%" PRIx32 ", clus: 0x%" PRIx32
-                  ", sec: 0x%" PRIx32 ", entry: 0x%" PRIx32 "\n",
-                  dirent->clus, dirent->dir_state.clus, dirent->dir_state.sec,
-                  dirent->dir_state.entry);
-
     dirent->dir_clus = parent_clus;
 
     *ret_dirent = dirent;
+
+    return SYS_ERR_OK;
+}
+
+static errval_t fat32fs_create_dirent_from_entry(void *entry,
+                                                 struct fat32fs_dirent **ret_dirent,
+                                                 char *name, uint32_t parent_clus)
+{
+    uint32_t clus;
+    clus = *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET);
+    clus |= *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) << 16;
+
+    uint8_t dir_attr = *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET);
+    bool is_dir;
+    uint32_t size;
+    if (dir_attr & FAT_32_DIR_ENTRY_ATTR_DIRECTORY) {
+        is_dir = true;
+        size = 0;
+    } else {
+        is_dir = 0;
+        size = *(uint32_t *)(entry + FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET);
+    }
+
+    return fat32fs_create_dirent(clus, name, parent_clus, is_dir, size, ret_dirent);
 
     return SYS_ERR_OK;
 }
@@ -375,7 +387,7 @@ static errval_t fat32fs_find_dirent(struct fat32_fs *fs, uint32_t cluster, char 
         DEBUG_FAT32FS("fat32fs_find_dirent name: %s\n", normal_name);
 
         if (strncmp(normal_name, name, FAT_32_MAX_BYTES_NORMAL_NAME) == 0) {
-            err = fat32fs_create_dirent(entry, ret_dirent, normal_name, cluster);
+            err = fat32fs_create_dirent_from_entry(entry, ret_dirent, normal_name, cluster);
             if (err_is_fail(err)) {
                 return err;
             }
@@ -409,29 +421,17 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
 
     // Root folder is called for
     if (path[pos] == '\0') {
-        // FIXME: Roll into fat32fs_create_dirent, so not to have errors because it having
-        // diverged
-        next_dirent = calloc(1, sizeof(struct fat32fs_dirent));
-        if (next_dirent == NULL) {
-            return LIB_ERR_MALLOC_FAIL;
-        }
-
         char *name = calloc(1, sizeof(char) * 1);
         if (name == NULL) {
             return LIB_ERR_MALLOC_FAIL;
         }
 
         name[0] = '\0';
-        next_dirent->name = name;
 
-        next_dirent->clus = fs->root_clus;
-
-        next_dirent->dir_state.clus = fs->root_clus;
-        next_dirent->dir_state.sec = 0;
-        next_dirent->dir_state.entry = 0;
-        next_dirent->dir_state.is_eof = false;
-
-        next_dirent->is_dir = true;
+        err = fat32fs_create_dirent(fs->root_clus, name, 0, true, 0, &next_dirent);
+        if (err_is_fail(err)) {
+            return err;
+        }
     } else {
         uint32_t root = fs->root_clus;
 
@@ -815,7 +815,7 @@ errval_t fat32fs_mkdir(void *st, const char *path)
     *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) = (uint16_t)(clus >> 16);
 
     struct fat32fs_dirent *dirent;
-    err = fat32fs_create_dirent(entry, &dirent, childname, parent_dirent->clus);
+    err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus);
     if (err_is_fail(err)) {
         return err;
     }
