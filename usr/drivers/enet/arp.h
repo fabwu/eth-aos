@@ -13,7 +13,7 @@ errval_t arp_init(void);
 errval_t arp_handle_package(struct arp_hdr *package);
 
 /**
- * \brief Send an ARP broadcast probe for the static ip address.
+ * \brief Send ARP broadcast probe messages for our static ip address.
  */
 errval_t arp_send_probe(void);
 

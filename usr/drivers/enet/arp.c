@@ -10,6 +10,8 @@
 
 #include "arp.h"
 
+#define ARP_PROBE_MESSAGE_COUNT 3
+
 struct arp_state {
     collections_hash_table *cache;  ///< ARP cache with ip as key and mac address in
                                     ///< network byte order as entry.
@@ -51,6 +53,33 @@ static errval_t arp_send_raw(ip_addr_t dest_ip, ip_addr_t src_ip, uint16_t opcod
     return ethernet_send_frame(frame, sizeof(struct arp_hdr));
 }
 
+static void arp_handle_new_entry(struct arp_hdr *package)
+{
+    // Abort if our static ip is already in use
+    // Because we send a probe message we should get an answer if our ip was in use
+    if (package->ip_src == htonl(ENET_STATIC_IP)) {
+        DEBUG_PRINTF("Stopping ip driver: Static ip address is already in use in "
+                        "this network\n");
+        assert(0);
+    }
+
+    // Add to hashtable
+    uint64_t ip = (uint64_t)ntohl(package->ip_src);
+    struct eth_addr *entry = collections_hash_find(state.cache, ip);
+    if (entry == NULL) {
+        // Address unkown: Add new entry
+        entry = malloc(sizeof(struct eth_addr));
+        collections_hash_insert(state.cache, ip, (void *)entry);
+    }
+
+    // Write new address (overwrite if entry already existed)
+    ETHARP_DEBUG("ARP new entry for 0x%x\n", ip);
+    *entry = package->eth_src;
+
+    // Notify ip protocoll so pending packages can be sent
+    ip_send_waiting_packages(ntohl(package->ip_src), package->eth_src);
+}
+
 errval_t arp_handle_package(struct arp_hdr *package)
 {
     ETHARP_DEBUG("ARP package: 0x%x -> 0x%x [0x%x]\n", ntohl(package->ip_src),
@@ -64,32 +93,14 @@ errval_t arp_handle_package(struct arp_hdr *package)
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Could not answer arp request");
             }
+        } else if (package->ip_dst == package->ip_src) {
+            // Accept arp anouncements
+            arp_handle_new_entry(package);
         }
         break;
     case ARP_OP_REP:
         if (package->ip_dst == 0 || package->ip_dst == htonl(ENET_STATIC_IP)) {
-            // Abort if our static ip is already in use
-            // Because we send a probe message we should get an answer if our ip was in use
-            if (package->ip_src == htonl(ENET_STATIC_IP)) {
-                DEBUG_PRINTF("Stopping ip driver: Static ip address is already in use in "
-                             "this network\n");
-                assert(0);
-            }
-
-            // Add to hashtable
-            uint64_t ip = (uint64_t)ntohl(package->ip_src);
-            struct eth_addr *entry = collections_hash_find(state.cache, ip);
-            if (entry == NULL) {
-                // Address unkown: Add new entry
-                entry = malloc(sizeof(struct eth_addr));
-                collections_hash_insert(state.cache, ip, (void *)entry);
-            }
-
-            // Write new address (overwrite if entry already existed)
-            *entry = package->eth_src;
-
-            // Notify ip protocoll so pending packages can be sent
-            ip_send_waiting_packages(ntohl(package->ip_src), package->eth_src);
+            arp_handle_new_entry(package);
         }
         break;
     default:
@@ -101,8 +112,13 @@ errval_t arp_handle_package(struct arp_hdr *package)
 
 errval_t arp_send_probe(void)
 {
-    // Probe is a regular ARP request with empty source and the own ip as destination
-    return arp_send_raw(htonl(ENET_STATIC_IP), 0, htons(ARP_OP_REQ), consts_eth_broadcast);
+    errval_t err = SYS_ERR_OK;
+    for (int i = 0; err_is_ok(err) && i < ARP_PROBE_MESSAGE_COUNT; ++i) {
+        // Probe is a regular ARP request with empty source and the own ip as destination
+        err = arp_send_raw(htonl(ENET_STATIC_IP), 0, htons(ARP_OP_REQ), consts_eth_zeros);
+    }
+
+    return err;
 }
 
 errval_t arp_send(ip_addr_t ip_addr)

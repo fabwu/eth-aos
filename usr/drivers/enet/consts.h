@@ -16,6 +16,11 @@ extern struct eth_addr consts_eth_broadcast;
  */
 extern struct eth_addr consts_eth_self;
 
+/**
+ * \brief Hardware address of all zeros in network byte order.
+ */
+extern struct eth_addr consts_eth_zeros;
+
 void consts_init(uint64_t mac);
 
 #endif  // CONSTS_H_
