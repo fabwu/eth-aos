@@ -36,6 +36,7 @@ static uint64_t systime_to_ms(systime_t time)
 #define FILENAME "/MYFILE2.TXT"
 #define FILENAME_NESTED "/TEST/MYFILE2.TXT"
 #define ORIG_FILENAME "/myfile2.txt"
+#define TEST_DIRNAME "/TESTDIR"
 #define LONGFILENAME "/mylongfilenamefile.txt"
 #define LONGFILENAME2 "/mylongfilenamefilesecond.txt"
 #define FILE_NOT_EXIST "/not-exist.txt"
@@ -212,6 +213,52 @@ static errval_t test_fwrite(char *file)
     return SYS_ERR_OK;
 }
 
+static errval_t test_fmkdir(char *file)
+{
+    int res;
+
+    res = mkdir(file);
+    if (res) {
+        return FS_ERR_MKDIR;
+    }
+
+    errval_t err;
+    fs_dirhandle_t dh;
+    err = opendir(MOUNTPOINT, &dh);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    assert(dh);
+
+    do {
+        char *name;
+        err = readdir(dh, &name);
+        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
+            break;
+        } else if (err_is_fail(err)) {
+            return err;
+        }
+        printf("%s\n", name);
+    } while (err_is_ok(err));
+
+    res = closedir(dh);
+    if (res) {
+        return FS_ERR_CLOSEDIR;
+    }
+
+    res = mkdir(file);
+    if (res) {
+        return FS_ERR_MKDIR;
+    }
+
+    return SYS_ERR_OK;
+}
+
+#define FS_TEST_READ_DIR 0
+#define FS_TEST_READ 0
+#define FS_TEST_MKDIR 1
+#define FS_TEST_WRITE 0
 
 int main(int argc, char *argv[])
 {
@@ -224,17 +271,30 @@ int main(int argc, char *argv[])
     err = filesystem_init();
     EXPECT_SUCCESS(err, "fs init", 0);
 
-    // run_test(test_read_dir, "/");
+    if (FS_TEST_READ_DIR) {
+        run_test(test_read_dir, "/");
 
-    run_test(test_read_dir, MOUNTPOINT "/");
+        run_test(test_read_dir, MOUNTPOINT "/");
 
-    run_test_fail(test_read_dir, DIR_NOT_EXIST);
+        run_test_fail(test_read_dir, DIR_NOT_EXIST);
+    }
 
-    run_test(test_fread, MOUNTPOINT FILENAME_NESTED);
+    if (FS_TEST_READ) {
+        run_test(test_fread, MOUNTPOINT FILENAME_NESTED);
 
-    run_test(test_fread, MOUNTPOINT FILENAME);
+        run_test(test_fread, MOUNTPOINT FILENAME);
+    }
 
-    run_test(test_fwrite, MOUNTPOINT ORIG_FILENAME);
+    if (FS_TEST_MKDIR) {
+        run_test(test_fmkdir, MOUNTPOINT TEST_DIRNAME);
+    }
+
+    if (FS_TEST_WRITE) {
+        run_test(test_fwrite, MOUNTPOINT ORIG_FILENAME);
+    }
+
+    err = filesystem_unmount();
+    EXPECT_SUCCESS(err, "fs init", 0);
 
     return EXIT_SUCCESS;
 }

@@ -59,6 +59,12 @@ errval_t filesystem_init(void)
     return SYS_ERR_OK;
 }
 
+errval_t filesystem_unmount(void) {
+    fs_libc_unmount();
+
+    return SYS_ERR_OK;
+}
+
 /**
  * @brief mounts the URI at a give path
  *
