@@ -125,10 +125,23 @@ errval_t aos_rpc_free_ram_cap(struct aos_rpc *rpc, genpaddr_t addr)
 errval_t aos_rpc_serial_getchar(struct aos_rpc *rpc, char *retc)
 {
     // Protocol
-    // FIXME: Not implemented
     // Request: AOS_RPC_SERIAL_GETCHAR
-    // TODO: Response: AOS_RPC_SERIAL_GETCHAR, char
-    return lmp_protocol_send0(get_init_client_chan(), create_header(rpc, AOS_RPC_SERIAL_GETCHAR));
+    // Response: AOS_RPC_SERIAL_GETCHAR, char
+    errval_t err;
+
+    err = lmp_protocol_send0(get_init_client_chan(), create_header(rpc, AOS_RPC_SERIAL_GETCHAR));
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_SERIAL_GETCHAR);
+    }
+
+    uintptr_t ret_char;
+    err = lmp_protocol_recv1(get_init_client_chan(), create_header(rpc, AOS_RPC_SERIAL_GETCHAR), &ret_char);
+    if (err_is_fail(err)) {
+        return err_push(err, AOS_ERR_RPC_SERIAL_GETCHAR);
+    }
+
+    *retc = ret_char;
+    return SYS_ERR_OK;
 }
 
 errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c)

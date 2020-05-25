@@ -73,5 +73,19 @@ int main(int argc, char *argv[])
         DEBUG_PRINTF("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }*/
 
+    struct aos_rpc *serial_chan = aos_rpc_get_serial_channel();
+    char c;
+    while (1) {
+        err = aos_rpc_serial_getchar(serial_chan, &c);
+        if (err_is_fail(err)) {
+            debug_printf("Warning: Failed to get char\n");
+            continue;
+        }
+        if (c == '\0')
+            debug_printf("\n");
+        else
+            debug_printf("[%c]\n", c);
+    }
+
     return EXIT_SUCCESS;
 }

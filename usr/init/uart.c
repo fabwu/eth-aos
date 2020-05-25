@@ -2,20 +2,91 @@
  * \file
  * \brief Userspace UART driver management
  */
+#include <aos/aos.h>
+#include <aos/lmp_protocol.h>
+#include <aos/aos_rpc.h>
 #include <aos/inthandler.h>
 #include <drivers/gic_dist.h>
 #include <drivers/lpuart.h>
 #include <maps/imx8x_map.h>
 #include "uart.h"
 
+#define ASCII_LF        0xA
+#define ASCII_CR        0xD
+#define ASCII_EOT       0x4
+#define LINE_END        '\0'
+
 static struct gic_dist_s *gic;
 static struct lpuart_s *uart;
+
+static struct lmp_chan *receiver;
+
+#define MAX_LINE_SIZE   4096
+static char buffer[MAX_LINE_SIZE];
+static int pos, read_pos;
+static bool line_ready;
+
+static void send_char(char c)
+{
+    lmp_protocol_send1(receiver, AOS_RPC_SERIAL_GETCHAR, c);
+}
+
+void uart_getchar(struct lmp_chan *chan)
+{
+    if (!line_ready) {
+        /* no data, wait to be notified of new data */
+        receiver = chan;
+    } else if (read_pos < pos) {
+        /* send next char */
+        send_char(buffer[read_pos++]);
+    } else {
+        /* whole line has been sent */
+        send_char(LINE_END);
+        pos = 0;
+        read_pos = 0;
+        line_ready = false;
+    }
+}
+
+static void send_first_char(void)
+{
+    if (receiver) {
+        if (pos > 0) {
+            send_char(buffer[0]);
+            read_pos = 1;
+        } else {
+            send_char(LINE_END);
+            line_ready = false;
+        }
+    }
+}
 
 static void irq_handler(void *arg)
 {
     char c;
-    while (!lpuart_getchar(uart, &c)) {
-        lpuart_putchar(uart, c);
+    while (lpuart_getchar(uart, &c) != LPUART_ERR_NO_DATA) {
+        if (line_ready)
+            continue;
+
+        switch (c) {
+        case ASCII_LF:
+        case ASCII_CR:
+        case ASCII_EOT:
+            line_ready = true;
+            send_first_char();
+            break;
+        default:
+            if (pos >= MAX_LINE_SIZE) {
+                /* input too long, drop the whole thing */
+                lpuart_putchar(uart, ASCII_LF);
+                lpuart_putchar(uart, ASCII_CR);
+                pos = 0;
+                break;
+            }
+            lpuart_putchar(uart, c);
+            buffer[pos++] = c;
+            break;
+        }
     }
 }
 

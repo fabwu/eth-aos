@@ -1467,6 +1467,7 @@ errors aos AOS_ERR_ {
     failure RPC_SPAWN_PROCESS      "Failure in aos_rpc_process_spawn()",
     failure RPC_GET_PIDS           "Failure in aos_rpc_process_get_all_pids()",
     failure RPC_GET_NAME           "Failure in aos_rpc_process_get_name()",
+    failure RPC_SERIAL_GETCHAR     "Failure in aos_rpc_process_get_name()",
     failure INIT_SETUP_INITEP      "Failed to setup lmp between init and the process",
 };
 

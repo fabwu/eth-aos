@@ -5,6 +5,7 @@
 
 #include "rpc.h"
 #include "process.h"
+#include "uart.h"
 #include <aos/lmp_protocol.h>
 
 #if 0
@@ -160,12 +161,11 @@ static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
 /**
  * Receives a char from the serial line.
  */
-static errval_t rpc_serial_getchar(void)
+static errval_t rpc_serial_getchar(struct lmp_chan *chan)
 {
-    // just call the grading function
-    //
-    // we didn't go for the extra challenge
     grading_rpc_handler_serial_getchar();
+
+    uart_getchar(chan);
 
     return SYS_ERR_OK;
 }
@@ -266,7 +266,7 @@ static void rpc_handler_recv_closure(void *arg)
                 }
                 break;
              case AOS_RPC_SERIAL_GETCHAR:
-                err = rpc_serial_getchar();
+                err = rpc_serial_getchar(chan);
                 if (err_is_fail(err)) {
                     DEBUG_ERR(err, "rpc_serial_getchar failed");
                 }
