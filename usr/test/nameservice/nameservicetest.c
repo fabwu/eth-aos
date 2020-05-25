@@ -27,7 +27,8 @@
         USER_PANIC_ERR(err, msg);                                                        \
     }
 
-#define SERVICE_NAME "myservicename"
+#define SERVICE_NAME_1 "myservicename"
+#define SERVICE_NAME_2 "empty"
 #define UNKNOWN_SERVICE "???WHAT???"
 #define TEST_BINARY "nameservicetest"
 /*
@@ -52,7 +53,7 @@ static void run_client(void)
     }
 
     // look up existing service
-    err = nameservice_lookup(SERVICE_NAME, &chan);
+    err = nameservice_lookup(SERVICE_NAME_1, &chan);
     PANIC_IF_FAIL(err, "failed to lookup service\n");
     debug_printf("Got the service %p. Sending request '%x'\n", chan, myrequest[0]);
 
@@ -75,6 +76,14 @@ static void run_client(void)
 
     debug_printf("got response: %s\n", (char *)response2);
     free(response2);
+
+    // test empty request/response
+    err = nameservice_lookup(SERVICE_NAME_2, &chan);
+    PANIC_IF_FAIL(err, "failed to lookup service\n");
+    debug_printf("Got the service %p. Sending request '%x'\n", chan, myrequest[0]);
+
+    err = nameservice_rpc(chan, NULL, 0, NULL, NULL, NULL_CAP, NULL_CAP);
+    PANIC_IF_FAIL(err, "failed to do the nameservice rpc\n");
 }
 
 /*
@@ -94,15 +103,24 @@ static void server_recv_handler(void *st, void *message, size_t bytes, void **re
     *response_bytes = strlen(myresponse);
 }
 
+static void server_no_response(void *st, void *message, size_t bytes, void **response,
+                                size_t *response_bytes, struct capref rx_cap,
+                                struct capref *tx_cap)
+{
+    debug_printf("server: got a request: %s\n", (char *)message);
+    debug_printf("server: but sending no response MUHAHA!\n");
+}
+
 static void run_server(void)
 {
     errval_t err;
 
-    err = nameservice_init();
-    PANIC_IF_FAIL(err, "failed to init nameservice\n");
+    debug_printf("register with nameservice '%s'\n", SERVICE_NAME_1);
+    err = nameservice_register(SERVICE_NAME_1, server_recv_handler, NULL);
+    PANIC_IF_FAIL(err, "failed to register...\n");
 
-    debug_printf("register with nameservice '%s'\n", SERVICE_NAME);
-    err = nameservice_register(SERVICE_NAME, server_recv_handler, NULL);
+    debug_printf("register with nameservice '%s'\n", SERVICE_NAME_2);
+    err = nameservice_register(SERVICE_NAME_2, server_no_response, NULL);
     PANIC_IF_FAIL(err, "failed to register...\n");
 
     domainid_t did;

@@ -29,7 +29,7 @@ struct nameservice_chan {
     const char *name;
 };
 
-struct hashtable *ht;
+struct hashtable *ht = NULL;
 
 static void nameservice_handler(void *arg)
 {
@@ -187,22 +187,6 @@ fail:
     DEBUG_ERR(err, "nameservice_handler failed hard");
 }
 
-errval_t nameservice_init(void)
-{
-    // TODO Do this when register is the first time called
-    errval_t err;
-
-    ht = create_hashtable();
-
-    err = lmp_chan_register_recv(get_init_server_chan(), get_default_waitset(),
-                                 MKCLOSURE(nameservice_handler, NULL));
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
-    }
-
-    return SYS_ERR_OK;
-}
-
 /**
  * @brief sends a message back to the client who sent us a message
  *
@@ -219,6 +203,11 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
                          struct capref rx_cap)
 {
     errval_t err = SYS_ERR_OK;
+
+    if (!capref_is_null(tx_cap) || !capref_is_null(rx_cap)) {
+        //TODO Implement caps
+        return LIB_ERR_NOT_IMPLEMENTED;
+    }
 
     struct lmp_chan *chan = get_init_client_chan();
     struct nameservice_chan *nschan = (struct nameservice_chan *)nschan_ref;
@@ -292,9 +281,11 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
     }
 
     // copy response
-    *response = (void *)malloc(recv_bytes);
-    memcpy(*response, recv_buf, recv_bytes);
-    *response_bytes = (size_t)recv_bytes;
+    if(response != NULL && response_bytes != NULL) {
+        *response = (void *)malloc(recv_bytes);
+        memcpy(*response, recv_buf, recv_bytes);
+        *response_bytes = (size_t)recv_bytes;
+    }
 
     err = paging_unmap(ps, (lvaddr_t)recv_buf, recv_frame, recv_bytes);
     if (err_is_fail(err)) {
@@ -339,6 +330,17 @@ errval_t nameservice_register(const char *name,
                               nameservice_receive_handler_t recv_handler, void *st)
 {
     errval_t err;
+
+    if(ht == NULL) {
+        // init nameservice on the first register call
+        ht = create_hashtable();
+
+        err = lmp_chan_register_recv(get_init_server_chan(), get_default_waitset(),
+                                     MKCLOSURE(nameservice_handler, NULL));
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_LMP_CHAN_REGISTER_RECV);
+        }
+    }
 
     struct lmp_chan *chan = get_init_client_chan();
 
