@@ -48,7 +48,7 @@ uint32_t get_num_clus(struct fat32_fs *fs);
 errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32_t sector);
 errval_t fs_write_sector(struct sdhc_s *sd, struct sd_block *block);
 errval_t fs_dir_entry_name_to_normal_name(const unsigned char *name, unsigned char *eff_name);
-void fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
-                                      unsigned char *dir_entry_name);
+errval_t fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
+                                      unsigned char **dir_entry_name);
 
 #endif

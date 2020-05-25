@@ -311,9 +311,14 @@ static int fs_is_illegal_character_dir_entry_name(char c)
 
 // FIXME: Handle path (Check if uppercase etc.)
 // FIXME: Raise error instead of asserts
-void fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
-                                      unsigned char *dir_entry_name)
+errval_t fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
+                                      unsigned char **ret_dir_entry_name)
 {
+    unsigned char *dir_entry_name = malloc(sizeof(char) * FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
+    if (dir_entry_name == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
     // At most 8 chars before extension
     int src_pos = 0;
     int des_pos = 0;
@@ -361,6 +366,10 @@ void fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
     if (*dir_entry_name == FAT_32_REPLACE_DIR_ENTRY_VALUE) {
         *dir_entry_name = FAT_32_REPLACE_DIR_ENTRY;
     }
+
+    *ret_dir_entry_name = dir_entry_name;
+
+    return SYS_ERR_OK;
 }
 
 errval_t fs_dir_entry_name_to_normal_name(const unsigned char *dir_entry_name,

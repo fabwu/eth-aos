@@ -282,17 +282,23 @@ errval_t ramfs_create(void *st, const char *path, ramfs_handle_t *rethandle)
 {
     errval_t err;
 
+    debug_printf("ramfs_create begin path: %s\n", path);
+
     struct fs_mount *reg_mount = st;
     struct ramfs_mount *mount = reg_mount->state;
     struct fs_mount *nest_mount = NULL;
     const char *nest_mount_path;
     err = resolve_path(reg_mount, mount->root, path, NULL, &nest_mount, &nest_mount_path);
-    if (err_is_ok(err)) {
+    if (err_is_ok(err) && nest_mount == NULL) {
         return FS_ERR_EXISTS;
     }
 
-    if (nest_mount != NULL) {
+    if (err_is_ok(err) && nest_mount != NULL) {
         return nest_mount->create(nest_mount, nest_mount_path, rethandle);
+    }
+    
+    if (err_is_fail(err) && err_no(err) != FS_ERR_NOTFOUND) {
+        return err;
     }
 
     struct fs_handle *parent_fh = NULL;
@@ -740,7 +746,8 @@ out:
     return err;
 }
 
-static errval_t ramfs_unmount(void *st) {
+static errval_t ramfs_unmount(void *st)
+{
     errval_t err;
     struct fs_mount *reg_mount = st;
     struct ramfs_mount *mount = reg_mount->state;

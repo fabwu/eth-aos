@@ -3,6 +3,7 @@
 #include "fat32fs_internal.h"
 
 // FIXME: Clean up when error
+// FIXME: Don't do arithmetic on void pointer
 
 #if 1
 #    define DEBUG_FAT32FS(fmt...) debug_printf(fmt);
@@ -13,8 +14,13 @@
 #define FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET 26
 #define FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET 20
 #define FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET 28
+
 #define FAT_32_DIR_ENTRY_NAME_OFFSET 0
 #define FAT_32_DIR_ENTRY_ATTR_OFFSET 11
+#define FAT_32_DIR_ENTRY_NT_RES_OFFSET 12
+#define FAT_32_DIR_ENTRY_CRT_TIME_TENTH_OFFSET 13
+#define FAT_32_DIR_ENTRY_WRT_TIME_OFFSET 22
+#define FAT_32_DIR_ENTRY_WRT_DATE_OFFSET 24
 #define FAT_32_DIR_ENTRY_ATTR_DIRECTORY 0x10
 #define FAT_32_FAT_FREE_ENTRY 0x0
 #define FAT_32_FAT_EOC_ENTRY 0x0FFFFFFF
@@ -508,6 +514,23 @@ static errval_t fat32fs_find_dirent(struct fat32_fs *fs, uint32_t cluster,
     return SYS_ERR_OK;
 }
 
+static errval_t fat32fs_create_fh_from_dirent(struct fs_mount *mount,
+                                              struct fat32fs_dirent *dirent,
+                                              struct fs_handle **ret_fh)
+{
+    struct fs_handle *fh = calloc(1, sizeof(struct fs_handle));
+    if (fh == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    fh->mount = mount;
+    fh->state = dirent;
+
+    *ret_fh = fh;
+
+    return SYS_ERR_OK;
+}
+
 // TODO: Mostly duplicating resolve_path of ramfs
 static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
                                      struct fs_handle **ret_fh)
@@ -591,12 +614,10 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
     }
 
     if (ret_fh) {
-        struct fs_handle *fh = calloc(1, sizeof(struct fs_handle));
-
-        fh->mount = mount;
-        fh->state = next_dirent;
-
-        *ret_fh = fh;
+        err = fat32fs_create_fh_from_dirent(mount, next_dirent, ret_fh);
+        if (err_is_fail(err)) {
+            return err;
+        }
     } else {
         fat32fs_close_dirent(next_dirent);
     }
@@ -624,9 +645,126 @@ errval_t fat32fs_open(void *st, const char *path, fs_dirhandle_t *ret_handle)
     return SYS_ERR_OK;
 }
 
+// TODO: Too many arguments
+static errval_t fat32fs_add_to_dir(struct fat32_fs *fs, struct fat32fs_dirent *dirent,
+                                   uint32_t clus, const char *dir_entry_name, bool is_dir,
+                                   uint32_t size, void **ret_entry)
+{
+    errval_t err;
+
+    // Add new directory to parent directory
+    // Find free directory entry
+    void *entry;
+    err = fat32fs_get_free_dir_entry(fs, dirent, &entry);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    fs->data.dirty = true;
+
+    // Copy name over
+    memcpy(entry + FAT_32_DIR_ENTRY_NAME_OFFSET, dir_entry_name,
+           FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
+
+    if (is_dir) {
+        *(uint32_t *)(entry + FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET) = 0x0;
+        *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET)
+            = FAT_32_DIR_ENTRY_ATTR_DIRECTORY;
+    } else {
+        *(uint32_t *)(entry + FAT_32_DIR_ENTRY_FILE_SIZE_OFFSET) = size;
+        *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET) = 0x0;
+    }
+
+    *(uint8_t *)(entry + FAT_32_DIR_ENTRY_NT_RES_OFFSET) = 0x0;
+
+    *(uint8_t *)(entry + FAT_32_DIR_ENTRY_CRT_TIME_TENTH_OFFSET) = 0x0;
+    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_WRT_TIME_OFFSET) = 0x0;
+    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_WRT_DATE_OFFSET) = 0x0;
+
+    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET) = (uint16_t)clus;
+    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) = (uint16_t)(clus >> 16);
+
+    if (ret_entry) {
+        *ret_entry = entry;
+    }
+
+    return SYS_ERR_OK;
+}
+
+// TODO: Mostly duplicating fat32fs_mkdir
 errval_t fat32fs_create(void *st, const char *path, fs_dirhandle_t *ret_handle)
 {
-    USER_PANIC("NYI\n");
+    DEBUG_FAT32FS("fat32fs_create begin\n");
+
+    errval_t err;
+
+    struct fs_mount *mount = st;
+    struct fat32_fs *fs = mount->state;
+
+    err = fat32fs_resolve_path(st, path, NULL);
+    if (err_is_ok(err)) {
+        return FS_ERR_EXISTS;
+    } else if (err_is_fail(err) && err_no(err) != FS_ERR_NOTFOUND) {
+        return err;
+    }
+
+    char *childname;
+    char *parent_path;
+    err = fat32fs_split_path(path, &parent_path, &childname);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    struct fs_handle *parent_fh = NULL;
+    struct fat32fs_dirent *parent_dirent = NULL;
+    err = fat32fs_resolve_path(st, parent_path, &parent_fh);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    parent_dirent = parent_fh->state;
+    if (!parent_dirent->is_dir) {
+        fat32fs_close_handle(parent_fh);
+        return FS_ERR_NOTDIR;
+    }
+
+    free(parent_path);
+
+    uint32_t clus;
+    err = fat32fs_get_free_clus(fs, &clus);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    char *dir_entry_name;
+    err = fs_normal_name_to_dir_entry_name((const unsigned char *)childname,
+                                           (unsigned char **)&dir_entry_name);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    void *entry;
+    err = fat32fs_add_to_dir(fs, parent_dirent, clus, dir_entry_name, false, 0, &entry);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    free(dir_entry_name);
+
+    struct fat32fs_dirent *dirent;
+    err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = fat32fs_create_fh_from_dirent(mount, dirent, (struct fs_handle **)ret_handle);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    DEBUG_FAT32FS("fat32fs_create end\n");
+
+    return SYS_ERR_OK;
 }
 
 static bool fat32fs_right_clus(struct fat32_fs *fs, uint32_t des_pos, uint32_t depth)
@@ -838,9 +976,6 @@ errval_t fat32fs_mkdir(void *st, const char *path)
         return err;
     }
 
-    struct fs_handle *parent_fh = NULL;
-    struct fat32fs_dirent *parent_dirent = NULL;
-
     char *childname;
     char *parent_path;
     err = fat32fs_split_path(path, &parent_path, &childname);
@@ -849,6 +984,8 @@ errval_t fat32fs_mkdir(void *st, const char *path)
     }
 
     // Resolve parent directory
+    struct fs_handle *parent_fh = NULL;
+    struct fat32fs_dirent *parent_dirent = NULL;
     err = fat32fs_resolve_path(st, parent_path, &parent_fh);
     if (err_is_fail(err)) {
         return err;
@@ -868,35 +1005,28 @@ errval_t fat32fs_mkdir(void *st, const char *path)
         return err;
     }
 
-    // Add new directory to parent directory
-    // Find free directory entry
-    void *entry;
-    err = fat32fs_get_free_dir_entry(fs, parent_dirent, &entry);
+    // FIXME: Instead of zeroing and depending on dir cluster to be zero, just ensure
+    // entry after last used dir entry is zero (Saves us 7 sector writes) Ensure new
+    // cluster of directory is zeroed
+    err = fat32fs_zero_cluster(fs, clus);
     if (err_is_fail(err)) {
         return err;
     }
 
-    // FIXME: This is very indirect, very error prone
-    fs->data.dirty = true;
-
-    char *dir_entry_name = malloc(sizeof(char) * FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
-    if (dir_entry_name == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
+    char *dir_entry_name;
+    err = fs_normal_name_to_dir_entry_name((const unsigned char *)childname,
+                                           (unsigned char **)&dir_entry_name);
+    if (err_is_fail(err)) {
+        return err;
     }
 
-    fs_normal_name_to_dir_entry_name((const unsigned char *)childname,
-                                     (unsigned char *)dir_entry_name);
-
-    // Copy name over
-    memcpy(entry + FAT_32_DIR_ENTRY_NAME_OFFSET, dir_entry_name,
-           FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
+    void *entry;
+    err = fat32fs_add_to_dir(fs, parent_dirent, clus, dir_entry_name, true, 0, &entry);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
     free(dir_entry_name);
-
-    *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET) = FAT_32_DIR_ENTRY_ATTR_DIRECTORY;
-
-    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET) = (uint16_t)clus;
-    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) = (uint16_t)(clus >> 16);
 
     struct fat32fs_dirent *dirent;
     err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus);
@@ -904,43 +1034,16 @@ errval_t fat32fs_mkdir(void *st, const char *path)
         return err;
     }
 
-    // Ensure new cluster of directory is zeroed
-    err = fat32fs_zero_cluster(fs, clus);
+    err = fat32fs_add_to_dir(fs, dirent, clus, DOT_DIR_ENT_NAME, true, 0, NULL);
     if (err_is_fail(err)) {
         return err;
     }
 
-    // Create . and .. entries
-    err = fat32fs_get_free_dir_entry(fs, dirent, &entry);
+    err = fat32fs_add_to_dir(fs, dirent, parent_dirent->clus, DOTDOT_DIR_ENT_NAME, true,
+                             0, NULL);
     if (err_is_fail(err)) {
         return err;
     }
-
-    fs->data.dirty = true;
-
-    // FIXME: Don't do arithmetic on void pointer
-    memcpy(entry, DOT_DIR_ENT_NAME, FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
-
-    *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET) = FAT_32_DIR_ENTRY_ATTR_DIRECTORY;
-
-    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET) = (uint16_t)clus;
-    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) = (uint16_t)(clus >> 16);
-
-    err = fat32fs_get_free_dir_entry(fs, dirent, &entry);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    fs->data.dirty = true;
-
-    memcpy(entry, DOTDOT_DIR_ENT_NAME, FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
-
-    *(uint8_t *)(entry + FAT_32_DIR_ENTRY_ATTR_OFFSET) = FAT_32_DIR_ENTRY_ATTR_DIRECTORY;
-
-    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_LO_OFFSET)
-        = (uint16_t)parent_dirent->clus;
-    *(uint16_t *)(entry + FAT_32_DIR_ENTRY_FST_CLUS_HI_OFFSET) = (uint16_t)(
-        parent_dirent->clus >> 16);
 
     fat32fs_close_handle(parent_fh);
     fat32fs_close_dirent(dirent);
