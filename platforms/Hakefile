@@ -20,7 +20,8 @@ let
         "spawnTester",
         "nameservicetest",
         "filereader",
-        "shell"
+        "shell",
+        "enet"
       ] ]
   in
   [

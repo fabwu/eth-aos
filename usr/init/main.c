@@ -41,6 +41,7 @@
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVICETEST 0
 #define INIT_EXECUTE_SHELL 1
+#define INIT_EXECUTE_ENET 1
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
 
@@ -195,6 +196,14 @@ static int bsp_main(int argc, char *argv[])
     err = process_spawn_init("nameserver");
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
+    }
+
+    if (INIT_EXECUTE_ENET) {
+        // Spawn network driver
+        err = process_spawn_init("enet");
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "Couldn't spawn enet driver\n");
+        }
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {

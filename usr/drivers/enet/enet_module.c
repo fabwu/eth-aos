@@ -23,6 +23,7 @@
 #include <driverkit/driverkit.h>
 #include <dev/imx8x/enet_dev.h>
 #include <netutil/etharp.h>
+#include <maps/imx8x_map.h>
 
 
 #include "enet.h"
@@ -565,13 +566,13 @@ int main(int argc, char *argv[])
         1, sizeof(struct enet_driver_state));
     assert(st != NULL);
 
-
-    /* TODO Net Project: get the capability to the register region
-     * and then map it so it is accessible.
-     * TODO set st->d_vaddr to the memory mapped register region */
-    if (st->d_vaddr == NULL) {
-        USER_PANIC("ENET: No register region mapped \n");
+    err = map_device_register(IMX8X_ENET_BASE, IMX8X_ENET_SIZE, &st->regs, &st->d_vaddr);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not map device register");
+        return err;
     }
+
+    assert((void *)st->d_vaddr != NULL && !capref_is_null(st->regs));
 
     /* Initialize Mackerel binding */
     st->d = (enet_t *)malloc(sizeof(enet_t));
