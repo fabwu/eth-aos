@@ -25,7 +25,7 @@
                       ],
                       addLinkFlags = [ "-e _start_init"], -- this is only needed for init
                       addLibraries = [ "mm", "getopt", "elf",
-                        "grading", "spawn", "lpuart"],
+                        "grading", "spawn", "lpuart", "gic_dist"],
                       architectures = allArchitectures
                     }
 ]
