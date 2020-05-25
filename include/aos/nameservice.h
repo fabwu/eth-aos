@@ -10,6 +10,10 @@
 
 #define AOS_NS_OK 0x1
 
+#define AOS_UDP_LISTEN 0x11  // Start listening on given port
+#define AOS_UDP_CLOSE 0x12  // Stop listening on given port
+#define AOS_UDP_SEND 0x21  // Send udp datagram
+
 typedef void* nameservice_chan_t;
 
 ///< handler which is called when a message is received over the registered channel

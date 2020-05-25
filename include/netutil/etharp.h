@@ -14,7 +14,7 @@
 #define ETHARP_DEBUG(fmt, ...) ((void)0)
 #endif
 
-#define ETH_HLEN 14     /* Default size for ip header */
+#define ETH_HLEN 14     /* Default size for ethernet header */
 #define ETH_CRC_LEN 4
 
 #define ETH_TYPE(hdr)  ((hdr)->type)

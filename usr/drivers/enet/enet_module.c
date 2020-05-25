@@ -28,6 +28,7 @@
 #include "ethernet.h"
 #include "arp.h"
 #include "udp.h"
+#include "rpc.h"
 
 #include "enet.h"
 
@@ -679,6 +680,11 @@ int main(int argc, char *argv[])
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "Could not initialise udp abstraction");
         return err;
+    }
+
+    err = enet_rpc_init();
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Could not setup network rpc interface");
     }
 
     err = arp_send_probe();
