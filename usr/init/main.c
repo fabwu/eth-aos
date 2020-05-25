@@ -204,6 +204,12 @@ static int bsp_main(int argc, char *argv[])
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn enet driver\n");
         }
+
+        // Spawn echo server
+        err = process_spawn_init("udpecho");
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "Couldn't spawn udp echo server\n");
+        }
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {

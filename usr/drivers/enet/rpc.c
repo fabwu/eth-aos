@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <errno.h>
-#include <aos/nameserver.h>
+#include <aos/nameservice.h>
 #include <netutil/etharp.h>
 #include <netutil/ip.h>
 #include <netutil/udp.h>
@@ -10,18 +10,6 @@
 #include "rpc.h"
 
 #define ENET_UDP_MAX_DATA (ENET_MAX_PKT_SIZE - ETH_HLEN - IP_HLEN - UDP_HLEN)
-
-struct rpc_send_udp {
-    uint16_t _reserved;
-    uint16_t src_port;
-    uint16_t dest_port;
-    uint32_t dest_ip;
-};
-
-struct rpc_udp_response {
-    uint16_t _reserved;
-    bool success;
-};
 
 errval_t enet_rpc_init(void)
 {
@@ -47,7 +35,8 @@ static errval_t enet_rpc_udp_send(struct rpc_send_udp *message, size_t bytes,
     udp_response->success = false;
     *response_bytes = sizeof(struct rpc_udp_response);
 
-    if (bytes - sizeof(struct rpc_send_udp) > ENET_UDP_MAX_DATA) {
+    size_t size = bytes - sizeof(struct rpc_send_udp);
+    if (size > ENET_UDP_MAX_DATA) {
         ERPC_DEBUG("Discarding udp send request: Message too large (%ld)\n", bytes);
         return SYS_ERR_OK;
     }
@@ -60,14 +49,15 @@ static errval_t enet_rpc_udp_send(struct rpc_send_udp *message, size_t bytes,
         return err;
     }
 
-    memcpy(data, (void *)(message + 1), bytes - sizeof(struct rpc_send_udp));
+    memcpy(data, (void *)(message + 1), size);
 
-    err = udp_send_datagram(&datagram, 12);
+    err = udp_send_datagram(&datagram, (uint16_t)size);
     if (err_is_fail(err)) {
         return err;
     }
 
     udp_response->success = false;
+    ERPC_DEBUG("Sent udp datagram\n");
     return SYS_ERR_OK;
 }
 
@@ -75,6 +65,8 @@ void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **response
                           size_t *response_bytes, struct capref tx_cap,
                           struct capref *rx_cap)
 {
+    assert(message != NULL);
+
     errval_t err;
     // Setting empty response in advance for all error cases
     *response_bytes = 0;

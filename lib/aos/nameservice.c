@@ -93,6 +93,8 @@ static void nameservice_handler(void *arg)
         entry->recv_handler(entry->st, message, message_bytes, &response, &response_bytes,
                             NULL_CAP, &NULL_CAP);
 
+        // FIXME: Please handle case where 0 bytes are sent in response
+
         // allocate response buffer
         struct capref response_cap;
         size_t ret_bytes;
@@ -372,6 +374,7 @@ errval_t nameservice_register(const char *name,
 
     // ack received save handler and state in hashtable
     struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
+    assert(entry != NULL);
     entry->name = name;
     entry->recv_handler = recv_handler;
     entry->st = st;

@@ -692,6 +692,7 @@ int main(int argc, char *argv[])
         DEBUG_ERR(err, "Could not send out arp probe request");
     }
 
+    struct waitset *default_ws = get_default_waitset();
     struct devq_buf buf;
     while (true) {
         err = devq_dequeue((struct devq *)st->rxq, &buf.rid, &buf.offset, &buf.length,
@@ -706,6 +707,13 @@ int main(int argc, char *argv[])
             assert(err_is_ok(err));
         } else if (err != DEVQ_ERR_QUEUE_EMPTY) {
             DEBUG_ERR(err, "Polling from ethernet receive queue failed");
+        } else {
+            err = event_dispatch_non_block(default_ws);
+            if (err == LIB_ERR_NO_EVENT) {
+                thread_yield();
+            } else if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Error in enet driver event dispatch");
+            }
         }
     }
 }
