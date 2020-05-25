@@ -434,7 +434,7 @@ static errval_t test_file(char *parent_dir, char *dir, char *filename)
     }
 
     // Remove file
-    err = remove(dir);
+    err = rm(dir);
     if (err_is_fail(err)) {
         return err_push(err, FS_ERR_REMOVE);
     }
