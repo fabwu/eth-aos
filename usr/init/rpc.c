@@ -235,7 +235,6 @@ static void rpc_handler_recv_closure(void *arg)
             lmp_chan_alloc_recv_slot(chan);
         }
         aos_rpc_header_t header = msg.words[0];
-        domainid_t sender = AOS_RPC_HEADER_SEND(header);
         domainid_t receiver = AOS_RPC_HEADER_RECV(header);
         aos_rpc_msg_t message_type = AOS_RPC_HEADER_MSG(header);
 
@@ -289,8 +288,6 @@ static void rpc_handler_recv_closure(void *arg)
             }
         } else {
             // Route message to receiver
-            DEBUG_PRINTF("init got message from %p over %d to %p with type %p\n", sender,
-                         chan->type, receiver, message_type);
             coreid_t recv_core_id = AOS_RPC_CORE_ID(receiver);
 
             if (recv_core_id == disp_get_current_core_id()) {

@@ -65,6 +65,7 @@ typedef uint8_t  aos_rpc_msg_t;
 #define AOS_RPC_PROCESS_SPAWN_REMOTE_CMD 0x0f
 #define AOS_RPC_MSG_NS_REGISTER          0x10
 #define AOS_RPC_MSG_NS_LOOKUP            0x11
+#define AOS_RPC_MSG_NS_RPC               0x12
 
 #define AOS_RPC_SETUP                    0xff
 

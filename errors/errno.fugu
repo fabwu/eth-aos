@@ -412,8 +412,10 @@ errors libaos LIB_ERR_ {
     // LMP protocol
     failure LMP_PROTOCOL_SEND1              "Failure in lmp_protocol_send1()",
     failure LMP_PROTOCOL_SEND3              "Failure in lmp_protocol_send3()",
+    failure LMP_PROTOCOL_SEND_CAP1          "Failure in lmp_protocol_send_cap1()",
     failure LMP_PROTOCOL_SEND_STRING        "Failure in lmp_protocol_send_string()",
     failure LMP_PROTOCOL_RECV1              "Failure in lmp_protocol_recv1()",
+    failure LMP_PROTOCOL_RECV_CAP1          "Failure in lmp_protocol_recv_cap1()",
 
     // IDC binding/export and Monitor client interface
     failure MONITOR_CLIENT_BIND "Error in monitor_client_lmp_bind()",
@@ -1471,6 +1473,7 @@ errors aos AOS_ERR_ {
 // hashtable
 errors hashtable HT_ERR_ {
     failure PUT_WORD                "Failure in hashtable put_word()",
+    failure GET                     "Failure in hashtable get()",
 };
 
 // errors NIC driver
