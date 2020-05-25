@@ -19,7 +19,7 @@
 #include <aos/aos_rpc.h>
 #include <aos/waitset.h>
 #include <aos/paging.h>
-#include <aos/nameserver.h>
+#include <aos/nameservice.h>
 
 
 #define PANIC_IF_FAIL(err, msg)                                                          \
