@@ -140,23 +140,28 @@ static bool fat32fs_is_clus_eof(uint32_t clus)
     return clus == FAT_32_BAD_CLUSTER_ENTRY || clus >= FAT_32_MIN_EOF_CLUSTER_ENTRY;
 }
 
-static errval_t fat32fs_free_clus(struct fat32_fs *fs, uint32_t clus_to_free)
+static errval_t fat32fs_free_clus_chain(struct fat32_fs *fs, uint32_t clus_to_free)
 {
     errval_t err;
 
-    uint32_t clus_to_free_fat_sector = get_sector_for_fat(fs, clus_to_free);
-    err = fs_read_sector(fs->sd, &fs->fat, clus_to_free_fat_sector);
-    if (err_is_fail(err)) {
-        return err;
-    }
+    uint32_t next_clus = clus_to_free;
+    do {
+        uint32_t clus_to_free_fat_sector = get_sector_for_fat(fs, next_clus);
+        err = fs_read_sector(fs->sd, &fs->fat, clus_to_free_fat_sector);
+        if (err_is_fail(err)) {
+            return err;
+        }
 
-    uint32_t *clus_to_free_fat = (uint32_t *)(fs->fat.virt
-                                              + get_offset_for_fat(fs, clus_to_free));
+        fs->fat.dirty = true;
 
-    *clus_to_free_fat = (FAT_32_FAT_FREE_ENTRY & FAT_32_CLUSTER_ENTRY_MASK)
-                        | (*clus_to_free_fat & ~FAT_32_CLUSTER_ENTRY_MASK);
+        uint32_t *clus_to_free_fat = (uint32_t *)(fs->fat.virt
+                                                  + get_offset_for_fat(fs, next_clus));
 
-    fs->fat.dirty = true;
+        next_clus = *clus_to_free_fat & FAT_32_CLUSTER_ENTRY_MASK;
+
+        *clus_to_free_fat = (FAT_32_FAT_FREE_ENTRY & FAT_32_CLUSTER_ENTRY_MASK)
+                            | (*clus_to_free_fat & ~FAT_32_CLUSTER_ENTRY_MASK);
+    } while (!fat32fs_is_clus_eof(next_clus));
 
     return SYS_ERR_OK;
 }
@@ -677,6 +682,7 @@ static errval_t fat32fs_add_to_dir(struct fat32_fs *fs, struct fat32fs_dirent *d
 
     *(uint8_t *)(entry + FAT_32_DIR_ENTRY_NT_RES_OFFSET) = 0x0;
 
+    // FIXME: Add some timestamp
     *(uint8_t *)(entry + FAT_32_DIR_ENTRY_CRT_TIME_TENTH_OFFSET) = 0x0;
     *(uint16_t *)(entry + FAT_32_DIR_ENTRY_WRT_TIME_OFFSET) = 0x0;
     *(uint16_t *)(entry + FAT_32_DIR_ENTRY_WRT_DATE_OFFSET) = 0x0;
@@ -931,6 +937,10 @@ errval_t fat32fs_close(void *handle)
 errval_t fat32fs_remove(void *st, const char *path)
 {
     USER_PANIC("NYI\n");
+    // Resolve
+    // Remove
+    // Free cluster chain
+    // Remove from directory
 }
 
 errval_t fat32fs_opendir(void *st, const char *path, fs_dirhandle_t *ret_handle)
@@ -1237,7 +1247,7 @@ errval_t fat32fs_rmdir(void *st, const char *path)
 
     fs->data.dirty = true;
 
-    err = fat32fs_free_clus(fs, dirent->clus);
+    err = fat32fs_free_clus_chain(fs, dirent->clus);
     if (err_is_fail(err)) {
         return err;
     }
