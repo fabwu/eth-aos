@@ -363,8 +363,8 @@ void fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
     }
 }
 
-void fs_dir_entry_name_to_normal_name(const unsigned char *dir_entry_name,
-                                      unsigned char *normal_name)
+errval_t fs_dir_entry_name_to_normal_name(const unsigned char *dir_entry_name,
+                                          unsigned char *normal_name)
 {
     // 11 chars, first 8 main, last 3 extension, if extension, than add dot, also remove
     // trailing spaces (0x20) of main and extension
@@ -381,7 +381,9 @@ void fs_dir_entry_name_to_normal_name(const unsigned char *dir_entry_name,
     for (int src_pos = 0; src_pos <= last_char_main; ++src_pos) {
         DEBUG_FS("fs_process_dir_entry_name char: 0x%" PRIx8 "\n",
                  dir_entry_name[src_pos]);
-        assert(!fs_is_illegal_character_dir_entry_name(dir_entry_name[src_pos]));
+        if (fs_is_illegal_character_dir_entry_name(dir_entry_name[src_pos])) {
+            return FS_ERR_INVAL;
+        }
 
         normal_name[des_pos] = dir_entry_name[src_pos];
         ++des_pos;
@@ -412,11 +414,14 @@ void fs_dir_entry_name_to_normal_name(const unsigned char *dir_entry_name,
         *normal_name = FAT_32_REPLACE_DIR_ENTRY_VALUE;
     }
 
-    DEBUG_FS("fs_process_dir_entry: %.*s\n", 13, normal_name);
+    DEBUG_FS("fs_process_dir_entry_name normal_name: %.*s\n", 13, normal_name);
+
+    return SYS_ERR_OK;
 }
 
 static void fs_process_dir_entry(void *entry, uint8_t *more_entries)
 {
+    errval_t err;
     if (*(uint8_t *)entry == FAT_32_HOLE_DIR_ENTRY) {
         return;
     } else if (*(uint8_t *)entry == FAT_32_ONLY_FREE_DIR_ENTRY) {
@@ -426,7 +431,9 @@ static void fs_process_dir_entry(void *entry, uint8_t *more_entries)
     }
 
     char normal_name[FAT_32_MAX_BYTES_NORMAL_NAME];
-    fs_dir_entry_name_to_normal_name((unsigned char *)entry, (unsigned char *)normal_name);
+    err = fs_dir_entry_name_to_normal_name((unsigned char *)entry,
+                                           (unsigned char *)normal_name);
+    assert(err_is_ok(err));
 }
 
 static void fs_process_dir_cluster_sectors(struct sdhc_s *sd, struct fat32_fs *fs,
