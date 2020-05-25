@@ -216,16 +216,16 @@ static errval_t test_fwrite(char *file)
     return SYS_ERR_OK;
 }
 
-static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
+static errval_t test_check_dir_empty(const char *dir)
 {
+    errval_t err;
+
+    fs_dirhandle_t dh;
     bool found_dot;
     bool found_dotdot;
-    bool found_dir;
     size_t files_found;
-    errval_t err;
-    fs_dirhandle_t dh;
 
-    err = opendir(parent_dir, &dh);
+    err = opendir(dir, &dh);
     if (err_is_fail(err)) {
         return err_push(err, FS_ERR_OPENDIR);
     }
@@ -247,16 +247,16 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
         } else if (!strcmp(name, dotdot)) {
             found_dotdot = true;
         } else {
-            debug_printf("test_dir name doesn't match\n");
-            return FS_ERR_MKDIR;
+            debug_printf("test_file name doesn't match\n");
+            return FS_ERR_RMDIR;
         }
         ++files_found;
         printf("%s\n", name);
     } while (err_is_ok(err));
 
-    if (files_found > 0 && !(files_found == 2 && found_dot && found_dotdot)) {
-        debug_printf("test_dir parent_dir not empty\n");
-        return FS_ERR_MKDIR;
+    if (!(files_found == 0) || (files_found == 2 && found_dot && found_dotdot)) {
+        debug_printf("test_file dir not empty\n");
+        return FS_ERR_OPEN;
     }
 
     err = closedir(dh);
@@ -264,12 +264,20 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
         return err_push(err, FS_ERR_CLOSEDIR);
     }
 
-    err = mkdir(dir);
-    if (err) {
-        return err_push(err, FS_ERR_MKDIR);
-    }
+    return SYS_ERR_OK;
+}
 
-    err = opendir(parent_dir, &dh);
+static errval_t test_check_dir_contains_exactly(const char *dir, const char *filename)
+{
+    errval_t err;
+
+    fs_dirhandle_t dh;
+    bool found_dot;
+    bool found_dotdot;
+    bool found_file;
+    size_t files_found;
+
+    err = opendir(dir, &dh);
     if (err_is_fail(err)) {
         return err_push(err, FS_ERR_OPENDIR);
     }
@@ -279,7 +287,7 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
     files_found = 0;
     found_dot = false;
     found_dotdot = false;
-    found_dir = false;
+    found_file = false;
     do {
         char *name;
         err = readdir(dh, &name);
@@ -291,8 +299,8 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
             found_dot = true;
         } else if (!strcmp(name, dotdot)) {
             found_dotdot = true;
-        } else if (!strcmp(name, dirname)) {
-            found_dir = true;
+        } else if (!strcmp(name, filename)) {
+            found_file = true;
         } else {
             debug_printf("test_dir name doesn't match\n");
             return FS_ERR_MKDIR;
@@ -301,9 +309,9 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
         printf("%s\n", name);
     } while (err_is_ok(err));
 
-    if (!((files_found == 1 && found_dir)
-          || (files_found == 3 && found_dot && found_dotdot && found_dir))) {
-        if (found_dir) {
+    if (!((files_found == 1 && found_file)
+          || (files_found == 3 && found_dot && found_dotdot && found_file))) {
+        if (found_file) {
             debug_printf("test_dir dir found multiple times\n");
             return FS_ERR_MKDIR;
         } else {
@@ -315,6 +323,32 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
     err = closedir(dh);
     if (err) {
         return err_push(err, FS_ERR_CLOSEDIR);
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
+{
+    bool found_dot;
+    bool found_dotdot;
+    size_t files_found;
+    errval_t err;
+    fs_dirhandle_t dh;
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = mkdir(dir);
+    if (err) {
+        return err_push(err, FS_ERR_MKDIR);
+    }
+
+    err = test_check_dir_contains_exactly(parent_dir, dirname);
+    if (err_is_fail(err)) {
+        return err;
     }
 
     err = opendir(dir, &dh);
@@ -364,45 +398,10 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
         return err_push(err, FS_ERR_RMDIR);
     }
 
-    err = opendir(parent_dir, &dh);
+    err = test_check_dir_empty(parent_dir);
     if (err_is_fail(err)) {
-        return err_push(err, FS_ERR_OPENDIR);
+        return err;
     }
-
-    assert(dh);
-
-    files_found = 0;
-    found_dot = false;
-    found_dotdot = false;
-    do {
-        char *name;
-        err = readdir(dh, &name);
-        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
-            break;
-        } else if (err_is_fail(err)) {
-            return err_push(err, FS_ERR_READDIR);
-        } else if (!strcmp(name, dot)) {
-            found_dot = true;
-        } else if (!strcmp(name, dotdot)) {
-            found_dotdot = true;
-        } else {
-            debug_printf("test_dir name doesn't match\n");
-            return FS_ERR_RMDIR;
-        }
-        ++files_found;
-        printf("%s\n", name);
-    } while (err_is_ok(err));
-
-    if (files_found > 0 && !(files_found == 2 && found_dot && found_dotdot)) {
-        debug_printf("test_dir parent_dir not empty\n");
-        return FS_ERR_RMDIR;
-    }
-
-    err = closedir(dh);
-    if (err) {
-        return err_push(err, FS_ERR_CLOSEDIR);
-    }
-
 
     return SYS_ERR_OK;
 }
@@ -412,12 +411,13 @@ static errval_t test_file(char *parent_dir, char *dir, char *filename)
     errval_t err;
 
     FILE *f;
-    bool found_dot;
-    bool found_dotdot;
-    bool found_file;
-    size_t files_found;
-    fs_dirhandle_t dh;
 
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    // Create file
     f = fopen(dir, "a");
     if (f == NULL) {
         return FS_ERR_OPEN;
@@ -428,52 +428,20 @@ static errval_t test_file(char *parent_dir, char *dir, char *filename)
         return err_push(err, FS_ERR_CLOSE);
     }
 
-    err = opendir(parent_dir, &dh);
+    err = test_check_dir_contains_exactly(parent_dir, filename);
     if (err_is_fail(err)) {
-        return err_push(err, FS_ERR_OPENDIR);
+        return err;
     }
 
-    assert(dh);
-
-    files_found = 0;
-    found_dot = false;
-    found_dotdot = false;
-    found_file = false;
-    do {
-        char *name;
-        err = readdir(dh, &name);
-        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
-            break;
-        } else if (err_is_fail(err)) {
-            return err_push(err, FS_ERR_READDIR);
-        } else if (!strcmp(name, dot)) {
-            found_dot = true;
-        } else if (!strcmp(name, dotdot)) {
-            found_dotdot = true;
-        } else if (!strcmp(name, filename)) {
-            found_file = true;
-        } else {
-            debug_printf("test_file name doesn't match\n");
-            return FS_ERR_RMDIR;
-        }
-        ++files_found;
-        printf("%s\n", name);
-    } while (err_is_ok(err));
-
-    if (!((files_found == 1 && found_file)
-          || (files_found == 3 && found_dot && found_dotdot && found_file))) {
-        if (found_file) {
-            debug_printf("test_file file found multiple times\n");
-            return FS_ERR_MKDIR;
-        } else {
-            debug_printf("test_file file not found\n");
-            return FS_ERR_MKDIR;
-        }
+    // Remove file
+    err = remove(dir);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_REMOVE);
     }
 
-    err = closedir(dh);
-    if (err) {
-        return err_push(err, FS_ERR_CLOSEDIR);
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
     }
 
     return SYS_ERR_OK;

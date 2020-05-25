@@ -934,13 +934,74 @@ errval_t fat32fs_close(void *handle)
     return SYS_ERR_OK;
 }
 
+static errval_t fat32fs_remove_dirent(void *st, const char *path, uint32_t clus)
+{
+    errval_t err;
+
+    struct fs_mount *mount = st;
+    struct fat32_fs *fs = mount->state;
+
+    char *parent_path;
+    char *childname;
+    err = fat32fs_split_path(path, &parent_path, &childname);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    struct fs_handle *parent_fh;
+    err = fat32fs_resolve_path(st, parent_path, &parent_fh);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    struct fat32fs_dirent *parent_dirent = parent_fh->state;
+    void *entry;
+    err = fat32fs_find_dirent_entry(fs, parent_dirent->clus, childname, &entry, NULL);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    // TODO: potentially coalesce holes
+    *(uint8_t *)entry = FAT_32_HOLE_DIR_ENTRY;
+
+    fs->data.dirty = true;
+
+    err = fat32fs_free_clus_chain(fs, clus);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    free(parent_path);
+    free(childname);
+    fat32fs_close_handle(parent_fh);
+
+    return SYS_ERR_OK;
+}
+
 errval_t fat32fs_remove(void *st, const char *path)
 {
-    USER_PANIC("NYI\n");
-    // Resolve
-    // Remove
-    // Free cluster chain
-    // Remove from directory
+    DEBUG_FAT32FS("fat32fs_remove begin\n");
+    errval_t err;
+
+    struct fs_handle *fh;
+    err = fat32fs_resolve_path(st, path, &fh);
+
+    struct fat32fs_dirent *dirent = fh->state;
+    if (dirent->is_dir) {
+        fat32fs_close_handle(fh);
+        return FS_ERR_NOTFILE;
+    }
+
+    // FIXME: Check if busy
+
+    err = fat32fs_remove_dirent(st, path, dirent->clus);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    fat32fs_close_handle(fh);
+
+    return SYS_ERR_OK;
 }
 
 errval_t fat32fs_opendir(void *st, const char *path, fs_dirhandle_t *ret_handle)
@@ -1222,40 +1283,12 @@ errval_t fat32fs_rmdir(void *st, const char *path)
         return err;
     }
 
-    // Remove dir
-    char *parent_path;
-    char *childname;
-    err = fat32fs_split_path(path, &parent_path, &childname);
-    if (err_is_fail(err)) {
-    }
-
-    struct fs_handle *parent_fh;
-    err = fat32fs_resolve_path(st, parent_path, &parent_fh);
+    err = fat32fs_remove_dirent(st, path, dirent->clus);
     if (err_is_fail(err)) {
         return err;
     }
 
-    struct fat32fs_dirent *parent_dirent = parent_fh->state;
-    void *entry;
-    err = fat32fs_find_dirent_entry(fs, parent_dirent->clus, childname, &entry, NULL);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    // TODO: potentially coalesce holes
-    *(uint8_t *)entry = FAT_32_HOLE_DIR_ENTRY;
-
-    fs->data.dirty = true;
-
-    err = fat32fs_free_clus_chain(fs, dirent->clus);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    free(parent_path);
-    free(childname);
     fat32fs_close_handle(fh);
-    fat32fs_close_handle(parent_fh);
 
     DEBUG_FAT32FS("fat32fs_rmdir end\n");
 

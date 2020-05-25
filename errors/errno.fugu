@@ -1015,6 +1015,7 @@ errors fs FS_ERR_ {
     failure READ                "Failure during file read",
     failure WRITE               "Failure during writing the file",
     failure OPEN                "Failure during open",
+    failure REMOVE              "Failure during remove",
     failure CLOSE               "Failure during close",
     failure MKDIR               "Failure during creation of directory",
     failure CLOSEDIR            "Failure during close of directory",
