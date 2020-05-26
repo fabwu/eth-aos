@@ -1297,17 +1297,16 @@ errval_t fat32fs_rmdir(void *st, const char *path)
 
 errval_t fat32fs_stat(void *handle, struct fs_fileinfo *info)
 {
-    USER_PANIC("NYI\n");
-    // struct fs_handle *fh = handle; 
-    // struct fat32fs_dirent *dirent = fh->state;
-    // if (dirent->is_dir) {
-    //     info->type = FS_DIRECTORY;
-    // } else {
-    //     info->type = FS_FILE;
-    //     info->size = dirent->size;
-    // }
+    struct fs_handle *fh = handle; 
+    struct fat32fs_dirent *dirent = fh->state;
+    if (dirent->is_dir) {
+        info->type = FS_DIRECTORY;
+    } else {
+        info->type = FS_FILE;
+        info->size = dirent->size;
+    }
 
-    // return SYS_ERR_OK;
+    return SYS_ERR_OK;
 }
 
 
