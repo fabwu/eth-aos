@@ -406,7 +406,7 @@ static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
     return SYS_ERR_OK;
 }
 
-static errval_t test_file(char *parent_dir, char *dir, char *filename)
+static errval_t test_file_create(char *parent_dir, char *dir, char *filename)
 {
     errval_t err;
 
@@ -447,10 +447,76 @@ static errval_t test_file(char *parent_dir, char *dir, char *filename)
     return SYS_ERR_OK;
 }
 
+static errval_t test_file_io(char *parent_dir, char *dir, char *filename)
+{
+    errval_t err;
+
+    FILE *f;
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    f = fopen(dir, "w");
+    if (f == NULL) {
+        return FS_ERR_OPEN;
+    }
+
+    const char *test = "This is a test!\n";
+    size_t test_strlen = strlen(test);
+    err = fwrite(test, test_strlen, 1, f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_WRITE);
+    }
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+
+    f = fopen(dir, "r");
+    if (f == NULL) {
+        return FS_ERR_OPEN;
+    }
+
+    char *buf = calloc(1, test_strlen + 1);
+    err = fread(buf, test_strlen, 1, f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_WRITE);
+    }
+    *(buf + test_strlen) = '\0';
+    debug_printf("got back: %s\n", buf);
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+
+    if (strcmp(test, buf)) {
+        return FS_ERR_WRITE;
+    }
+
+    // Remove file
+    err = rm(dir);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_REMOVE);
+    }
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return SYS_ERR_OK;
+}
+
+
 #define FS_TEST_READ_DIR 0
 #define FS_TEST_READ 0
 #define FS_TEST_DIR 0
-#define FS_TEST_FILE 1
+#define FS_TEST_FILE_CREATE 0
+#define FS_TEST_FILE_IO 1
 #define FS_TEST_WRITE 0
 
 int main(int argc, char *argv[])
@@ -482,8 +548,12 @@ int main(int argc, char *argv[])
         run_test(test_dir, MOUNTPOINT, MOUNTPOINT "/" TEST_DIRNAME, TEST_DIRNAME);
     }
 
-    if (FS_TEST_FILE) {
-        run_test(test_file, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
+    if (FS_TEST_FILE_CREATE) {
+        run_test(test_file_create, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
+    }
+
+    if (FS_TEST_FILE_IO) {
+        run_test(test_file_io, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
     }
 
     if (FS_TEST_WRITE) {
