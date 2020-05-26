@@ -1,0 +1,51 @@
+\chapter{Filesystem}
+
+Implement a FAT32 Filesystem, spawn a process with the binary loaded off of the sdcard, create fileserver to expose filesystem functionality over rpc.
+
+Steps taken in implementation:
+\begin{itemize}
+	\item Added sdcard initialisation
+	\item Methods to read/write from/to sdcard, with cache invalidation/writeback
+	\item Parsing FAT32 metadata
+	\item Tried basic listing of directory
+	\item Added virtual filesystem capability
+	\item Added capability to ramfs to mount other filesystems
+	\item Added rpc call to get device frame
+	\item Implemented FAT32 filesystem according specification
+	\begin{itemize}
+		\item Enable opening, listing, and closing of directories
+		\item Enable opening, reading, and closing of files
+		\item Enable seeking, and tell for files
+		\item Enable creation, deletion of directories
+		\item Enable creation, deletion of files
+		\item Enable stat, but can't be used because don't get dirhandle for files from anywhere
+	\end{itemize}
+	\item Added tests to /usr/test/filereader/main.c
+	\item Tested if elf image from sdcard boots
+	\item TODO: Expose interface over rpc, hook int /lib/fs/fopen.c, add fd and hook into /lib/fs/dirent.c to call rpc if not fileserver
+\end{itemize}
+
+Specifics of virtual filesystem:
+\begin{itemize}
+	\item Describe datastructures of virtual filessystem
+	\begin{itemize}
+		\item fs\_mount
+		\item fs\_handle
+		\item having fs\_mount avaiable all the time
+	\end{itemize}
+	\item Describe path resolution (and whish to add layer external to specific fs to deduplicate resolution logic, cache results)
+	\item Describe call dispatching in virtual filesystem
+\end{itemize}
+
+Specifics of fat32:
+\begin{itemize}
+	\item Describe datastructures specific to FAT32
+	\begin{itemize}
+		\item fat32\_fs
+		\item fat32\_dirent
+		\item fat32\_dirstate
+	\end{itemize}
+	\item Describe separate buffers for fat metadata and data
+	\item Describe lazy write mechanism of sectors
+	\item Idea to have separate buffers per filehandle/dirhandle, improve locality
+\end{itemize}

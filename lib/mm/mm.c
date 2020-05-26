@@ -172,6 +172,15 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment,
         size += BASE_PAGE_SIZE;
     }
 
+    struct capref cap;
+    // FIXME: Improve cleanup
+    // Alloc capability
+    err = slot_alloc(&cap);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLOT_ALLOC);
+    }
+
+    // FIXME: Add lock, like in paging, as a canary if we missed something triggering reentrancy during critical section
     struct mm_node *node;
     err = aos_avl_find_ge(mm->free, size, (void **)&node);
     if (err_is_fail(err)) {
@@ -238,14 +247,6 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment,
 
     new_mm->type = NodeType_Allocated;
 
-    struct capref cap;
-
-    // Alloc capability
-    err = slot_alloc(&cap);
-    if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_SLOT_ALLOC);
-    }
-
     err = cap_retype(cap, new_mm->origin->cap, new_mm->base - new_mm->origin->base,
                      ObjType_RAM, size, 1);
     if (err_is_fail(err)) {
@@ -297,7 +298,7 @@ errval_t mm_alloc(struct mm *mm, size_t size, struct capref *retcap)
 static errval_t mm_remove_from_free(struct mm *mm, struct mm_node *node)
 {
     DEBUG_MM("mm_remove_from_free begin\n");
-    DEBUG_MM("mm_remove_from_free node addr: 0x%"PRIx64"\n", node->base);
+    DEBUG_MM("mm_remove_from_free node addr: 0x%" PRIx64 "\n", node->base);
 
     assert(node->avl != NULL);
     assert(mm->free != NULL);
@@ -342,6 +343,7 @@ errval_t mm_free(struct mm *mm, genpaddr_t addr)
 
     // FIXME: add debug cap_retype/cap_destroy, to check if really is free
 
+    // FIXME: Add lock, like in paging, as a canary if we missed something triggering reentrancy during critical section
     struct mm_node *old_node;
     err = aos_avl_find(mm->allocated, addr, (void **)&old_node);
     if (err_is_fail(err)) {

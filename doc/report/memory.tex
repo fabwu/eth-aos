@@ -1,0 +1,24 @@
+\chapter{Memory management and capabilities}
+
+123 \cite{aos-book}
+
+Ram capabilities are the foundation everything else is built upon in the barrelfish world. One needs a ram cap to create cnodes to store capabilites. One needs ram caps to store the shadow paging tables. One needs ram caps to feed different allocators, be it the simple
+
+Steps taken in implementation:
+\begin{itemize}
+	\item Used multiple linked list initially to manage memory
+	\item Changed later on to avl tree, when paging became too slow, memory was first to switch
+	\item Fuses memory with adjacent free memory upon return
+\end{itemize}
+
+Datastructures of memory manager:
+\begin{itemize}
+	\item Linked list of boot info ram chunks, provides the capabilities off which everything else is split, not intermediaries
+	\item Linked list of all memory ranges, in ascending order of adderss
+	\item Avl tree of free memory ranges, indexed by their size
+	\item Avl tree of allocated memory ranges, indexed by their address
+\end{itemize}
+
+The linked list of all nodes in ascending order of address can be managed with O(1) operations, and allows for easy fusing of memory ranges, if for example an allocated gets returned, and there is an adjacent free on.
+The avl tree of allocatee memory ranges, indexed by their address, is need because we only get the adress to free, but not the size, so thats for remembering the size of a certain memory range.
+The avl tree of free memory ranges, indexed by ther size, allows for fast lookup when allocating memory, one just for the least element that's greater or euqal to the size requested.
