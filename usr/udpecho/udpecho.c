@@ -6,7 +6,7 @@
 #include <aos/aos.h>
 #include <aos/deferred.h>
 #include <aos/nameservice.h>
-#include <aos/enetservice.h>
+#include <aos/netservice.h>
 
 #define UDPECHO_DEFAULT_PORT 50500
 
@@ -63,6 +63,7 @@ int main(int argc, char *argv[])
     } else {
         printf("Failed to send udp package\n");
     }
+    free(response);
 
     return 0;
 }

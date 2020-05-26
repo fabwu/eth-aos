@@ -14,8 +14,6 @@
 #define ERPC_DEBUG(fmt, ...) ((void)0)
 #endif
 
-#define ENET_UDP_SERVICE_NAME "udp"
-
 errval_t enet_rpc_init(void);
 
 #endif  // ENET_RPC_H_

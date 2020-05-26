@@ -1,17 +1,13 @@
 #include <assert.h>
 #include <errno.h>
 #include <aos/nameservice.h>
-#include <aos/enetservice.h>
+#include <aos/netservice.h>
 #include <collections/hash_table.h>
-#include <netutil/etharp.h>
-#include <netutil/ip.h>
 #include <netutil/udp.h>
 #include "enet.h"
 #include "udp.h"
 
 #include "rpc.h"
-
-#define ENET_UDP_MAX_DATA (ENET_MAX_PKT_SIZE - ETH_HLEN - IP_HLEN - UDP_HLEN)
 
 struct enet_rpc_state {
     collections_hash_table *listeners;
@@ -24,13 +20,11 @@ static errval_t enet_rpc_udp_listen(struct rpc_udp_listen *message, size_t bytes
 {
     errval_t err;
 
-    struct rpc_udp_response *udp_response = malloc(sizeof(struct rpc_udp_response));
-    if (udp_response == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
-    *response = udp_response;
-    udp_response->type = message->type;
-    udp_response->success = false;
+    // Static so it stays valid after returning from this function
+    static struct rpc_udp_response udp_response;
+    udp_response.type = message->type;
+    udp_response.success = false;
+    *response = &udp_response;
     *response_bytes = sizeof(struct rpc_udp_response);
 
     nameservice_chan_t chan = collections_hash_find(state.listeners, (uint64_t)message->port);
@@ -59,7 +53,7 @@ static errval_t enet_rpc_udp_listen(struct rpc_udp_listen *message, size_t bytes
     }
 
     collections_hash_insert(state.listeners, (uint64_t)message->port, (void *)chan);
-    udp_response->success = true;
+    udp_response.success = true;
     ERPC_DEBUG("Start listening on port %d\n", message->port);
     return SYS_ERR_OK;
 }
@@ -69,13 +63,11 @@ static errval_t enet_rpc_udp_send(struct rpc_udp_send *message, size_t bytes,
 {
     errval_t err;
 
-    struct rpc_udp_response *udp_response = malloc(sizeof(struct rpc_udp_response));
-    if (udp_response == NULL) {
-        return LIB_ERR_MALLOC_FAIL;
-    }
-    *response = udp_response;
-    udp_response->type = message->type;
-    udp_response->success = false;
+    // Static so it stays valid after returning from this function
+    static struct rpc_udp_response udp_response;
+    udp_response.type = message->type;
+    udp_response.success = false;
+    *response = &udp_response;
     *response_bytes = sizeof(struct rpc_udp_response);
 
     size_t size = bytes - sizeof(struct rpc_udp_send);
@@ -99,7 +91,7 @@ static errval_t enet_rpc_udp_send(struct rpc_udp_send *message, size_t bytes,
         return err;
     }
 
-    udp_response->success = true;
+    udp_response.success = true;
     ERPC_DEBUG("Sent udp datagram\n");
     return SYS_ERR_OK;
 }
