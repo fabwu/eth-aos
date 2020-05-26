@@ -36,6 +36,8 @@ static uint64_t systime_to_ms(systime_t time)
 #define FILENAME "/MYFILE2.TXT"
 #define FILENAME_NESTED "/TEST/MYFILE2.TXT"
 #define ORIG_FILENAME "/myfile2.txt"
+#define TEST_DIRNAME "TESTDIR"
+#define TEST_FILENAME "TESTFILE"
 #define LONGFILENAME "/mylongfilenamefile.txt"
 #define LONGFILENAME2 "/mylongfilenamefilesecond.txt"
 #define FILE_NOT_EXIST "/not-exist.txt"
@@ -66,24 +68,26 @@ static uint64_t systime_to_ms(systime_t time)
         }                                                                                \
     } while (0);
 
-#define run_test(fn, arg)                                                                \
+#define run_test(fn, ...)                                                                \
     do {                                                                                 \
         tstart = systime_now();                                                          \
-        err = fn(arg);                                                                   \
+        err = fn(__VA_ARGS__);                                                           \
         tend = systime_now();                                                            \
         EXPECT_SUCCESS(err, #fn, systime_to_ms(tend - tstart));                          \
         TEST_END                                                                         \
     } while (0);
 
-#define run_test_fail(fn, arg)                                                           \
+#define run_test_fail(fn, ...)                                                           \
     do {                                                                                 \
         tstart = systime_now();                                                          \
-        err = fn(arg);                                                                   \
+        err = fn(__VA_ARGS__);                                                           \
         tend = systime_now();                                                            \
         EXPECT_FAILURE(err, #fn, systime_to_ms(tend - tstart));                          \
         TEST_END                                                                         \
     } while (0);
 
+static const char *dot = ".";
+static const char *dotdot = "..";
 
 static errval_t test_read_dir(char *dir)
 {
@@ -212,6 +216,319 @@ static errval_t test_fwrite(char *file)
     return SYS_ERR_OK;
 }
 
+static errval_t test_check_dir_empty(const char *dir)
+{
+    errval_t err;
+
+    fs_dirhandle_t dh;
+    bool found_dot;
+    bool found_dotdot;
+    size_t files_found;
+
+    err = opendir(dir, &dh);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_OPENDIR);
+    }
+
+    assert(dh);
+
+    files_found = 0;
+    found_dot = false;
+    found_dotdot = false;
+    do {
+        char *name;
+        err = readdir(dh, &name);
+        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
+            break;
+        } else if (err_is_fail(err)) {
+            return err_push(err, FS_ERR_READDIR);
+        } else if (!strcmp(name, dot)) {
+            found_dot = true;
+        } else if (!strcmp(name, dotdot)) {
+            found_dotdot = true;
+        } else {
+            debug_printf("test_file name doesn't match\n");
+            return FS_ERR_RMDIR;
+        }
+        ++files_found;
+        printf("%s\n", name);
+    } while (err_is_ok(err));
+
+    if (!(files_found == 0) || (files_found == 2 && found_dot && found_dotdot)) {
+        debug_printf("test_file dir not empty\n");
+        return FS_ERR_OPEN;
+    }
+
+    err = closedir(dh);
+    if (err) {
+        return err_push(err, FS_ERR_CLOSEDIR);
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t test_check_dir_contains_exactly(const char *dir, const char *filename)
+{
+    errval_t err;
+
+    fs_dirhandle_t dh;
+    bool found_dot;
+    bool found_dotdot;
+    bool found_file;
+    size_t files_found;
+
+    err = opendir(dir, &dh);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_OPENDIR);
+    }
+
+    assert(dh);
+
+    files_found = 0;
+    found_dot = false;
+    found_dotdot = false;
+    found_file = false;
+    do {
+        char *name;
+        err = readdir(dh, &name);
+        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
+            break;
+        } else if (err_is_fail(err)) {
+            return err;
+        } else if (!strcmp(name, dot)) {
+            found_dot = true;
+        } else if (!strcmp(name, dotdot)) {
+            found_dotdot = true;
+        } else if (!strcmp(name, filename)) {
+            found_file = true;
+        } else {
+            debug_printf("test_dir name doesn't match\n");
+            return FS_ERR_MKDIR;
+        }
+        ++files_found;
+        printf("%s\n", name);
+    } while (err_is_ok(err));
+
+    if (!((files_found == 1 && found_file)
+          || (files_found == 3 && found_dot && found_dotdot && found_file))) {
+        if (found_file) {
+            debug_printf("test_dir dir found multiple times\n");
+            return FS_ERR_MKDIR;
+        } else {
+            debug_printf("test_dir dir not found\n");
+            return FS_ERR_MKDIR;
+        }
+    }
+
+    err = closedir(dh);
+    if (err) {
+        return err_push(err, FS_ERR_CLOSEDIR);
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t test_dir(char *parent_dir, char *dir, char *dirname)
+{
+    bool found_dot;
+    bool found_dotdot;
+    size_t files_found;
+    errval_t err;
+    fs_dirhandle_t dh;
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = mkdir(dir);
+    if (err) {
+        return err_push(err, FS_ERR_MKDIR);
+    }
+
+    err = test_check_dir_contains_exactly(parent_dir, dirname);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = opendir(dir, &dh);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_OPENDIR);
+    }
+
+    assert(dh);
+
+    files_found = 0;
+    found_dot = false;
+    found_dotdot = false;
+    do {
+        char *name;
+        err = readdir(dh, &name);
+        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
+            break;
+        } else if (err_is_fail(err)) {
+            return err_push(err, FS_ERR_READDIR);
+        } else if (!strcmp(name, dot)) {
+            found_dot = true;
+        } else if (!strcmp(name, dotdot)) {
+            found_dotdot = true;
+        } else {
+            debug_printf("test_dir name doesn't match\n");
+            return FS_ERR_MKDIR;
+        }
+        ++files_found;
+        printf("%s\n", name);
+    } while (err_is_ok(err));
+
+    // We are not root_dir, so we always need to contain .. and . entries
+    if (!(files_found == 2 && found_dot && found_dotdot)) {
+        debug_printf("test_dir dir doesn't contain exactly only dot entries\n");
+        return FS_ERR_MKDIR;
+    }
+
+    err = closedir(dh);
+    if (err) {
+        return err_push(err, FS_ERR_CLOSEDIR);
+    }
+
+    // FIXME: Open dot entries, verify they contain the same as parent_dir, dir
+
+    err = rmdir(dir);
+    if (err) {
+        return err_push(err, FS_ERR_RMDIR);
+    }
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t test_file_create(char *parent_dir, char *dir, char *filename)
+{
+    errval_t err;
+
+    FILE *f;
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    // Create file
+    f = fopen(dir, "a");
+    if (f == NULL) {
+        return FS_ERR_OPEN;
+    }
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+
+    err = test_check_dir_contains_exactly(parent_dir, filename);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    // Remove file
+    err = rm(dir);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_REMOVE);
+    }
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t test_file_io(char *parent_dir, char *dir, char *filename)
+{
+    errval_t err;
+
+    FILE *f;
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    f = fopen(dir, "w");
+    if (f == NULL) {
+        return FS_ERR_OPEN;
+    }
+
+    const char *test = "This is a test!\n";
+    size_t test_strlen = strlen(test);
+    size_t written;
+    written = fwrite(test, 1, test_strlen, f);
+    err = ferror(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_WRITE);
+    }
+
+    if (written != test_strlen) {
+        return FS_ERR_WRITE;
+    }
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+
+    f = fopen(dir, "r");
+    if (f == NULL) {
+        return FS_ERR_OPEN;
+    }
+
+    char *buf = calloc(1, test_strlen + 1);
+    size_t read;
+    read = fread(buf, 1, test_strlen, f);
+    err = ferror(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_WRITE);
+    }
+    *(buf + read) = '\0';
+
+    if (read != test_strlen) {
+        return FS_ERR_READ;
+    }
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+
+    if (strcmp(test, buf)) {
+        return FS_ERR_WRITE;
+    }
+
+    // Remove file
+    err = rm(dir);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_REMOVE);
+    }
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return SYS_ERR_OK;
+}
+
+
+#define FS_TEST_READ_DIR 0
+#define FS_TEST_READ 0
+#define FS_TEST_DIR 0
+#define FS_TEST_FILE_CREATE 0
+#define FS_TEST_FILE_IO 1
+#define FS_TEST_WRITE 0
 
 int main(int argc, char *argv[])
 {
@@ -224,17 +541,39 @@ int main(int argc, char *argv[])
     err = filesystem_init();
     EXPECT_SUCCESS(err, "fs init", 0);
 
-    // run_test(test_read_dir, "/");
+    if (FS_TEST_READ_DIR) {
+        run_test(test_read_dir, "/");
 
-    run_test(test_read_dir, MOUNTPOINT "/");
+        run_test(test_read_dir, MOUNTPOINT "/");
 
-    run_test_fail(test_read_dir, DIR_NOT_EXIST);
+        run_test_fail(test_read_dir, DIR_NOT_EXIST);
+    }
 
-    run_test(test_fread, MOUNTPOINT FILENAME_NESTED);
+    if (FS_TEST_READ) {
+        run_test(test_fread, MOUNTPOINT FILENAME_NESTED);
 
-    run_test(test_fread, MOUNTPOINT FILENAME);
+        run_test(test_fread, MOUNTPOINT FILENAME);
+    }
 
-    run_test(test_fwrite, MOUNTPOINT ORIG_FILENAME);
+    if (FS_TEST_DIR) {
+        run_test(test_dir, MOUNTPOINT, MOUNTPOINT "/" TEST_DIRNAME, TEST_DIRNAME);
+    }
+
+    if (FS_TEST_FILE_CREATE) {
+        run_test(test_file_create, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME,
+                 TEST_FILENAME);
+    }
+
+    if (FS_TEST_FILE_IO) {
+        run_test(test_file_io, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
+    }
+
+    if (FS_TEST_WRITE) {
+        run_test(test_fwrite, MOUNTPOINT ORIG_FILENAME);
+    }
+
+    err = filesystem_unmount();
+    EXPECT_SUCCESS(err, "fs init", 0);
 
     return EXIT_SUCCESS;
 }

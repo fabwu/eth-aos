@@ -22,7 +22,7 @@
 #include "fs_internal.h"
 
 
-static struct fs_mount *mount;
+static struct fs_mount *mount = NULL;
 
 /*
  * FD table
@@ -315,4 +315,10 @@ void fs_libc_init(struct fs_mount *fs_state)
                        fs_stat);
 
     mount = fs_state;
+}
+
+void fs_libc_unmount(void) {
+    if (mount != NULL) {
+        mount->unmount(mount);
+    }
 }

@@ -121,6 +121,7 @@ static errval_t fs_init_sd_block(struct sd_block *block)
     block->capref = capref;
     block->phy = phy;
     block->sec = ~0x0;
+    block->dirty = false;
 
     return SYS_ERR_OK;
 }
@@ -132,13 +133,33 @@ errval_t fs_read_sector(struct sdhc_s *sd, struct sd_block *block, uint32_t sect
     if (sector != block->sec) {
         cpu_dcache_wbinv_range((genvaddr_t)block->virt, SDHC_BLOCK_SIZE);
 
+        if (block->dirty) {
+            debug_printf("fs_read_sector writing sector 0x%" PRIx32 "\n", block->sec);
+            err = sdhc_write_block(sd, block->sec, block->phy);
+            assert(err_is_ok(err));
+        }
+
         err = sdhc_read_block(sd, sector, block->phy);
         assert(err_is_ok(err));
 
+        block->dirty = false;
         block->sec = sector;
     }
 
     // cpu_dcache_inv_range((genvaddr_t)block, ROUND_UP(SDHC_BLOCK_SIZE, BASE_PAGE_SIZE));
+
+    return SYS_ERR_OK;
+}
+
+errval_t fs_write_sector(struct sdhc_s *sd, struct sd_block *block)
+{
+    errval_t err;
+
+    cpu_dcache_wb_range((genvaddr_t)block->virt, SDHC_BLOCK_SIZE);
+
+    debug_printf("fs_write_sector writing sector 0x%" PRIx32 "\n", block->sec);
+    err = sdhc_write_block(sd, block->sec, block->phy);
+    assert(err_is_ok(err));
 
     return SYS_ERR_OK;
 }
@@ -243,6 +264,8 @@ static errval_t fs_read_metadata(struct fat32_fs *fs)
     fs->first_data_sector = rsvd_sec_cnt + num_FATs * FATs_z + root_dir_sectors;
     fs->sec_per_clus = sec_per_clus;
     fs->bytes_per_sec = bytes_per_sec;
+    // Cluster 2 may not be the root dir
+    fs->last_free_clus = 1;
 
     // TODO: Add check if tot_sec is smaller than the amount of sectors the disk has
     // TODO: Read out EOC mark out of second cluster entry
@@ -273,6 +296,11 @@ uint32_t get_bytes_per_clus(struct fat32_fs *fs)
     return fs->bytes_per_sec * fs->sec_per_clus;
 }
 
+uint32_t get_num_clus(struct fat32_fs *fs)
+{
+    return (fs->FATs_z * fs->bytes_per_sec) / FAT_32_BYTES_PER_CLUSTER_ENTRY;
+}
+
 static int fs_is_illegal_character_dir_entry_name(char c)
 {
     // FIXME: Add 0x2E (.) again as illegal character, but need to handle . and .. entries
@@ -281,19 +309,78 @@ static int fs_is_illegal_character_dir_entry_name(char c)
            || c == 0x5B || c == 0x5C || c == 0x5D || c == 0x7C;
 }
 
-void fs_process_dir_entry_name(unsigned char *name, unsigned char *eff_name)
+// FIXME: Handle path (Check if uppercase etc.)
+// FIXME: Raise error instead of asserts
+errval_t fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
+                                      unsigned char **ret_dir_entry_name)
 {
+    unsigned char *dir_entry_name = malloc(sizeof(char) * FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
+    if (dir_entry_name == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    // At most 8 chars before extension
+    int src_pos = 0;
+    int des_pos = 0;
+    while (normal_name[src_pos] != '\0' && normal_name[src_pos] != '.' && src_pos < 8) {
+        assert(!fs_is_illegal_character_dir_entry_name(normal_name[src_pos]));
+
+        dir_entry_name[des_pos] = normal_name[src_pos];
+
+        ++src_pos;
+        ++des_pos;
+    }
+    // If extension, drop it
+    if (normal_name[src_pos] == '.') {
+        ++src_pos;
+        // Extension needs to be place at char 8 in dir entry name, fill up with spaces up
+        // until there
+        while (des_pos < 8) {
+            dir_entry_name[des_pos] = ' ';
+
+            ++des_pos;
+        }
+        // At most 3 chars for extension
+        int src_pos_ext = src_pos;
+        while (normal_name[src_pos] != '\0' && src_pos - src_pos_ext < 3) {
+            assert(!fs_is_illegal_character_dir_entry_name(normal_name[src_pos]));
+
+            dir_entry_name[des_pos] = normal_name[src_pos];
+
+            ++src_pos;
+            ++des_pos;
+        }
+    } else {
+        // No extension, just fill up with trailing spaces
+        while (des_pos < 11) {
+            dir_entry_name[des_pos] = ' ';
+
+            ++des_pos;
+        }
+    }
+
+    assert(normal_name[src_pos] == '\0');
+
     // First char of name also used to signal entry status, clashes with a character,
     // which needs replacement
-    if (*name == FAT_32_REPLACE_DIR_ENTRY) {
-        *name = FAT_32_REPLACE_DIR_ENTRY_VALUE;
+    if (*dir_entry_name == FAT_32_REPLACE_DIR_ENTRY_VALUE) {
+        *dir_entry_name = FAT_32_REPLACE_DIR_ENTRY;
     }
+
+    *ret_dir_entry_name = dir_entry_name;
+
+    return SYS_ERR_OK;
+}
+
+errval_t fs_dir_entry_name_to_normal_name(const unsigned char *dir_entry_name,
+                                          unsigned char *normal_name)
+{
     // 11 chars, first 8 main, last 3 extension, if extension, than add dot, also remove
     // trailing spaces (0x20) of main and extension
     // We also add NULL byte, so that it is a proper c string
     int last_char_main = 7;
     for (; last_char_main >= 0; --last_char_main) {
-        if (name[last_char_main] != 0x20)
+        if (dir_entry_name[last_char_main] != 0x20)
             break;
     }
     // First char is not allowed to be 0x20
@@ -301,37 +388,49 @@ void fs_process_dir_entry_name(unsigned char *name, unsigned char *eff_name)
 
     int des_pos = 0;
     for (int src_pos = 0; src_pos <= last_char_main; ++src_pos) {
-        DEBUG_FS("fs_process_dir_entry_name char: 0x%" PRIx8 "\n", name[src_pos]);
-        assert(!fs_is_illegal_character_dir_entry_name(name[src_pos]));
+        DEBUG_FS("fs_process_dir_entry_name char: 0x%" PRIx8 "\n",
+                 dir_entry_name[src_pos]);
+        if (fs_is_illegal_character_dir_entry_name(dir_entry_name[src_pos])) {
+            return FS_ERR_INVAL;
+        }
 
-        eff_name[des_pos] = name[src_pos];
+        normal_name[des_pos] = dir_entry_name[src_pos];
         ++des_pos;
     }
 
     int last_char_extension = 10;
     for (; last_char_extension > 7; --last_char_extension) {
-        if (name[last_char_extension] != 0x20)
+        if (dir_entry_name[last_char_extension] != 0x20)
             break;
     }
 
     if (last_char_extension >= 8) {
-        eff_name[des_pos] = '.';
+        normal_name[des_pos] = '.';
         ++des_pos;
         for (int src_pos = 8; src_pos <= last_char_extension; ++src_pos) {
-            assert(!fs_is_illegal_character_dir_entry_name(name[src_pos]));
+            assert(!fs_is_illegal_character_dir_entry_name(dir_entry_name[src_pos]));
 
-            eff_name[des_pos] = name[src_pos];
+            normal_name[des_pos] = dir_entry_name[src_pos];
             ++des_pos;
         }
     }
 
-    eff_name[des_pos] = '\0';
+    normal_name[des_pos] = '\0';
 
-    DEBUG_FS("fs_process_dir_entry: %.*s\n", 13, eff_name);
+    // First char of name also used to signal entry status, clashes with a character,
+    // which needs replacement
+    if (*normal_name == FAT_32_REPLACE_DIR_ENTRY) {
+        *normal_name = FAT_32_REPLACE_DIR_ENTRY_VALUE;
+    }
+
+    DEBUG_FS("fs_process_dir_entry_name normal_name: %.*s\n", 13, normal_name);
+
+    return SYS_ERR_OK;
 }
 
 static void fs_process_dir_entry(void *entry, uint8_t *more_entries)
 {
+    errval_t err;
     if (*(uint8_t *)entry == FAT_32_HOLE_DIR_ENTRY) {
         return;
     } else if (*(uint8_t *)entry == FAT_32_ONLY_FREE_DIR_ENTRY) {
@@ -340,8 +439,10 @@ static void fs_process_dir_entry(void *entry, uint8_t *more_entries)
         return;
     }
 
-    char eff_name[FAT_32_MAX_BYTES_EFF_NAME];
-    fs_process_dir_entry_name((unsigned char *)entry, (unsigned char *)eff_name);
+    char normal_name[FAT_32_MAX_BYTES_NORMAL_NAME];
+    err = fs_dir_entry_name_to_normal_name((unsigned char *)entry,
+                                           (unsigned char *)normal_name);
+    assert(err_is_ok(err));
 }
 
 static void fs_process_dir_cluster_sectors(struct sdhc_s *sd, struct fat32_fs *fs,
@@ -415,7 +516,7 @@ errval_t fs_init(struct fs_mount *mount)
         assert(err_is_ok(err));
     }
 
-    struct fat32_fs *fs = malloc(sizeof(struct fat32_fs));
+    struct fat32_fs *fs = calloc(1, sizeof(struct fat32_fs));
     assert(fs != NULL);
 
     fs->sd = sd;

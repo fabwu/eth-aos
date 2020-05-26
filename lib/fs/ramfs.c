@@ -18,6 +18,7 @@
 
 #define BULK_MEM_SIZE (1U << 16)       // 64kB
 #define BULK_BLOCK_SIZE BULK_MEM_SIZE  // (it's RPC)
+#define MAX_NEST_MOUNTS 1
 
 
 /**
@@ -59,6 +60,8 @@ struct ramfs_handle {
 
 struct ramfs_mount {
     struct ramfs_dirent *root;
+    struct fs_mount *nest_mounts[MAX_NEST_MOUNTS];
+    size_t num_nest_mounts;
 };
 
 static struct fs_handle *handle_open(struct fs_mount *mount, struct ramfs_dirent *d)
@@ -279,17 +282,23 @@ errval_t ramfs_create(void *st, const char *path, ramfs_handle_t *rethandle)
 {
     errval_t err;
 
+    debug_printf("ramfs_create begin path: %s\n", path);
+
     struct fs_mount *reg_mount = st;
     struct ramfs_mount *mount = reg_mount->state;
     struct fs_mount *nest_mount = NULL;
     const char *nest_mount_path;
     err = resolve_path(reg_mount, mount->root, path, NULL, &nest_mount, &nest_mount_path);
-    if (err_is_ok(err)) {
+    if (err_is_ok(err) && nest_mount == NULL) {
         return FS_ERR_EXISTS;
     }
 
-    if (nest_mount != NULL) {
+    if (err_is_ok(err) && nest_mount != NULL) {
         return nest_mount->create(nest_mount, nest_mount_path, rethandle);
+    }
+    
+    if (err_is_fail(err) && err_no(err) != FS_ERR_NOTFOUND) {
+        return err;
     }
 
     struct fs_handle *parent_fh = NULL;
@@ -362,7 +371,7 @@ errval_t ramfs_remove(void *st, const char *path)
     }
 
     if (nest_mount != NULL) {
-        nest_mount->remove(nest_mount, nest_mount_path);
+        return nest_mount->remove(nest_mount, nest_mount_path);
     }
 
     handle = fh->state;
@@ -638,7 +647,7 @@ errval_t ramfs_mkdir(void *st, const char *path)
     const char *nest_mount_path;
     err = resolve_path(reg_mount, mount->root, path, NULL, &nest_mount, &nest_mount_path);
     if (nest_mount != NULL) {
-        nest_mount->mkdir(nest_mount, nest_mount_path);
+        return nest_mount->mkdir(nest_mount, nest_mount_path);
     } else if (err_is_ok(err)) {
         return FS_ERR_EXISTS;
     }
@@ -661,7 +670,6 @@ errval_t ramfs_mkdir(void *st, const char *path)
         // resolve parent directory
         err = resolve_path(reg_mount, mount->root, pathbuf, &parent_fh, NULL, NULL);
         if (err_is_fail(err)) {
-            handle_close(parent_fh);
             return err;
         } else {
             parent = parent_fh->state;
@@ -738,6 +746,22 @@ out:
     return err;
 }
 
+static errval_t ramfs_unmount(void *st)
+{
+    errval_t err;
+    struct fs_mount *reg_mount = st;
+    struct ramfs_mount *mount = reg_mount->state;
+    for (size_t i = 0; i < mount->num_nest_mounts; ++i) {
+        err = mount->nest_mounts[i]->unmount(mount->nest_mounts[i]);
+        if (err_is_fail(err)) {
+            return err;
+        }
+    }
+
+    // TODO: tear down ramfs
+
+    return SYS_ERR_OK;
+}
 
 errval_t ramfs_mount(const char *uri, ramfs_mount_t *retst)
 {
@@ -752,6 +776,8 @@ errval_t ramfs_mount(const char *uri, ramfs_mount_t *retst)
     if (mount == NULL) {
         return LIB_ERR_MALLOC_FAIL;
     }
+
+    mount->num_nest_mounts = 0;
 
     struct ramfs_dirent *ramfs_root;
 
@@ -785,6 +811,8 @@ errval_t ramfs_mount(const char *uri, ramfs_mount_t *retst)
     reg_mount->remove = ramfs_remove;
     reg_mount->close = ramfs_close;
 
+    reg_mount->unmount = ramfs_unmount;
+
     *retst = reg_mount;
 
     return SYS_ERR_OK;
@@ -793,13 +821,18 @@ errval_t ramfs_mount(const char *uri, ramfs_mount_t *retst)
 errval_t ramfs_add_mount(void *st, const char *path, ramfs_mount_t *mount_to_add)
 {
     errval_t err;
+
+    struct fs_mount *reg_mount = st;
+    struct ramfs_mount *mount = reg_mount->state;
+    if (mount->num_nest_mounts >= MAX_NEST_MOUNTS) {
+        return FS_ERR_FULL;
+    }
+
     err = ramfs_mkdir(st, path);
     if (err_is_fail(err)) {
         return err;
     }
 
-    struct fs_mount *reg_mount = st;
-    struct ramfs_mount *mount = reg_mount->state;
     struct fs_handle *fh;
     struct ramfs_handle *handle;
     struct fs_mount *nest_mount = NULL;
@@ -821,6 +854,9 @@ errval_t ramfs_add_mount(void *st, const char *path, ramfs_mount_t *mount_to_add
     handle->dirent->mount = mount_to_add;
 
     handle_close(fh);
+
+    mount->nest_mounts[mount->num_nest_mounts] = (struct fs_mount *)mount_to_add;
+    ++mount->num_nest_mounts;
 
     return SYS_ERR_OK;
 }

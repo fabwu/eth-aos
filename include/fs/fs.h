@@ -48,6 +48,9 @@ struct fs_fileinfo {
  */
 errval_t filesystem_init(void);
 
+// Needs to be called to write back all that is cached
+errval_t filesystem_unmount(void);
+
 /**
  * @brief mounts the URI at a give path
  *

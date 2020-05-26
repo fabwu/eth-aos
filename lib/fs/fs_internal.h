@@ -29,6 +29,7 @@ typedef errval_t (*fs_mount_remove_fn_t)(void *mount, const char *);
 typedef errval_t (*fs_mount_close_fn_t)(void *handle);
 typedef errval_t (*fs_mount_seek_fn_t)(void *handle, enum fs_seekpos whence, off_t offset);
 typedef errval_t (*fs_mount_tell_fn_t)(void *handle, size_t *);
+typedef errval_t (*fs_mount_unmount_fn_t)(void *mount);
 
 struct fs_mount {
     void *state;
@@ -47,6 +48,8 @@ struct fs_mount {
     fs_mount_tell_fn_t tell;
     fs_mount_remove_fn_t remove;
     fs_mount_close_fn_t close;
+
+    fs_mount_unmount_fn_t unmount;
 };
 
 struct fs_handle {
@@ -89,5 +92,7 @@ struct fdtab_entry {
 
 /* for the newlib glue code */
 void fs_libc_init(struct fs_mount *fs_state);
+
+void fs_libc_unmount(void);
 
 #endif
