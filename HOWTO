@@ -18,3 +18,11 @@ Boot:
 Put https://github.com/NXPmicro/mfgtools/releases uuu into $HOME/bin
 sudo ln -s /lib64/libbz2.so.1.0.8 /lib64/libbz2.so.1.0
 ./tools/imx8x/bf-boot.sh --bf ./build/armv8_imx8x_image.efi
+
+FS:
+Press ctrl-c in picocom term
+ums 0 mmc 1:0
+to expose sdcard to host
+Reset sdcard on fedora
+sudo umount /run/media/mean/XXXX
+sudo mkfs.fat -I -F 32 -S 512 -s 8 /dev/sda

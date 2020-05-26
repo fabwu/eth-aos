@@ -409,7 +409,7 @@ static errval_t fat32fs_get_free_dir_entry(struct fat32_fs *fs,
 }
 
 static errval_t fat32fs_create_dirent(uint32_t clus, char *name, uint32_t parent_clus,
-                                      bool is_dir, bool size,
+                                      bool is_dir, uint32_t size,
                                       struct fat32fs_dirent **ret_dirent)
 {
     struct fat32fs_dirent *dirent = calloc(1, sizeof(struct fat32fs_dirent));
@@ -660,6 +660,7 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
 
 errval_t fat32fs_open(void *st, const char *path, fs_dirhandle_t *ret_handle)
 {
+    DEBUG_FAT32FS("fat32fs_open begin\n");
     errval_t err;
 
     err = fat32fs_resolve_path(st, path, (struct fs_handle **)ret_handle);
@@ -672,6 +673,10 @@ errval_t fat32fs_open(void *st, const char *path, fs_dirhandle_t *ret_handle)
         fat32fs_close_handle(*ret_handle);
         return FS_ERR_NOTFILE;
     }
+
+    DEBUG_FAT32FS("fat32fs_open size: %zu\n", dirent->size);
+
+    DEBUG_FAT32FS("fat32fs_open end\n");
 
     return SYS_ERR_OK;
 }
@@ -861,7 +866,10 @@ static void fat32fs_get_chunk_size(struct fat32_fs *fs, struct fat32fs_dirent *d
 
 errval_t fat32fs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_read)
 {
+    DEBUG_FAT32FS("fat32fs_read begin\n");
+
     errval_t err;
+
     struct fs_handle *fh = handle;
     struct fat32fs_dirent *dirent = fh->state;
     struct fs_mount *mount = fh->mount;
@@ -874,6 +882,8 @@ errval_t fat32fs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_re
         *bytes_read = 0;
         return SYS_ERR_OK;
     }
+
+    DEBUG_FAT32FS("fat32fs_read size: %zu\n", dirent->size);
 
     size_t loc_bytes_read = 0;
     uint32_t bytes_left = dirent->size - dirent->dir_state.des_pos;
@@ -957,7 +967,10 @@ static errval_t fat32fs_update_file_size(struct fat32_fs *fs,
 errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
                        size_t *bytes_written)
 {
+    DEBUG_FAT32FS("fat32fs_write begin\n");
+
     errval_t err;
+
     struct fs_handle *fh = handle;
     struct fat32fs_dirent *dirent = fh->state;
     struct fs_mount *mount = fh->mount;
@@ -1010,11 +1023,17 @@ errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
         loc_bytes_written += chunk;
     }
 
+    DEBUG_FAT32FS("fat32fs_write size: %zu", dirent->size);
+
     if (update_file_size) {
         err = fat32fs_update_file_size(fs, dirent);
     }
 
+    DEBUG_FAT32FS("fat32fs_write written: %zu", loc_bytes_written);
+
     *bytes_written = loc_bytes_written;
+
+    DEBUG_FAT32FS("fat32fs_write end\n");
 
     return SYS_ERR_OK;
 }

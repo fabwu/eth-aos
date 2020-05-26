@@ -465,9 +465,15 @@ static errval_t test_file_io(char *parent_dir, char *dir, char *filename)
 
     const char *test = "This is a test!\n";
     size_t test_strlen = strlen(test);
-    err = fwrite(test, test_strlen, 1, f);
+    size_t written;
+    written = fwrite(test, 1, test_strlen, f);
+    err = ferror(f);
     if (err_is_fail(err)) {
         return err_push(err, FS_ERR_WRITE);
+    }
+
+    if (written != test_strlen) {
+        return FS_ERR_WRITE;
     }
 
     err = fclose(f);
@@ -481,12 +487,17 @@ static errval_t test_file_io(char *parent_dir, char *dir, char *filename)
     }
 
     char *buf = calloc(1, test_strlen + 1);
-    err = fread(buf, test_strlen, 1, f);
+    size_t read;
+    read = fread(buf, 1, test_strlen, f);
+    err = ferror(f);
     if (err_is_fail(err)) {
         return err_push(err, FS_ERR_WRITE);
     }
-    *(buf + test_strlen) = '\0';
-    debug_printf("got back: %s\n", buf);
+    *(buf + read) = '\0';
+
+    if (read != test_strlen) {
+        return FS_ERR_READ;
+    }
 
     err = fclose(f);
     if (err_is_fail(err)) {
@@ -549,7 +560,8 @@ int main(int argc, char *argv[])
     }
 
     if (FS_TEST_FILE_CREATE) {
-        run_test(test_file_create, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
+        run_test(test_file_create, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME,
+                 TEST_FILENAME);
     }
 
     if (FS_TEST_FILE_IO) {
