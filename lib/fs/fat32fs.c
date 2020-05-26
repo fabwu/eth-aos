@@ -1252,9 +1252,8 @@ errval_t fat32fs_mkdir(void *st, const char *path)
         return err;
     }
 
-    // FIXME: Instead of zeroing and depending on dir cluster to be zero, just ensure
-    // entry after last used dir entry is zero (Saves us 7 sector writes) Ensure new
-    // cluster of directory is zeroed
+    // Needed, such that the provision that all first bytes of names after the first name
+    // starting with a zero byte are zero, is uphold
     err = fat32fs_zero_cluster(fs, clus);
     if (err_is_fail(err)) {
         return err;
