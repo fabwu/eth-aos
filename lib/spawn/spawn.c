@@ -134,6 +134,14 @@ static errval_t spawn_create_child_cspace(struct spawninfo *si)
         return err_push(err, SPAWN_ERR_CREATE_DISPATCHER_FRAME);
     }
 
+    if (!strcmp(si->binary_name, "terminal")) {
+        task_cnode_cap.slot = TASKCN_SLOT_IRQ;
+        err = cap_copy(task_cnode_cap, cap_irq);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_CAP_COPY);
+        }
+    }
+
     struct cnoderef alloc_0_cnode_ref;
     err = cnode_create_foreign_l2(l1_cnode_cap, ROOTCN_SLOT_SLOT_ALLOC0,
                                   &alloc_0_cnode_ref);

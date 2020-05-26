@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <aos/aos.h>
 #include <aos/aos_rpc.h>
+#include <aos/nameservice.h>
 
 #define CMDLINE_LEN 100
 
@@ -73,14 +74,23 @@ int main(int argc, char *argv[])
         DEBUG_PRINTF("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }*/
 
-    struct aos_rpc *serial_chan = aos_rpc_get_serial_channel();
-    char c;
+    nameservice_chan_t terminal_chan;
+    do {
+        // TODO do not start shell until terminal service has registered with nameserver
+        err = nameservice_lookup("terminal", &terminal_chan);
+    } while (err_is_fail(err));
+
     while (1) {
-        err = aos_rpc_serial_getchar(serial_chan, &c);
+        void *response;
+        size_t response_bytes;
+        err = nameservice_rpc(terminal_chan, "getchar", strlen("getchar"),
+                              &response, &response_bytes, NULL_CAP, NULL_CAP);
         if (err_is_fail(err)) {
             debug_printf("Warning: Failed to get char\n");
             continue;
         }
+        char c = *(char *)response;
+
         if (c == '\0')
             debug_printf("\n");
         else

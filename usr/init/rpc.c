@@ -5,7 +5,6 @@
 
 #include "rpc.h"
 #include "process.h"
-#include "uart.h"
 #include <aos/lmp_protocol.h>
 
 #if 0
@@ -164,8 +163,6 @@ static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
 static errval_t rpc_serial_getchar(struct lmp_chan *chan)
 {
     grading_rpc_handler_serial_getchar();
-
-    uart_getchar(chan);
 
     return SYS_ERR_OK;
 }

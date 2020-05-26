@@ -20,12 +20,11 @@
                         "mem_alloc.c",
                         "rpc.c",
                         "process.c",
-                        "spawn.c",
-                        "uart.c"
+                        "spawn.c"
                       ],
                       addLinkFlags = [ "-e _start_init"], -- this is only needed for init
                       addLibraries = [ "mm", "getopt", "elf",
-                        "grading", "spawn", "lpuart", "gic_dist"],
+                        "grading", "spawn"],
                       architectures = allArchitectures
                     }
 ]
