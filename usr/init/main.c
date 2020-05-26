@@ -34,7 +34,6 @@
 #include "mem_alloc.h"
 #include "rpc.h"
 #include "process.h"
-#include "uart.h"
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 0
@@ -172,11 +171,6 @@ static int bsp_main(int argc, char *argv[])
 
     process_init();
 
-    err = uart_init();
-    if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Couldn't init UART\n");
-    }
-
     // Grading
     grading_test_early();
 
@@ -195,6 +189,11 @@ static int bsp_main(int argc, char *argv[])
     err = process_spawn_init("nameserver");
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
+    }
+
+    err = process_spawn_init("terminal");
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Couldn't spawn terminal driver\n");
     }
 
     if (INIT_EXECUTE_MEMORYTEST) {
