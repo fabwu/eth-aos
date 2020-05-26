@@ -10,22 +10,6 @@
 
 #define AOS_NS_OK 0x1
 
-#define AOS_UDP_LISTEN 0x11  // Start listening on given port
-#define AOS_UDP_CLOSE 0x12  // Stop listening on given port
-#define AOS_UDP_SEND 0x21  // Send udp datagram
-
-struct rpc_send_udp {
-    uint16_t _reserved;
-    uint16_t src_port;
-    uint16_t dest_port;
-    uint32_t dest_ip;
-};
-
-struct rpc_udp_response {
-    uint16_t _reserved;
-    bool success;
-};
-
 typedef void* nameservice_chan_t;
 
 ///< handler which is called when a message is received over the registered channel

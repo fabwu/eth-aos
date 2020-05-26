@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <errno.h>
 #include <aos/nameservice.h>
+#include <aos/enetservice.h>
+#include <collections/hash_table.h>
 #include <netutil/etharp.h>
 #include <netutil/ip.h>
 #include <netutil/udp.h>
@@ -11,17 +13,58 @@
 
 #define ENET_UDP_MAX_DATA (ENET_MAX_PKT_SIZE - ETH_HLEN - IP_HLEN - UDP_HLEN)
 
-errval_t enet_rpc_init(void)
+struct enet_rpc_state {
+    collections_hash_table *listeners;
+};
+
+static struct enet_rpc_state state;
+
+static errval_t enet_rpc_udp_listen(struct rpc_udp_listen *message, size_t bytes,
+                                    void **response, size_t *response_bytes)
 {
-    return nameservice_register(ENET_UDP_SERVICE_NAME, enet_rpc_udp_handler, NULL);
+    errval_t err;
+
+    struct rpc_udp_response *udp_response = malloc(sizeof(struct rpc_udp_response));
+    if (udp_response == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+    *response = udp_response;
+    udp_response->type = message->type;
+    udp_response->success = false;
+    *response_bytes = sizeof(struct rpc_udp_response);
+
+    nameservice_chan_t chan = collections_hash_find(state.listeners, (uint64_t)message->port);
+    if (chan != NULL) {
+        ERPC_DEBUG("Discarding udp listen request: Port is already in use\n", bytes);
+        return SYS_ERR_OK;
+    }
+
+    size_t service_length = 0;
+    while (service_length <= AOS_UDP_CALLBACK_MAX_LEN
+           && message->listen_service[service_length] != '\0') {
+        ++service_length;
+    }
+
+    if (service_length > AOS_UDP_CALLBACK_MAX_LEN) {
+        ERPC_DEBUG("Discarding udp listen request: Invalid service\n", bytes);
+        return SYS_ERR_OK;
+    }
+
+    err = nameservice_lookup(message->listen_service, &chan);
+    if (err_is_fail(err)) {
+        ERPC_DEBUG("Discarding udp listen request: "
+                   "Could not connect to listener service\n",
+                   bytes);
+        return err;
+    }
+
+    collections_hash_insert(state.listeners, (uint64_t)message->port, (void *)chan);
+    udp_response->success = true;
+    ERPC_DEBUG("Start listening on port %d\n", message->port);
+    return SYS_ERR_OK;
 }
 
-// static errval_t enet_rpc_handle_udp_listen(void)
-// {
-//     return SYS_ERR_NOT_IMPLEMENTED;
-// }
-
-static errval_t enet_rpc_udp_send(struct rpc_send_udp *message, size_t bytes,
+static errval_t enet_rpc_udp_send(struct rpc_udp_send *message, size_t bytes,
                                   void **response, size_t *response_bytes)
 {
     errval_t err;
@@ -31,11 +74,11 @@ static errval_t enet_rpc_udp_send(struct rpc_send_udp *message, size_t bytes,
         return LIB_ERR_MALLOC_FAIL;
     }
     *response = udp_response;
-    *(uint8_t *)udp_response = *(uint8_t *)message;
+    udp_response->type = message->type;
     udp_response->success = false;
     *response_bytes = sizeof(struct rpc_udp_response);
 
-    size_t size = bytes - sizeof(struct rpc_send_udp);
+    size_t size = bytes - sizeof(struct rpc_udp_send);
     if (size > ENET_UDP_MAX_DATA) {
         ERPC_DEBUG("Discarding udp send request: Message too large (%ld)\n", bytes);
         return SYS_ERR_OK;
@@ -43,8 +86,8 @@ static errval_t enet_rpc_udp_send(struct rpc_send_udp *message, size_t bytes,
 
     struct udp_datagram_id datagram;
     char *data;
-    err = udp_start_send_datagram(message->dest_ip, message->dest_port, message->src_port, &datagram,
-                                  (void **)&data);
+    err = udp_start_send_datagram(message->dest_ip, message->dest_port, message->src_port,
+                                  &datagram, (void **)&data);
     if (err_is_fail(err)) {
         return err;
     }
@@ -56,18 +99,18 @@ static errval_t enet_rpc_udp_send(struct rpc_send_udp *message, size_t bytes,
         return err;
     }
 
-    udp_response->success = false;
+    udp_response->success = true;
     ERPC_DEBUG("Sent udp datagram\n");
     return SYS_ERR_OK;
 }
 
-void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **response,
+static void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **response,
                           size_t *response_bytes, struct capref tx_cap,
                           struct capref *rx_cap)
 {
     assert(message != NULL);
 
-    errval_t err;
+    errval_t err = SYS_ERR_OK;
     // Setting empty response in advance for all error cases
     *response_bytes = 0;
 
@@ -78,20 +121,32 @@ void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **response
 
     switch (*(uint8_t *)message) {
     case AOS_UDP_LISTEN:
-
+        ERPC_DEBUG("UDP listen request\n");
+        err = enet_rpc_udp_listen((struct rpc_udp_listen *)message, bytes, response,
+                                  response_bytes);
         break;
     case AOS_UDP_CLOSE:
+        ERPC_DEBUG("UDP close request\n");
         break;
     case AOS_UDP_SEND:
         ERPC_DEBUG("UDP send request\n");
-        err = enet_rpc_udp_send((struct rpc_send_udp *)message, bytes, response,
+        err = enet_rpc_udp_send((struct rpc_udp_send *)message, bytes, response,
                                 response_bytes);
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "Failed to handle udp send request");
-        }
         break;
     default:
         ERPC_DEBUG("Discarding message of unkown tpye: 0x%x\n", *(uint8_t *)message);
         return;
     }
+
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "Failed to handle udp service request");
+    }
+}
+
+errval_t enet_rpc_init(void)
+{
+    collections_hash_create(&state.listeners, NULL);
+    assert(state.listeners != NULL);
+
+    return nameservice_register(ENET_UDP_SERVICE_NAME, enet_rpc_udp_handler, NULL);
 }

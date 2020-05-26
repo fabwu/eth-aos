@@ -6,6 +6,7 @@
 #include <aos/aos.h>
 #include <aos/deferred.h>
 #include <aos/nameservice.h>
+#include <aos/enetservice.h>
 
 #define UDPECHO_DEFAULT_PORT 50500
 
@@ -40,9 +41,9 @@ int main(int argc, char *argv[])
         }
     } while (err_is_fail(err));
 
-    size_t size = sizeof(struct rpc_send_udp) + 7;
-    struct rpc_send_udp *message = malloc(size);
-    *(uint8_t *)message = AOS_UDP_SEND;
+    size_t size = sizeof(struct rpc_udp_send) + 7;
+    struct rpc_udp_send *message = malloc(size);
+    message->type = AOS_UDP_SEND;
     message->dest_ip = 0x0a000001;
     message->dest_port = 50600;
     message->src_port = port;

@@ -18,8 +18,4 @@
 
 errval_t enet_rpc_init(void);
 
-void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **response,
-                          size_t *response_bytes, struct capref tx_cap,
-                          struct capref *rx_cap);
-
 #endif  // ENET_RPC_H_
