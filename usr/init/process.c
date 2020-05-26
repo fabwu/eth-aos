@@ -186,7 +186,7 @@ void process_handle_ump_request(uintptr_t message_type, uint8_t *buf)
     }
 }
 
-errval_t process_add(domainid_t pid, coreid_t core_id, char *name)
+errval_t process_add(domainid_t pid, coreid_t core_id, const char *name)
 {
     struct process_node *node = (struct process_node *)slab_alloc(&state.slabs);
     if (node == NULL) {
@@ -214,6 +214,28 @@ errval_t process_spawn_init(char *name)
 
     domainid_t did;
     err = init_spawn_by_name(name, &did);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_SPAWN_BY_NAME);
+    }
+
+    err = process_add(did, 0, name);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_PROCESS_ADD);
+    }
+
+    return SYS_ERR_OK;
+}
+
+errval_t process_spawn_init_sdcard(const char *dir, const char *name)
+{
+    // only init should call this function
+    assert(disp_get_domain_id() == 0x0);
+    assert(disp_get_core_id() == 0);
+
+    errval_t err;
+
+    domainid_t did;
+    err = init_spawn_by_name_sdcard(dir, name, &did);
     if (err_is_fail(err)) {
         return err_push(err, INIT_ERR_SPAWN_BY_NAME);
     }

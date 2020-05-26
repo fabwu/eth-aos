@@ -926,7 +926,8 @@ errval_t fat32fs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_re
         return SYS_ERR_OK;
     }
 
-    DEBUG_FAT32FS("fat32fs_read size: %zu\n", dirent->size);
+    DEBUG_FAT32FS("fat32fs_read size: %zu, des_pos: %zu\n", dirent->size,
+                  dirent->dir_state.des_pos);
 
     size_t loc_bytes_read = 0;
     uint32_t bytes_left = dirent->size - dirent->dir_state.des_pos;
@@ -1252,7 +1253,6 @@ errval_t fat32fs_opendir(void *st, const char *path, fs_dirhandle_t *ret_handle)
         return FS_ERR_NOTDIR;
     }
 
-    // DEBUG_FAT32FS("fat32fs_opendir found start_clus: 0x%" PRIx32 "\n", dirent->clus);
     DEBUG_FAT32FS("fat32fs_opendir found start_clus: 0x%" PRIx32 ", clus: 0x%" PRIx32
                   ", sec: 0x%" PRIx32 ", entry: 0x%" PRIx32 "\n",
                   dirent->clus, dirent->dir_state.clus, dirent->dir_state.sec,

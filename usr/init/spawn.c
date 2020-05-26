@@ -82,6 +82,34 @@ err:
     return err;
 }
 
+errval_t init_spawn_by_name_sdcard(const char *dir, const char *name, domainid_t *pid)
+{
+    errval_t err;
+
+    struct spawn_node *node;
+    err = prepare_spawn(&node);
+    if(err_is_fail(err)) {
+         goto err;
+    }
+
+    err = spawn_load_by_name_sdcard(dir, name, &node->si, &node->pid);
+    if (err_is_fail(err)) {
+        err = err_push(err, INIT_ERR_SPAWN);
+        goto err;
+    }
+
+    err = finish_spawn(node, pid);
+    if(err_is_fail(err)) {
+        goto err;
+    }
+
+    return SYS_ERR_OK;
+
+err:
+    free(node);
+    return err;
+}
+
 errval_t init_spawn_by_argv(int argc, char *argv[], domainid_t *pid)
 {
     errval_t err;

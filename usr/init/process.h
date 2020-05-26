@@ -48,6 +48,8 @@ void process_handle_ump_request(uintptr_t message_type, uint8_t *buf);
  */
 errval_t process_spawn_init(char *name);
 
+errval_t process_spawn_init_sdcard(const char *dir, const char *name);
+
 /**
  * \brief Spawns process.
  */
@@ -62,7 +64,7 @@ errval_t process_get_lmp_chan(domainid_t pid, struct lmp_chan *chan);
  * \brief Add process to running processes.
  * This function is already called from process_spawn_rpc.
  */
-errval_t process_add(domainid_t pid, coreid_t core_id, char *name);
+errval_t process_add(domainid_t pid, coreid_t core_id, const char *name);
 
 /**
  * \brief Remove process from running processes.
