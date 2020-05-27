@@ -120,6 +120,14 @@ static void run_server(void)
     err = nameservice_register(SERVICE_NAME_1, server_recv_handler, NULL);
     PANIC_IF_FAIL(err, "failed to register...\n");
 
+    debug_printf("register with nameservice '%s' TWICE!\n", SERVICE_NAME_1);
+    err = nameservice_register(SERVICE_NAME_1, server_recv_handler, NULL);
+    if (err == err_no(LIB_ERR_NS_DUP_NAME)) {
+        debug_printf("Got error when registering service twice\n");
+    } else {
+        PANIC_IF_FAIL(err, "no or wrong error for registering service twice\n");
+    }
+
     debug_printf("register with nameservice '%s'\n", SERVICE_NAME_2);
     err = nameservice_register(SERVICE_NAME_2, server_no_response, NULL);
     PANIC_IF_FAIL(err, "failed to register...\n");

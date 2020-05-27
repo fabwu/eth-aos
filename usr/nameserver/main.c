@@ -23,7 +23,7 @@
 
 #include <hashtable/hashtable.h>
 
-#if 1
+#if 0
 #    define DEBUG_NS(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_NS(fmt...) ((void)0)
@@ -39,6 +39,20 @@ struct hashtable *ht;
 static errval_t handle_register(char *name, domainid_t server_did)
 {
     errval_t err;
+    aos_rpc_header_t header = AOS_RPC_HEADER(disp_get_domain_id(), server_did,
+                                             AOS_RPC_MSG_NS_REGISTER);
+    // check if entry is already present
+    struct srv_entry *existing_entry;
+    ht->d.get(&ht->d, name, strlen(name), (void **)&existing_entry);
+    if(existing_entry != NULL) {
+        DEBUG_NS("Service %s is already registered running at %p\n", name, existing_entry->did);
+        err = lmp_protocol_send1(get_init_server_chan(), header, LIB_ERR_NS_DUP_NAME);
+        if (err_is_fail(err)) {
+            err = err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
+            goto fail;
+        }
+        return SYS_ERR_OK;
+    }
 
     struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
     entry->name = name;
@@ -51,13 +65,12 @@ static errval_t handle_register(char *name, domainid_t server_did)
 
     DEBUG_NS("Received register request with name %s from %p\n", entry->name, entry->did);
 
-    aos_rpc_header_t header = AOS_RPC_HEADER(disp_get_domain_id(), server_did,
-                                             AOS_RPC_MSG_NS_REGISTER);
-    err = lmp_protocol_send1(get_init_server_chan(), header, AOS_NS_OK);
+    err = lmp_protocol_send1(get_init_server_chan(), header, SYS_ERR_OK);
     if (err_is_fail(err)) {
         err = err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
         goto fail_send;
     }
+
     return SYS_ERR_OK;
 
 fail_send:
@@ -66,6 +79,7 @@ fail_send:
 fail_entry:
     free(entry);
 
+fail:
     return err;
 }
 
@@ -83,7 +97,7 @@ static errval_t handle_lookup(char *name, domainid_t server_did)
 
     if (entry != NULL) {
         did = entry->did;
-        success = AOS_NS_OK;
+        success = SYS_ERR_OK;
     } else {
         DEBUG_PRINTF("Couldn't find service %s\n", name);
     }

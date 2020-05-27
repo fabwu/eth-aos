@@ -379,7 +379,11 @@ errval_t nameservice_register(const char *name,
         return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
     }
 
-    if (ret != AOS_NS_OK) {
+    if (ret == LIB_ERR_NS_DUP_NAME) {
+        return LIB_ERR_NS_DUP_NAME;
+    }
+
+    if (ret != SYS_ERR_OK) {
         return LIB_ERR_NS_REGISTER;
     }
 
@@ -453,7 +457,7 @@ errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan_ref)
         return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
     }
 
-    if (ret1 != AOS_NS_OK) {
+    if (ret1 != SYS_ERR_OK) {
         return LIB_ERR_NS_LOOKUP;
     }
 

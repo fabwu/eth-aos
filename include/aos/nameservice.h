@@ -8,8 +8,6 @@
 
 #include <aos/aos.h>
 
-#define AOS_NS_OK 0x1
-
 typedef void* nameservice_chan_t;
 
 ///< handler which is called when a message is received over the registered channel
