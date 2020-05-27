@@ -2,13 +2,56 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
 #include <aos/aos.h>
-#include <aos/deferred.h>
-#include <aos/nameservice.h>
 #include <aos/netservice.h>
 
 #define UDPECHO_DEFAULT_PORT 50500
+#define UDPECHO_MAX_STORED_ECHOS 50
+
+struct udpecho_echo {
+    struct rpc_udp_send *message;
+    size_t size;
+};
+
+static struct udpecho_echo echos[UDPECHO_MAX_STORED_ECHOS];
+static size_t echos_size = 0;
+
+static void handle_datagram(void *state, struct rpc_udp_header *header, void *data)
+{
+    DEBUG_PRINTF("Size: %d\n", header->length);
+    printf("[udpecho] ip=0x%x\n", header->src_ip);
+
+    // Echo datagram back to sender
+    size_t response_size = sizeof(struct rpc_udp_send) + header->length;
+    struct rpc_udp_send *message = malloc(response_size);
+    if (message == NULL) {
+        DEBUG_ERR(LIB_ERR_MALLOC_FAIL, "Could not create echo datagram");
+        return;
+    }
+    message->src_port = header->dest_port;
+    message->dest_port = header->src_port;
+    message->dest_ip = header->src_ip;
+    memcpy(message + 1, data, header->length);
+
+    if (echos_size < UDPECHO_MAX_STORED_ECHOS) {
+        echos[echos_size].message = message;
+        echos[echos_size].size = response_size;
+        ++echos_size;
+    } else {
+        printf("[udpecho] Not sending echo: Intermediate store full\n");
+    }
+}
+
+static void udpecho_send_echos(void) {
+    for (int i = 0; i < echos_size; ++i) {
+        errval_t err = netservice_udp_send_single(echos[i].message, echos[i].size);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "Failed to echo udp datagram");
+        }
+        free(echos[i].message);
+    }
+    echos_size = 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -31,39 +74,24 @@ int main(int argc, char *argv[])
         }
     }
 
-    nameservice_chan_t udp_chan;
-    do {
-        err = nameservice_lookup("udp", &udp_chan);
-        if (err_is_fail(err)) {
-            printf("Failed to lookup udp service.. Trying again later\n");
-            errval_t sleep_err = barrelfish_usleep(100 * 1000);  // 100ms
-            assert(err_is_ok(sleep_err));
-        }
-    } while (err_is_fail(err));
-
-    size_t size = sizeof(struct rpc_udp_send) + 7;
-    struct rpc_udp_send *message = malloc(size);
-    message->type = AOS_UDP_SEND;
-    message->dest_ip = 0x0a000001;
-    message->dest_port = 50600;
-    message->src_port = port;
-    char *data = (char *)(message + 1);
-    strcpy(data, "hello\n");
-
-    struct rpc_udp_response *response;
-    size_t response_size;
-    err = nameservice_rpc(udp_chan, (void *)message, size, (void **)&response, &response_size, NULL_CAP, NULL_CAP);
+    echos_size = 0;
+    err = netservice_udp_listen(port, handle_datagram, NULL);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "Failed trying to use nameservice_rpc");
+        DEBUG_ERR(err, "Failed to listen on given port");
     }
-    free(message);
 
-    if (response->success) {
-        printf("Send udp package\n");
-    } else {
-        printf("Failed to send udp package\n");
+    struct waitset *default_ws = get_default_waitset();
+    while (true) {
+        if (echos_size > 0) {
+            udpecho_send_echos();
+        }
+
+        err = event_dispatch_non_block(default_ws);
+        if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
+            return err_push(err, LIB_ERR_EVENT_DISPATCH);
+        }
+        thread_yield();
     }
-    free(response);
 
     return 0;
 }

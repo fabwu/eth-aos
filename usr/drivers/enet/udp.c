@@ -5,6 +5,7 @@
 #include <netutil/htons.h>
 #include <netutil/checksum.h>
 #include "ip.h"
+#include "rpc.h"
 
 #include "udp.h"
 
@@ -13,11 +14,12 @@ errval_t udp_init(void)
     return SYS_ERR_OK;
 }
 
-errval_t udp_handle_package(struct udp_hdr *package, ip_addr_t src)
+errval_t udp_handle_package(struct udp_hdr *udp, ip_addr_t src)
 {
-    // TODO: Allow clients to register udp ports and receive datagrams
-    UDP_DEBUG("Handling udp datagram\n");
-    return SYS_ERR_OK;
+    UDP_DEBUG("Handling udp datagram src=%d dest=%d len=%d chksum=%d\n", ntohs(udp->src),
+              ntohs(udp->dest), ntohs(udp->len), ntohs(udp->chksum));
+    // FIXME: Check checksum
+    return enet_rpc_handle_udp(udp, src);
 }
 
 errval_t udp_start_send_datagram(ip_addr_t dest_ip, uint16_t dest_port, uint16_t src_port,

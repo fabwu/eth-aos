@@ -16,7 +16,7 @@ errval_t udp_init(void);
 /**
  * \brief Handle incoming udp package.
  */
-errval_t udp_handle_package(struct udp_hdr *package, ip_addr_t src);
+errval_t udp_handle_package(struct udp_hdr *udp, ip_addr_t src);
 
 /**
  * \brief Start sending udp datagram. The ip address has to be in host byte order.

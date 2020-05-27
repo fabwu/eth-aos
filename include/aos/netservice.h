@@ -51,6 +51,7 @@ struct rpc_udp_response {
 
 struct rpc_udp_header {
     uint8_t _reserved;
+    uint16_t length;
     uint16_t src_port;
     uint16_t dest_port;
     uint32_t src_ip;
@@ -59,8 +60,8 @@ struct rpc_udp_header {
 /**
  * \brief Function prototype that has to be implemented to receive udp datagrams.
  */
-typedef void (*aos_udp_handler_t)(void *state, struct rpc_udp_header *header, void *data,
-                                  size_t size);
+typedef void (*netservice_udp_handler_t)(void *state, struct rpc_udp_header *header,
+                                         void *data);
 
 /**
  * \brief Send a single udp datagram.
@@ -70,14 +71,14 @@ typedef void (*aos_udp_handler_t)(void *state, struct rpc_udp_header *header, vo
  * \param size     The size of the rpc_udp_send struct plus the
  *                 size of the data bytes.
  */
-errval_t aos_udp_send_single(struct rpc_udp_send *message, size_t size);
+errval_t netservice_udp_send_single(struct rpc_udp_send *message, size_t size);
 
 /**
  * \brief Send the given data using udp to the given ip. Using this function has an
  * overhead to aos_udp_send_single as data needs to be copied an additional time.
  */
-errval_t aos_udp_send(uint16_t src_port, uint16_t dest_port, uint32_t dest_ip, void *data,
-                      size_t size);
+errval_t netservice_udp_send(uint16_t src_port, uint16_t dest_port, uint32_t dest_ip,
+                             void *data, size_t size);
 
 /**
  * \brief Start listening for udp datagrams on the given port.
@@ -87,7 +88,7 @@ errval_t aos_udp_send(uint16_t src_port, uint16_t dest_port, uint32_t dest_ip, v
  *                           receiving datagrams on given port.
  * \param udp_handler_state  State handed to callback handler.
  */
-errval_t aos_udp_listen(uint16_t port, aos_udp_handler_t udp_handler,
-                        void *udp_handler_state);
+errval_t netservice_udp_listen(uint16_t port, netservice_udp_handler_t udp_handler,
+                               void *udp_handler_state);
 
 #endif /* INCLUDE_NETSERVICE_H_ */

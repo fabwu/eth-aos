@@ -65,6 +65,7 @@ errval_t ethernet_handle_frame(struct devq_buf *buf)
 {
     errval_t err;
     struct eth_hdr *eth = state.rx_base + buf->offset + buf->valid_data;
+    ETHARP_DEBUG("Valid from %p to %p\n", eth, (void *)eth + buf->length);
 
     if (!ethernet_eq(eth->dst, consts_eth_self)
         && !ethernet_eq(eth->dst, consts_eth_broadcast)

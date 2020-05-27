@@ -4,6 +4,7 @@
 #include <aos/netservice.h>
 #include <collections/hash_table.h>
 #include <netutil/udp.h>
+#include <netutil/htons.h>
 #include "enet.h"
 #include "udp.h"
 
@@ -141,4 +142,36 @@ errval_t enet_rpc_init(void)
     assert(state.listeners != NULL);
 
     return nameservice_register(ENET_UDP_SERVICE_NAME, enet_rpc_udp_handler, NULL);
+}
+
+errval_t enet_rpc_handle_udp(struct udp_hdr *udp, ip_addr_t src)
+{
+    nameservice_chan_t chan = collections_hash_find(state.listeners,
+                                                    (uint64_t)ntohs(udp->dest));
+    if (chan == NULL) {
+        ERPC_DEBUG("Dropping udp datagram: Not listening destination port (%d)\n",
+                   ntohs(udp->dest));
+        return SYS_ERR_OK;
+    }
+
+    // Storing the header behind the udp datagram
+    // This always works, because udp is a pointer into the original frame from the
+    // ethernet driver and this is padded to be always ("a lot") bigger than a max sized
+    // ethernet frame could be.
+    struct rpc_udp_header *header = (struct rpc_udp_header *)ROUND_UP(
+        (lvaddr_t)udp + ntohs(udp->len), sizeof(struct rpc_udp_header));
+
+    header->_reserved = AOS_UDP_SEND;
+    header->length = ntohs(udp->len) - sizeof(struct udp_hdr);
+    header->src_port = ntohs(udp->src);
+    header->dest_port = ntohs(udp->dest);
+    header->src_ip = src;
+
+    void *response;
+    size_t response_bytes;
+    ERPC_DEBUG("Sending udp datagram for port %d\n", ntohs(udp->dest));
+    errval_t err = nameservice_rpc(chan, udp + 1,
+                                   (lvaddr_t)(header + 1) - (lvaddr_t)(udp + 1),
+                                   &response, &response_bytes, NULL_CAP, NULL_CAP);
+    return err;
 }

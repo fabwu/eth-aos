@@ -1488,6 +1488,8 @@ errors sata ENET_ERR_ {
     failure ICMP_DROPPING        "Dropping incoming icmp package. Turn on ICMP_DEBUG for more details",
     failure UDP_NOT_FOUND        "Could not find udp service",
     failure UDP_LISTEN_FAILED    "Failed to listen on given udp port",
+    failure UDP_EXCEEDING_SIZE   "Failed to send udp datagram because the size limit was exceeded",
+    failure NETSERVICE_SEND      "Failed to send udp datagram in netservice",
 };
 
 // errors LPUART driver
