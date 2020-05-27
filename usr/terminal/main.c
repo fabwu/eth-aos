@@ -25,7 +25,7 @@ static struct lpuart_s *uart;
 static char buffer[MAX_LINE_SIZE];
 static int pos, read_pos;
 static bool line_ready;
-static char line_end = '\0';
+static char line_end = '\n';
 
 static void terminal_handle_rpc(void *st, void *message, size_t bytes,
                                 void **response, size_t *response_bytes,

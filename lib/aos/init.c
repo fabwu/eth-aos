@@ -28,6 +28,7 @@
 #include <aos/waitset.h>
 #include <aos/aos_rpc.h>
 #include <aos/lmp_protocol.h>
+#include <aos/nameservice.h>
 
 #include "threads_priv.h"
 #include "init.h"
@@ -83,10 +84,35 @@ __attribute__((__used__)) static size_t syscall_terminal_write(const char *buf, 
     return 0;
 }
 
-__attribute__((__used__)) static size_t dummy_terminal_read(char *buf, size_t len)
+static size_t aos_terminal_read(char *buf, size_t len)
 {
-    debug_printf("Terminal read NYI!\n");
-    return len;
+    errval_t err;
+
+    // TODO switch to aos_rpc_serial_getchar() after it works with nameservice
+    nameservice_chan_t terminal_chan;
+    // TODO do not start any processes until terminal service has registered with nameserver
+    do {
+        err = nameservice_lookup("terminal", &terminal_chan);
+    } while (err_is_fail(err));
+
+    int pos = 0;
+    while (1) {
+        void *response;
+        size_t response_bytes;
+        err = nameservice_rpc(terminal_chan, "getchar", strlen("getchar"),
+                              &response, &response_bytes, NULL_CAP, NULL_CAP);
+        if (err_is_fail(err) || response_bytes != 1) {
+            return -1;
+        }
+
+        char c = *(char *)response;
+        buf[pos++] = c;
+        if (c == '\n' || pos == len) {
+            break;
+        }
+    }
+
+    return pos;
 }
 
 static size_t aos_terminal_write(const char *buf, size_t len)
@@ -114,8 +140,7 @@ void barrelfish_libc_glue_init(void)
     // XXX: FIXME: Check whether we can use the proper kernel serial, and
     // what we need for that
     // TODO: change these to use the user-space serial driver if possible
-    // TODO: set these functions
-    _libc_terminal_read_func = dummy_terminal_read;
+    _libc_terminal_read_func = aos_terminal_read;
     if (init_domain) {
         _libc_terminal_write_func = syscall_terminal_write;
     } else {

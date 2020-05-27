@@ -12,19 +12,45 @@
  * ETH Zurich D-INFK, CAB F.78, Universitaetstr. 6, CH-8092 Zurich,
  * Attn: Systems Group.
  */
-
-
 #include <stdio.h>
 #include <aos/aos.h>
 #include <aos/aos_rpc.h>
 #include <aos/nameservice.h>
+#include <spawn/argv.h>
 
-#define CMDLINE_LEN 100
+
+nameservice_chan_t terminal_chan;
+
+#define MAX_LINE_SIZE   4096
+static char cmdline[MAX_LINE_SIZE + 1];
+
+static void run_command(void)
+{
+    char **argv;
+    char *argv_buf;
+    int argc;
+
+    argv = make_argv(cmdline, &argc, &argv_buf);
+    if (argv == NULL || argc == 0) {
+        return;
+    }
+
+    if (!strcmp(argv[0], "echo")) {
+        for (int i = 1; i < argc; i++) {
+            debug_printf("%s ", argv[i]);
+        }
+        debug_printf("\n");
+    } else {
+        debug_printf("Unrecognized command (try 'help')\n");
+    }
+
+    free_argv(argv, argv_buf);
+}
 
 int main(int argc, char *argv[])
 {
     errval_t err;
-    char cmdline[CMDLINE_LEN];
+    char cmdline_fixed[100];
     coreid_t coreid = 1;
     domainid_t pid;
 
@@ -35,24 +61,24 @@ int main(int argc, char *argv[])
     }
 
 #if 0
-    memcpy(cmdline, "hello", strlen("hello") + 1);
-    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline, coreid);
-    err = aos_rpc_process_spawn(process_rpc, cmdline, coreid, &pid);
+    memcpy(cmdline_fixed, "hello", strlen("hello") + 1);
+    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
+    err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
     if (err_is_fail(err)) {
-        DEBUG_PRINTF("starting '%s' failed.\n", cmdline);
+        DEBUG_PRINTF("starting '%s' failed.\n", cmdline_fixed);
         return EXIT_FAILURE;
     }
-    DEBUG_PRINTF("'%s' started successfully\n", cmdline);
+    DEBUG_PRINTF("'%s' started successfully\n", cmdline_fixed);
 #endif
 
-    memcpy(cmdline, "memeater", strlen("memeater") + 1);
-    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline, coreid);
-    err = aos_rpc_process_spawn(process_rpc, cmdline, coreid, &pid);
+    memcpy(cmdline_fixed, "memeater", strlen("memeater") + 1);
+    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
+    err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
     if (err_is_fail(err)) {
-        DEBUG_ERR(err, "starting '%s' failed.\n", cmdline);
+        DEBUG_ERR(err, "starting '%s' failed.\n", cmdline_fixed);
         return -EXIT_FAILURE;
     }
-    DEBUG_PRINTF("'%s' started successfully\n", cmdline);
+    DEBUG_PRINTF("'%s' started successfully\n", cmdline_fixed);
 
     // I get a null pointer with this code (works on nameservicetest...)
 /*    domainid_t *pids;
@@ -74,27 +100,17 @@ int main(int argc, char *argv[])
         DEBUG_PRINTF("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }*/
 
-    nameservice_chan_t terminal_chan;
-    do {
-        // TODO do not start shell until terminal service has registered with nameserver
-        err = nameservice_lookup("terminal", &terminal_chan);
-    } while (err_is_fail(err));
-
     while (1) {
-        void *response;
-        size_t response_bytes;
-        err = nameservice_rpc(terminal_chan, "getchar", strlen("getchar"),
-                              &response, &response_bytes, NULL_CAP, NULL_CAP);
-        if (err_is_fail(err)) {
-            debug_printf("Warning: Failed to get char\n");
+        char *ret_str;
+        ret_str = fgets(cmdline, sizeof(cmdline), stdin);
+        if (ret_str == NULL) {
+            debug_printf("Warning: Failed to get command line\n");
             continue;
         }
-        char c = *(char *)response;
 
-        if (c == '\0')
-            debug_printf("\n");
-        else
-            debug_printf("[%c]\n", c);
+        debug_printf("\n");
+
+        run_command();
     }
 
     return EXIT_SUCCESS;

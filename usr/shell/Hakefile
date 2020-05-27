@@ -13,6 +13,7 @@
 [ build application 
   { 
     target = "shell",
-    cFiles = [ "main.c" ]
+    cFiles = [ "main.c" ],
+    addLibraries = [ "spawn" ] -- 'spawn' only for the make_argv function
   }
 ]
