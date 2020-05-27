@@ -18,15 +18,17 @@
 #    define DEBUG_NS(fmt...) ((void)0)
 #endif
 
+#define MAX_SERVICE_NAME_LENGTH (AOS_RPC_BUFFER_SIZE - 1)
+
 struct srv_entry {
-    const char *name;
+    char name[MAX_SERVICE_NAME_LENGTH];
     nameservice_receive_handler_t *recv_handler;
     void *st;
 };
 
 struct nameservice_chan {
     struct aos_rpc rpc;
-    const char *name;
+    char name[MAX_SERVICE_NAME_LENGTH];
 };
 
 struct hashtable *ht = NULL;
@@ -331,6 +333,8 @@ out:
 errval_t nameservice_register(const char *name,
                               nameservice_receive_handler_t recv_handler, void *st)
 {
+    assert(strlen(name) <= MAX_SERVICE_NAME_LENGTH);
+
     errval_t err;
 
     if(ht == NULL) {
@@ -346,7 +350,7 @@ errval_t nameservice_register(const char *name,
 
     struct lmp_chan *chan = get_init_client_chan();
 
-    size_t trunc_size = MIN(strlen(name), AOS_RPC_BUFFER_SIZE - 1);
+    size_t trunc_size = MIN(strlen(name), MAX_SERVICE_NAME_LENGTH);
     uintptr_t buf[3];
 
     memset(buf, 0, AOS_RPC_BUFFER_SIZE);
@@ -375,7 +379,8 @@ errval_t nameservice_register(const char *name,
     // ack received save handler and state in hashtable
     struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
     assert(entry != NULL);
-    entry->name = name;
+
+    strcpy(entry->name, name);
     entry->recv_handler = recv_handler;
     entry->st = st;
 
@@ -411,13 +416,14 @@ errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan_ref)
 {
     assert(name != NULL);
     assert(nschan_ref != NULL);
+    assert(strlen(name) <= MAX_SERVICE_NAME_LENGTH);
 
     errval_t err;
 
     struct lmp_chan *chan = get_init_client_chan();
 
     // prepare service name
-    size_t trunc_size = MIN(strlen(name), AOS_RPC_BUFFER_SIZE - 1);
+    size_t trunc_size = MIN(strlen(name), MAX_SERVICE_NAME_LENGTH);
     uintptr_t buf[3];
 
     memset(buf, 0, AOS_RPC_BUFFER_SIZE);
@@ -451,7 +457,8 @@ errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan_ref)
     struct nameservice_chan *nschan = (struct nameservice_chan *)malloc(
         sizeof(struct nameservice_chan));
     assert(nschan != NULL);
-    nschan->name = name;
+
+    strcpy(nschan->name, name);
     nschan->rpc.recv_id = service_did;
     nschan->rpc.send_id = disp_get_domain_id();
 

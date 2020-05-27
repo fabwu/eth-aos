@@ -39,7 +39,7 @@
 #define INIT_EXECUTE_FS 0
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVICETEST 0
-#define INIT_EXECUTE_SHELL 1
+#define INIT_EXECUTE_SHELL 0
 #define INIT_EXECUTE_ENET 0
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
@@ -351,8 +351,8 @@ static int app_main(int argc, char *argv[])
 
     grading_test_late();
 
-    domainid_t did;
-    init_spawn_by_name("nameservicetest", &did);
+//    domainid_t did;
+//    init_spawn_by_name("nameservicetest", &did);
 
     aos_protocol_set_ump(&ump);
     rpc_ump_start_handling();
