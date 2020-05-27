@@ -295,7 +295,7 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
 
         *response_bytes = ((size_t)recv_bytes) - name_bytes;
         *response = (void *)malloc(*response_bytes);
-        memcpy(*response, recv_buf, *response_bytes);
+        memcpy(*response, recv_buf + name_bytes, *response_bytes);
     }
 
     err = paging_unmap(ps, (lvaddr_t)recv_buf, recv_frame, recv_bytes);
