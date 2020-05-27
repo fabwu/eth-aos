@@ -44,7 +44,7 @@ typedef uint8_t  aos_rpc_msg_t;
 // extract message type from header
 #define AOS_RPC_HEADER_MSG(header) (header & 0xff)
 
-#define AOS_RPC_CORE_ID(domainid) ( (domainid & 0xffff) >> 15)
+#define AOS_RPC_CORE_ID(domainid) ( (domainid & 0xffff) >> 12)
 
 // Message types
 

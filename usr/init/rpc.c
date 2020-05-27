@@ -6,6 +6,7 @@
 #include "rpc.h"
 #include "process.h"
 #include <aos/lmp_protocol.h>
+#include <aos/kernel_cap_invocations.h>
 
 #if 0
 #    define DEBUG_RPC_SETUP(fmt...) debug_printf(fmt);
@@ -99,7 +100,8 @@ out:
 
         return SYS_ERR_OK;
     } else {
-        lmp_protocol_send_cap3(chan, AOS_RPC_GET_DEVICE_CAP, NULL_CAP, paddr, bytes, false);
+        lmp_protocol_send_cap3(chan, AOS_RPC_GET_DEVICE_CAP, NULL_CAP, paddr, bytes,
+                               false);
         return err;
     }
 }
@@ -220,6 +222,106 @@ void rpc_ump_start_handling(void)
     aos_protocol_register_recv(0, MKCALLBACK(rpc_ump_handler_recv, NULL));
 }
 
+errval_t rpc_dispatch(void)
+{
+    errval_t err;
+    struct waitset *default_ws = get_default_waitset();
+    while (1) {
+        if (aos_ump_can_dequeue(&ump)) {
+            uint8_t *buf = (uint8_t *)malloc(AOS_UMP_MSG_SIZE);
+            if (buf == NULL) {
+                return LIB_ERR_MALLOC_FAIL;
+            }
+
+            err = aos_ump_dequeue(&ump, buf, AOS_UMP_MSG_SIZE);
+            if (err_is_fail(err)) {
+                return err_push(err, LIB_ERR_UMP_DEQUEUE);
+            }
+
+            uint64_t header = ((uint64_t *)buf)[0];
+            DEBUG_PRINTF("HEADER %p\n", header);
+
+            domainid_t receiver = AOS_RPC_HEADER_RECV(header);
+            bool to_server = ((uint64_t *)buf)[1] == 0x1;
+            uintptr_t arg1 = ((uint64_t *)buf)[2];
+            uintptr_t arg2 = ((uint64_t *)buf)[3];
+            uintptr_t arg3 = ((uint64_t *)buf)[4];
+            struct lmp_chan *recv_chan;
+
+            if (to_server) {
+                // msg is from client -> forward to server
+                init_spawn_get_lmp_server_chan(receiver, &recv_chan);
+            } else {
+                // msg is from server -> forward to client
+                init_spawn_get_lmp_client_chan(receiver, &recv_chan);
+            }
+
+            if (recv_chan == NULL) {
+                USER_PANIC("Couldn't find lmp chan");
+            }
+
+            if (AOS_RPC_HEADER_MSG(header) == AOS_RPC_MSG_NS_RPC) {
+                // rpc message -> forge frame and send it to local domain
+                genpaddr_t frame_paddr = (genpaddr_t)arg1;
+                size_t frame_bytes = (size_t)arg2;
+                size_t payload_bytes = (size_t)arg3;
+
+                // forge frame
+                struct capref payload_cap;
+                err = slot_alloc(&payload_cap);
+                if (err_is_fail(err)) {
+                    return err_push(err, LIB_ERR_SLOT_ALLOC);
+                }
+                err = frame_forge(payload_cap, frame_paddr, frame_bytes,
+                                  disp_get_current_core_id());
+                if (err_is_fail(err)) {
+                    return err_push(err, LIB_ERR_FRAME_FORGE);
+                }
+
+                // send forged frame and payload size to local domain
+                err = lmp_protocol_send_cap1(recv_chan, header, payload_cap,
+                                             payload_bytes);
+                if (err_is_fail(err)) {
+                    USER_PANIC_ERR(err, "Couldn't forward rpc msg\n");
+                }
+            } else {
+                // normal msg -> just forward it to local domain
+                err = lmp_protocol_send(recv_chan, header, NULL_CAP, arg1, arg2, arg3);
+                if (err_is_fail(err)) {
+                    USER_PANIC_ERR(err, "Couldn't forward msg from other core\n");
+                }
+            }
+        } else {
+            err = event_dispatch_non_block(default_ws);
+            if (err_is_fail(err) && err != LIB_ERR_NO_EVENT) {
+                return err;
+            }
+
+            thread_yield();
+        }
+    }
+
+    return SYS_ERR_OK;
+}
+
+static errval_t rpc_send_ump(aos_rpc_header_t header, bool to_server, uintptr_t arg1,
+                             uintptr_t arg2, uintptr_t arg3)
+{
+    errval_t err;
+    uint64_t buf[5];
+    buf[0] = header;
+    buf[1] = to_server;  // if 1 client -> server
+    buf[2] = arg1;
+    buf[3] = arg2;
+    buf[4] = arg3;
+    err = aos_ump_enqueue(&ump, (void *)buf, sizeof(uint64_t) * 5);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_UMP_ENQUEUE);
+    }
+
+    return SYS_ERR_OK;
+}
+
 /**
  * Handles messages from different child channels
  */
@@ -238,10 +340,11 @@ static void rpc_handler_recv_closure(void *arg)
             lmp_chan_alloc_recv_slot(chan);
         }
         aos_rpc_header_t header = msg.words[0];
+        // domainid_t sender = AOS_RPC_HEADER_SEND(header);
         domainid_t receiver = AOS_RPC_HEADER_RECV(header);
         aos_rpc_msg_t message_type = AOS_RPC_HEADER_MSG(header);
 
-        if(receiver == disp_get_domain_id()) {
+        if (receiver == disp_get_domain_id()) {
             // init is receiver -> handle message
             switch (message_type) {
             case AOS_RPC_SEND_NUMBER:
@@ -268,13 +371,13 @@ static void rpc_handler_recv_closure(void *arg)
                     DEBUG_ERR(err, "rpc_send_device failed");
                 }
                 break;
-             case AOS_RPC_SERIAL_GETCHAR:
+            case AOS_RPC_SERIAL_GETCHAR:
                 err = rpc_serial_getchar(chan);
                 if (err_is_fail(err)) {
                     DEBUG_ERR(err, "rpc_serial_getchar failed");
                 }
                 break;
-             case AOS_RPC_SERIAL_PUTCHAR:
+            case AOS_RPC_SERIAL_PUTCHAR:
                 err = rpc_serial_putchar(msg.words[1]);
                 if (err_is_fail(err)) {
                     DEBUG_ERR(err, "rpc_serial_putchar failed");
@@ -292,19 +395,27 @@ static void rpc_handler_recv_closure(void *arg)
         } else {
             // Route message to receiver
             coreid_t recv_core_id = AOS_RPC_CORE_ID(receiver);
+            bool to_server;
+            if (chan->type == LMP_CLIENT) {
+                // msg is from client -> forward to server
+                to_server = true;
+            } else if (chan->type == LMP_SERVER) {
+                // msg is from server -> forward to client
+                to_server = false;
+            } else {
+                USER_PANIC("Unknown channel type\n");
+            }
 
             if (recv_core_id == disp_get_current_core_id()) {
                 // use lmp to forward message
                 struct lmp_chan *recv_chan;
 
-                if (chan->type == LMP_CLIENT) {
+                if (to_server) {
                     // msg is from client -> forward to server
                     init_spawn_get_lmp_server_chan(receiver, &recv_chan);
-                } else if (chan->type == LMP_SERVER) {
+                } else {
                     // msg is from server -> forward to client
                     init_spawn_get_lmp_client_chan(receiver, &recv_chan);
-                } else {
-                    USER_PANIC("Unknown channel type\n");
                 }
 
                 if (recv_chan == NULL) {
@@ -317,8 +428,39 @@ static void rpc_handler_recv_closure(void *arg)
                     USER_PANIC_ERR(err, "Couldn't forward\n");
                 }
             } else {
-                // use ump to forward message
-                USER_PANIC("UMP routing NYI!");
+                // domain not on same core -> use ump to forward message
+                if (message_type == AOS_RPC_MSG_NS_RPC) {
+                    // rpc requires shared frame -> send paddr to other core
+                    struct frame_identity fi;
+                    err = frame_identify(cap, &fi);
+                    if (err_is_fail(err)) {
+                        USER_PANIC_ERR(err, "Couldn't identify frame for rpc payload\n");
+                    }
+
+                    // UMP msg format for rpc
+                    // buf[0]: header (type, sender did, receiver did)
+                    // buf[1]: to_server (true if msg goes from client -> server)
+                    // buf[2]: paddr of frame
+                    // buf[3]: size of frame
+                    // buf[4]: size of payload
+                    uintptr_t frame_paddr = (uintptr_t)fi.base;
+                    uintptr_t frame_bytes = (uintptr_t)fi.bytes;
+                    uintptr_t payload_bytes = (uintptr_t)msg.words[1];  // size
+                    err = rpc_send_ump(header, to_server, frame_paddr, frame_bytes,
+                                       payload_bytes);
+                    if (err_is_fail(err)) {
+                        USER_PANIC_ERR(err, "Couldn't send rpc frame to other core\n");
+                    }
+                } else {
+                    // normal msg -> just forward it to the other core
+                    assert(capref_is_null(cap));
+
+                    err = rpc_send_ump(header, to_server, msg.words[1], msg.words[2],
+                                       msg.words[3]);
+                    if (err_is_fail(err)) {
+                        USER_PANIC_ERR(err, "Couldn't forward msg to other core\n");
+                    }
+                }
             }
         }
 

@@ -182,14 +182,22 @@ static int bsp_main(int argc, char *argv[])
         USER_PANIC_ERR(err, "Couldn't init urpc\n");
     }
 
+    err = process_spawn_init("nameserver");
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
+    }
+
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Couldn't boot second core\n");
     }
 
-    err = process_spawn_init("nameserver");
-    if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
+    if (INIT_EXECUTE_NAMESERVICETEST) {
+        err = process_spawn_init("nameservicetest");
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "Couldn't spawn nameservicetest\n");
+            return -EXIT_FAILURE;
+        }
     }
 
     err = process_spawn_init("terminal");
@@ -234,14 +242,6 @@ static int bsp_main(int argc, char *argv[])
         }
     }
 
-    if (INIT_EXECUTE_NAMESERVICETEST) {
-        err = process_spawn_init("nameservicetest");
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "Couldn't spawn nameservicetest\n");
-            return -EXIT_FAILURE;
-        }
-    }
-
     if (INIT_EXECUTE_SHELL) {
         err = process_spawn_init("shell");
         if (err_is_fail(err)) {
@@ -254,11 +254,10 @@ static int bsp_main(int argc, char *argv[])
     grading_test_late();
 
     aos_protocol_set_ump(&ump);
-    rpc_ump_start_handling();
     lmp_protocol_set_ump_dispatch(true);
 
-    // Do event_dispatch and ump dispatch forever
-    aos_protocol_wait_for(NULL);
+    // dispatch messages forever
+    err = rpc_dispatch();
 
     return EXIT_SUCCESS;
 }
@@ -352,13 +351,15 @@ static int app_main(int argc, char *argv[])
 
     grading_test_late();
 
-    DEBUG_PRINTF("Message handler loop\n");
+    domainid_t did;
+    init_spawn_by_name("nameservicetest", &did);
+
     aos_protocol_set_ump(&ump);
     rpc_ump_start_handling();
     lmp_protocol_set_ump_dispatch(true);
 
-    // Do event_dispatch and ump dispatch forever
-    aos_protocol_wait_for(NULL);
+    // dispatch messages forever
+    err = rpc_dispatch();
 
     return EXIT_SUCCESS;
 }

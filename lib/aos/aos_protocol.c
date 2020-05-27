@@ -6,7 +6,6 @@
 #    define DEBUG_AOS_PROTOCOL(fmt...) ((void)0)
 #endif
 
-#define AOS_UMP_MSG_SIZE 63
 #define AOS_UMP_PAYLOAD_SIZE AOS_UMP_MSG_SIZE - 16
 
 struct ump_event_node {

@@ -217,6 +217,7 @@ errors libaos LIB_ERR_ {
 
     // nested errors in specific functions
     failure FRAME_ALLOC         "Failure in frame_alloc()",
+    failure FRAME_FORGE         "Failure in frame_forge()",
     failure FRAME_FREE          "Failure in frame_free()",
     failure FRAME_CREATE        "Failure in frame_create()",
     failure FRAME_CREATE_MS_CONSTRAINTS "frame_create() failed due to constraints to mem_serv in ram_alloc",
@@ -405,6 +406,7 @@ errors libaos LIB_ERR_ {
     failure UMP_ENQUEUE_FULL     "No slot to enqueue to",
     failure UMP_DEQUEUE_FULL     "No slot for dequeue to enqueue acks",
     failure UMP_ENQUEUE          "Failure in aos_ump_enqueue()",
+    failure UMP_DEQUEUE          "Failure in aos_ump_dequeue()",
 
     failure LMP_CHAN_REGISTER_RECV          "Failure in lmp_chan_register_recv()",
     failure LMP_CHAN_ALLOC_RECV_SLOT        "Failure in lmp_chan_alloc_recv_slot()",
