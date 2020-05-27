@@ -169,6 +169,10 @@ int main(int argc, char *argv[])
     err = nameservice_register("terminal", terminal_handle_rpc, NULL);
     assert(err_is_ok(err));
 
+    /* notify init that the terminal driver is ready to use */
+    err = lmp_protocol_send0(get_init_server_chan(), AOS_RPC_TERMINAL_READY);
+    assert(err_is_ok(err));
+
     while (1) {
         err = event_dispatch(get_default_waitset());
         if (err_is_fail(err)) {

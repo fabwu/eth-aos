@@ -14,6 +14,8 @@
 #    define DEBUG_RPC_SETUP(fmt...) ((void)0)
 #endif
 
+extern bool terminal_service_ready;
+
 struct aos_ump ump;
 
 /**
@@ -388,6 +390,9 @@ static void rpc_handler_recv_closure(void *arg)
             case AOS_RPC_PROCESS_GET_NAME:
             case AOS_RPC_PROCESS_EXIT:
                 process_handle_lmp_request(message_type, &msg, chan);
+                break;
+            case AOS_RPC_TERMINAL_READY:
+                terminal_service_ready = 1;
                 break;
             default:
                 debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);

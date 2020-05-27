@@ -90,10 +90,11 @@ static size_t aos_terminal_read(char *buf, size_t len)
 
     // TODO switch to aos_rpc_serial_getchar() after it works with nameservice
     nameservice_chan_t terminal_chan;
-    // TODO do not start any processes until terminal service has registered with nameserver
-    do {
-        err = nameservice_lookup("terminal", &terminal_chan);
-    } while (err_is_fail(err));
+    err = nameservice_lookup("terminal", &terminal_chan);
+    if (err_is_fail(err)) {
+        DEBUG_ERR(err, "nameservice lookup for terminal failed\n");
+        return -1;
+    }
 
     int pos = 0;
     while (1) {
@@ -102,6 +103,7 @@ static size_t aos_terminal_read(char *buf, size_t len)
         err = nameservice_rpc(terminal_chan, "getchar", strlen("getchar"),
                               &response, &response_bytes, NULL_CAP, NULL_CAP);
         if (err_is_fail(err) || response_bytes != 1) {
+            DEBUG_ERR(err, "getchar rpc failed\n");
             return -1;
         }
 

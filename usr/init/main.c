@@ -39,7 +39,7 @@
 #define INIT_EXECUTE_FS 0
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVICETEST 0
-#define INIT_EXECUTE_SHELL 0
+#define INIT_EXECUTE_SHELL 1
 #define INIT_EXECUTE_ENET 0
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
@@ -47,6 +47,8 @@
 struct bootinfo *bi;
 
 coreid_t my_core_id;
+
+bool terminal_service_ready = 0;
 
 struct ram_info {
     genpaddr_t bsp_ram_base;
@@ -187,6 +189,18 @@ static int bsp_main(int argc, char *argv[])
         USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
     }
 
+    err = process_spawn_init("terminal");
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Couldn't spawn terminal driver\n");
+    }
+    // wait for terminal to register with nameserver (printf will need it)
+    while (!terminal_service_ready) {
+        err = event_dispatch(get_default_waitset());
+        if (err_is_fail(err)) {
+            USER_PANIC_ERR(err, "event_dispatch failed while waiting for terminal driver\n");
+        }
+    }
+
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Couldn't boot second core\n");
@@ -198,11 +212,6 @@ static int bsp_main(int argc, char *argv[])
             DEBUG_ERR(err, "Couldn't spawn nameservicetest\n");
             return -EXIT_FAILURE;
         }
-    }
-
-    err = process_spawn_init("terminal");
-    if (err_is_fail(err)) {
-        USER_PANIC_ERR(err, "Couldn't spawn terminal driver\n");
     }
 
     if (INIT_EXECUTE_ENET) {
