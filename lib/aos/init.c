@@ -123,7 +123,7 @@ static size_t aos_terminal_write(const char *buf, size_t len)
 
         assert(chan);
 
-        while (--len) {
+        while (len--) {
             err = aos_rpc_serial_putchar(chan, *buf++);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Couldn't send chararcter");
