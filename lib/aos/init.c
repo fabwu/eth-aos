@@ -119,20 +119,46 @@ static size_t aos_terminal_read(char *buf, size_t len)
 
 static size_t aos_terminal_write(const char *buf, size_t len)
 {
-    if (len) {
-        errval_t err;
-        struct aos_rpc *chan = aos_rpc_get_serial_channel();
+    errval_t err;
 
-        assert(chan);
+    // TODO switch to aos_rpc_serial_putchar() after nameservice supports UMP
+    if (disp_get_core_id() == 0) {
+        // TODO switch to aos_rpc_serial_putchar() after it works with nameservice
+        nameservice_chan_t terminal_chan;
+        err = nameservice_lookup("terminal", &terminal_chan);
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "nameservice lookup for terminal failed\n");
+            return -1;
+        }
+
+        char message[9];
+        memcpy(&message, "putchar", 8);
 
         while (len--) {
-            err = aos_rpc_serial_putchar(chan, *buf++);
+            message[8] = *buf++;
+            err = nameservice_rpc(terminal_chan, &message, 9,
+                                  NULL, NULL, NULL_CAP, NULL_CAP);
             if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Couldn't send chararcter");
-                return err;
+                DEBUG_ERR(err, "putchar rpc failed\n");
+                return -1;
+            }
+        }
+    } else {
+        if (len) {
+            struct aos_rpc *chan = aos_rpc_get_serial_channel();
+
+            assert(chan);
+
+            while (len--) {
+                err = aos_rpc_serial_putchar(chan, *buf++);
+                if (err_is_fail(err)) {
+                    DEBUG_ERR(err, "Couldn't send chararcter");
+                    return err;
+                }
             }
         }
     }
+
     return 0;
 }
 

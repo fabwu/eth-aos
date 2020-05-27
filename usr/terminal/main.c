@@ -27,16 +27,16 @@ static int pos, read_pos;
 static bool line_ready;
 static char line_end = '\n';
 
-static void terminal_handle_rpc(void *st, void *message, size_t bytes,
-                                void **response, size_t *response_bytes,
-                                struct capref rx_cap, struct capref *tx_cap)
+static void terminal_putchar(char c)
+{
+    grading_rpc_handler_serial_putchar(c);
+
+    lpuart_putchar(uart, c);
+}
+
+static void terminal_getchar(void **response, size_t *response_bytes)
 {
     errval_t err;
-
-    if (strcmp(message, "getchar")) {
-        DEBUG_PRINTF("Unknown message: %s\n", message);
-        return;
-    }
 
     grading_rpc_handler_serial_getchar();
 
@@ -59,6 +59,23 @@ static void terminal_handle_rpc(void *st, void *message, size_t bytes,
         pos = 0;
         read_pos = 0;
         line_ready = false;
+    }
+}
+
+static void terminal_handle_rpc(void *st, void *message, size_t bytes,
+                                void **response, size_t *response_bytes,
+                                struct capref rx_cap, struct capref *tx_cap)
+{
+    char *msg = message;
+
+    if (!strcmp(msg, "putchar")) {
+        terminal_putchar(msg[8]);
+        *response_bytes = 0;
+    } else if (!strcmp(msg, "getchar")) {
+        terminal_getchar(response, response_bytes);
+    } else {
+        DEBUG_PRINTF("Unknown message: %s\n", msg);
+        return;
     }
 }
 
