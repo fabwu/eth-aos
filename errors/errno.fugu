@@ -1505,6 +1505,7 @@ errors sata ENET_ERR_ {
     failure UDP_LISTEN_FAILED    "Failed to listen on given udp port",
     failure UDP_EXCEEDING_SIZE   "Failed to send udp datagram because the size limit was exceeded",
     failure NETSERVICE_SEND      "Failed to send udp datagram in netservice",
+    failure NETSERVICE_CLOSE     "Failed to close udp listener in netservice",
 };
 
 // errors LPUART driver

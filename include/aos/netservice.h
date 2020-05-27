@@ -37,6 +37,11 @@ struct rpc_udp_listen {
     uint16_t port;
 };
 
+struct rpc_udp_close {
+    uint8_t type;
+    uint16_t port;
+};
+
 struct rpc_udp_send {
     uint8_t type;
     uint16_t src_port;
@@ -90,5 +95,13 @@ errval_t netservice_udp_send(uint16_t src_port, uint16_t dest_port, uint32_t des
  */
 errval_t netservice_udp_listen(uint16_t port, netservice_udp_handler_t udp_handler,
                                void *udp_handler_state);
+
+/**
+ * \brief Try to close udp listener. This asks for an ack on the udp_handler before
+ * closing, so only the listener can close.
+ *
+ * \param port               Port to close.
+ */
+errval_t netservice_udp_close(uint16_t port);
 
 #endif /* INCLUDE_NETSERVICE_H_ */

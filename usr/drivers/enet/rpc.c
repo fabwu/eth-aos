@@ -59,6 +59,51 @@ static errval_t enet_rpc_udp_listen(struct rpc_udp_listen *message, size_t bytes
     return SYS_ERR_OK;
 }
 
+static errval_t enet_rpc_udp_close(struct rpc_udp_close *message, void **response,
+                                   size_t *response_bytes)
+{
+    errval_t err = SYS_ERR_OK;
+
+    // Static so it stays valid after returning from this function
+    static struct rpc_udp_response udp_response;
+    udp_response.type = message->type;
+    udp_response.success = false;
+    *response = &udp_response;
+    *response_bytes = sizeof(struct rpc_udp_response);
+
+    nameservice_chan_t chan = collections_hash_find(state.listeners,
+                                                    (uint64_t)message->port);
+    if (chan == NULL) {
+        ERPC_DEBUG("Dropping close request: Not listening on given port (%d)\n",
+                   message->port);
+        return SYS_ERR_OK;
+    }
+
+    // Asking current listener if it wants to be closed
+    struct rpc_udp_header header;
+    header._reserved = AOS_UDP_CLOSE;
+    header.length = 0;
+    header.src_port = 0;
+    header.dest_port = message->port;
+    header.src_ip = 0;
+
+    struct rpc_udp_response *response_ack;
+    size_t response_bytes_ack;
+    ERPC_DEBUG("Asking for close ack (%d)\n", message->port);
+    err = nameservice_rpc(chan, &header, sizeof(struct rpc_udp_header),
+                          (void **)&response_ack, &response_bytes_ack, NULL_CAP, NULL_CAP);
+    if (err_is_fail(err) || !response_ack->success) {
+        ERPC_DEBUG("Could not get ack from listener for closing (abort)\n");
+        return err;
+    }
+
+    collections_hash_delete(state.listeners, (uint64_t)message->port);
+
+    ERPC_DEBUG("Closed udp (%d)\n", message->port);
+    udp_response.success = true;
+    return SYS_ERR_OK;
+}
+
 static errval_t enet_rpc_udp_send(struct rpc_udp_send *message, size_t bytes,
                                   void **response, size_t *response_bytes)
 {
@@ -120,6 +165,8 @@ static void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **r
         break;
     case AOS_UDP_CLOSE:
         ERPC_DEBUG("UDP close request\n");
+        err = enet_rpc_udp_close((struct rpc_udp_close *)message, response,
+                                 response_bytes);
         break;
     case AOS_UDP_SEND:
         ERPC_DEBUG("UDP send request\n");
@@ -170,8 +217,6 @@ errval_t enet_rpc_handle_udp(struct udp_hdr *udp, ip_addr_t src)
     void *response;
     size_t response_bytes;
     ERPC_DEBUG("Sending udp datagram for port %d\n", ntohs(udp->dest));
-    errval_t err = nameservice_rpc(chan, udp + 1,
-                                   (lvaddr_t)(header + 1) - (lvaddr_t)(udp + 1),
-                                   &response, &response_bytes, NULL_CAP, NULL_CAP);
-    return err;
+    return nameservice_rpc(chan, udp + 1, (lvaddr_t)(header + 1) - (lvaddr_t)(udp + 1),
+                           &response, &response_bytes, NULL_CAP, NULL_CAP);
 }
