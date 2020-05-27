@@ -16,6 +16,7 @@
 #include <aos/aos.h>
 #include <aos/aos_rpc.h>
 #include <aos/nameservice.h>
+#include <aos/systime.h>
 #include <spawn/argv.h>
 
 
@@ -100,35 +101,54 @@ static void run_command(void)
     char **argv;
     char *argv_buf;
     int argc;
+    int idx = 0;
+    systime_t tstart, tend;
+    bool time = false;
 
     argv = make_argv(cmdline, &argc, &argv_buf);
     if (argv == NULL || argc == 0) {
         return;
     }
 
-    if (!strcmp(argv[0], "help")) {
+    if (!strcmp(argv[idx], "time")) {
+        if (argc < 2)
+            return;
+        time = true;
+        tstart = systime_now();
+        idx++;
+    }
+
+    if (!strcmp(argv[idx], "help")) {
         printf("Usage:\n");
         printf("echo            - display a line of text\n");
         printf("led [on|off]    - turn the LED on/off\n");
         printf("ps              - list current processes\n");
-    } else if (!strcmp(argv[0], "echo")) {
-        for (int i = 1; i < argc; i++) {
+        printf("time [cmd]      - time a command\n");
+    } else if (!strcmp(argv[idx], "echo")) {
+        for (int i = idx + 1; i < argc; i++) {
             printf("%s ", argv[i]);
         }
         printf("\n");
-    } else if (!strcmp(argv[0], "led")) {
+    } else if (!strcmp(argv[idx], "led")) {
         if (argc >= 2) {
-            if (!strcmp(argv[1], "on"))
+            if (!strcmp(argv[idx + 1], "on"))
                 led(1);
-            else if (!strcmp(argv[1], "off"))
+            else if (!strcmp(argv[idx + 1], "off"))
                 led(0);
         }
-    } else if (!strcmp(argv[0], "ps")) {
+    } else if (!strcmp(argv[idx], "ps")) {
         ps();
     } else {
         printf("Unrecognized command (try 'help')\n");
+        goto out;
     }
 
+    if (time) {
+        tend = systime_now();
+        printf("Time: %llu ms\n", systime_to_us(tend - tstart) / 1000);
+    }
+
+out:
     free_argv(argv, argv_buf);
 }
 
