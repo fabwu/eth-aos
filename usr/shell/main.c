@@ -102,6 +102,7 @@ static void run_command(void)
 int main(int argc, char *argv[])
 {
     errval_t err;
+#if 0
     char cmdline_fixed[100];
     coreid_t coreid = 1;
     domainid_t pid;
@@ -151,6 +152,7 @@ int main(int argc, char *argv[])
         }
         printf("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }*/
+#endif
 
     err = map_led_mem();
     if (err_is_fail(err)) {
