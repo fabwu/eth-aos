@@ -100,6 +100,7 @@ static errval_t handle_lookup(char *name, domainid_t server_did)
         success = SYS_ERR_OK;
     } else {
         DEBUG_PRINTF("Couldn't find service %s\n", name);
+        success = LIB_ERR_NS_LOOKUP;
     }
 
     aos_rpc_header_t header = AOS_RPC_HEADER(disp_get_domain_id(), server_did,
