@@ -94,8 +94,8 @@ static void nameservice_handler(void *arg)
         // TODO Handle caps
         entry->recv_handler(entry->st, message, message_bytes, &response, &response_bytes,
                             NULL_CAP, &NULL_CAP);
-
-        // FIXME: Please handle case where 0 bytes are sent in response
+        // prepend service name to response buffer
+        response_bytes += name_bytes;
 
         // allocate response buffer
         struct capref response_cap;
@@ -117,7 +117,8 @@ static void nameservice_handler(void *arg)
         }
 
         // copy and send response
-        memcpy(response_buf, response, response_bytes);
+        strcpy(response_buf, name);
+        memcpy(response_buf + name_bytes, response, response_bytes);
 
         uintptr_t arg1 = (uintptr_t)response_bytes;
         uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), client,
@@ -285,10 +286,16 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
     }
 
     // copy response
-    if(response != NULL && response_bytes != NULL) {
-        *response = (void *)malloc(recv_bytes);
-        memcpy(*response, recv_buf, recv_bytes);
-        *response_bytes = (size_t)recv_bytes;
+    if (response != NULL && response_bytes != NULL) {
+        // extract service name from beginning of recv buffer
+        char response_name[name_bytes - 1];
+        strcpy(response_name, recv_buf);
+        DEBUG_PRINTF("%s %s\n", nschan->name, response_name);
+        assert(strcmp(nschan->name, response_name) == 0);
+
+        *response_bytes = ((size_t)recv_bytes) - name_bytes;
+        *response = (void *)malloc(*response_bytes);
+        memcpy(*response, recv_buf, *response_bytes);
     }
 
     err = paging_unmap(ps, (lvaddr_t)recv_buf, recv_frame, recv_bytes);

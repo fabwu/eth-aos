@@ -109,6 +109,7 @@ static void server_no_response(void *st, void *message, size_t bytes, void **res
 {
     debug_printf("server: got a request: %s\n", (char *)message);
     debug_printf("server: but sending no response MUHAHA!\n");
+    *response_bytes = 0;
 }
 
 static void run_server(void)
