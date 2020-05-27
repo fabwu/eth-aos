@@ -68,7 +68,7 @@ static void split_ram(struct ram_info *ri)
             }
 
             ram_base = mr.mr_base;
-            ram_size = mr.mr_base;
+            ram_size = mr.mr_bytes;
         }
     }
 
