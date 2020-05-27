@@ -140,6 +140,12 @@ struct capref cap_perfmon = {
 };
 
 /// Capability for endpoint to init (if domain acts as client)
+struct capref cap_init_aos_rpc_ep = {
+    .cnode = TASK_CNODE_INIT,
+    .slot  = TASKCN_SLOT_INIT_AOS_RPC_EP
+};
+
+/// Capability for endpoint to init (if domain acts as client)
 struct capref cap_init_client_ep = {
     .cnode = TASK_CNODE_INIT,
     .slot  = TASKCN_SLOT_INIT_CLIENT_EP

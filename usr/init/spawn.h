@@ -6,6 +6,7 @@
 
 struct spawn_node {
     struct spawninfo si;
+    struct lmp_chan aos_rpc_chan;
     struct lmp_chan client_chan;
     struct lmp_chan server_chan;
     domainid_t pid;

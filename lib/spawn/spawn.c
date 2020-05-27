@@ -208,6 +208,12 @@ static errval_t spawn_child_cspace_set_initep(struct spawninfo *si)
     struct capref task_cnode_cap;
     task_cnode_cap.cnode = si->task_cnode_ref;
 
+    task_cnode_cap.slot = TASKCN_SLOT_INIT_AOS_RPC_EP;
+    err = cap_copy(task_cnode_cap, si->init_aos_rpc_ep);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_CREATE_CHILD_CSPACE);
+    }
+
     task_cnode_cap.slot = TASKCN_SLOT_INIT_CLIENT_EP;
     err = cap_copy(task_cnode_cap, si->init_client_ep);
     if (err_is_fail(err)) {

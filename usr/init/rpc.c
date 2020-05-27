@@ -396,12 +396,14 @@ static void rpc_handler_recv_closure(void *arg)
             // Route message to receiver
             coreid_t recv_core_id = AOS_RPC_CORE_ID(receiver);
             bool to_server;
-            if (chan->type == LMP_CLIENT) {
+            if (chan->type == LMP_NS_CLIENT) {
                 // msg is from client -> forward to server
                 to_server = true;
-            } else if (chan->type == LMP_SERVER) {
+            } else if (chan->type == LMP_NS_SERVER) {
                 // msg is from server -> forward to client
                 to_server = false;
+            } else if (chan->type == LMP_AOS_RPC) {
+                USER_PANIC("Messages over LMP_AOS_RPC channel should be handled by init");
             } else {
                 USER_PANIC("Unknown channel type\n");
             }

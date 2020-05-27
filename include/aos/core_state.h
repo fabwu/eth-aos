@@ -74,6 +74,7 @@ struct paging_state;
 
 struct core_state_generic {
     struct waitset default_waitset;
+    struct lmp_chan init_aos_rpc_chan;
     struct lmp_chan init_client_chan;
     struct lmp_chan init_server_chan;
     struct aos_rpc *init_rpc;

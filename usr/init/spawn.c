@@ -11,14 +11,21 @@ static errval_t prepare_spawn(struct spawn_node **ret_node) {
         return INIT_ERR_PREPARE_SPAWN;
     }
 
-    node->client_chan.type = LMP_CLIENT;
+    node->aos_rpc_chan.type = LMP_AOS_RPC;
+    err = rpc_create_child_channel_to_init(&node->aos_rpc_chan);
+    if (err_is_fail(err)) {
+        return err_push(err, INIT_ERR_PREPARE_SPAWN);
+    }
+    node->si.init_aos_rpc_ep = node->aos_rpc_chan.local_cap;
+
+    node->client_chan.type = LMP_NS_CLIENT;
     err = rpc_create_child_channel_to_init(&node->client_chan);
     if (err_is_fail(err)) {
         return err_push(err, INIT_ERR_PREPARE_SPAWN);
     }
     node->si.init_client_ep = node->client_chan.local_cap;
 
-    node->server_chan.type = LMP_SERVER;
+    node->server_chan.type = LMP_NS_SERVER;
     err = rpc_create_child_channel_to_init(&node->server_chan);
     if (err_is_fail(err)) {
         return err_push(err, INIT_ERR_PREPARE_SPAWN);

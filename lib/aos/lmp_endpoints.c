@@ -493,8 +493,10 @@ void lmp_endpoint_init(void)
     heap_init(&d->lmp_endpoint_heap, buf, buflen, NULL);
     disp_enable(handle);
 
+    struct lmp_chan *aos_rpc_chan = get_init_aos_rpc_chan();
+    aos_rpc_chan->type = LMP_AOS_RPC;
     struct lmp_chan *client_chan = get_init_client_chan();
-    client_chan->type = LMP_CLIENT;
+    client_chan->type = LMP_NS_CLIENT;
     struct lmp_chan *server_chan = get_init_server_chan();
-    server_chan->type = LMP_SERVER;
+    server_chan->type = LMP_NS_SERVER;
 }

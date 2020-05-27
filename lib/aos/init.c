@@ -238,6 +238,11 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
     lmp_endpoint_init();
 
     if (!init_domain) {
+        err = send_ep_to_init(get_init_aos_rpc_chan(), cap_init_aos_rpc_ep);
+        if (err_is_fail(err)) {
+            return err;
+        }
+
         err = send_ep_to_init(get_init_client_chan(), cap_init_client_ep);
         if (err_is_fail(err)) {
             return err;

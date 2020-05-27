@@ -47,8 +47,9 @@ struct lmp_chan {
     } connstate;
 
     /// channel type
-    enum {LMP_CLIENT = 1,       ///< channel if domain acts as client of a service
-          LMP_SERVER,           ///< channel if domain acts as server of a service
+    enum {LMP_AOS_RPC = 1,         ///< channel for aos_rpc
+          LMP_NS_CLIENT,           ///< channel if domain acts as client of a service
+          LMP_NS_SERVER,           ///< channel if domain acts as server of a service
     } type;
 
     size_t buflen_words;    ///< requested LMP buffer length, in words
