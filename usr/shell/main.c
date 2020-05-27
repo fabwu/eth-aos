@@ -24,6 +24,47 @@ nameservice_chan_t terminal_chan;
 #define MAX_LINE_SIZE   4096
 static char cmdline[MAX_LINE_SIZE + 1];
 
+/* LED */
+#define GPIO3_BASE          0x5D0B0000
+#define GPIO3_SIZE          0x10000
+#define GPIO3_DR_OFFSET     0x0
+#define GPIO3_GDIR_OFFSET   0x4
+#define PIN_LED4            (1 << 23)
+static void *led_base;
+
+static void led(bool on)
+{
+    volatile uint32_t *va_gdir, *va_dr;
+
+    va_dr = led_base + GPIO3_DR_OFFSET;
+    va_gdir = led_base + GPIO3_GDIR_OFFSET;
+
+    *va_gdir |= PIN_LED4;
+
+    if (on) {
+        *va_dr |= PIN_LED4;
+    } else {
+        *va_dr &= ~PIN_LED4;
+    }
+}
+
+static errval_t map_led_mem(void)
+{
+    struct aos_rpc *init_rpc = aos_rpc_get_init_channel();
+    struct paging_state *st = get_current_paging_state();
+    errval_t err;
+
+    struct capref led_capref;
+    err = aos_rpc_get_device_cap(init_rpc, GPIO3_BASE, GPIO3_SIZE, &led_capref);
+    assert(err_is_ok(err));
+
+    err = paging_map_frame_attr(st, &led_base, 8, led_capref,
+                                VREGION_FLAGS_READ_WRITE_NOCACHE, NULL, NULL);
+    assert(err_is_ok(err));
+
+    return SYS_ERR_OK;
+}
+
 static void run_command(void)
 {
     char **argv;
@@ -35,11 +76,22 @@ static void run_command(void)
         return;
     }
 
-    if (!strcmp(argv[0], "echo")) {
+    if (!strcmp(argv[0], "help")) {
+        printf("Usage:\n");
+        printf("echo            - display a line of text\n");
+        printf("led [on|off]    - turn the LED on/off\n");
+    } else if (!strcmp(argv[0], "echo")) {
         for (int i = 1; i < argc; i++) {
             printf("%s ", argv[i]);
         }
         printf("\n");
+    } else if (!strcmp(argv[0], "led")) {
+        if (argc >= 2) {
+            if (!strcmp(argv[1], "on"))
+                led(1);
+            else if (!strcmp(argv[1], "off"))
+                led(0);
+        }
     } else {
         printf("Unrecognized command (try 'help')\n");
     }
@@ -99,6 +151,12 @@ int main(int argc, char *argv[])
         }
         printf("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }*/
+
+    err = map_led_mem();
+    if (err_is_fail(err)) {
+        printf("failed to memory map LED\n");
+        return EXIT_FAILURE;
+    }
 
     while (1) {
         char *ret_str;
