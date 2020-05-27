@@ -52,6 +52,8 @@ static errval_t rpc_send_device(struct lmp_chan *chan, lpaddr_t paddr, size_t by
 {
     errval_t err;
 
+    grading_rpc_handler_get_device_cap(paddr, bytes);
+
     struct capref device_register_capref = { .cnode = { .croot = CPTR_ROOTCN,
                                                         .cnode = CPTR_TASKCN_BASE,
                                                         .level = CNODE_TYPE_OTHER },
@@ -75,7 +77,11 @@ static errval_t rpc_send_device(struct lmp_chan *chan, lpaddr_t paddr, size_t by
                      paddr - get_address(&device_register_cap), ObjType_DevFrame, bytes,
                      1);
     if (err_is_fail(err)) {
-        // FIXME: Clean up slot
+        errval_t err2 = cap_destroy(device_register_frame_capref);
+        if (err_is_fail(err2)) {
+            DEBUG_ERR(err2, "Could not cleanup slot");
+        }
+
         err = err_push(err, LIB_ERR_CAP_RETYPE);
         goto out;
     }

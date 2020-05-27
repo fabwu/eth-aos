@@ -252,6 +252,10 @@ errval_t barrelfish_init_onthread(struct spawn_domain_params *params)
         // set init RPC client in our program state
         aos_rpc_init();
 
+        // Set rpc channel in core state
+        // This is required by some drivers
+        set_init_rpc(aos_rpc_get_init_channel());
+
         // Get ram_alloc to use remote allocator
         ram_alloc_set(NULL);
         ram_free_set(NULL);

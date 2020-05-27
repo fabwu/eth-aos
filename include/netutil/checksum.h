@@ -35,10 +35,16 @@
 
 
 #include <stdint.h>
+#include <netutil/ip.h>
 
 /**
  * Calculate the internet checksum according to RFC1071
  */
 uint16_t inet_checksum(void *dataptr, uint16_t len);
+
+/**
+ * Calculate the internet checksum according to RFC1071 including a pseudo header.
+ */
+uint16_t inet_checksum_ip_pseudo(void *dataptr, uint16_t len, struct ip_hdr *ip);
 
 #endif

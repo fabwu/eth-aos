@@ -6,7 +6,7 @@
 #include <aos/aos.h>
 
 
-//#define ETHARP_DEBUG_OPTION 1
+#define ETHARP_DEBUG_OPTION 1
 
 #if defined(ETHARP_DEBUG_OPTION)
 #define ETHARP_DEBUG(x...) debug_printf("[etharp] " x);
@@ -14,7 +14,7 @@
 #define ETHARP_DEBUG(fmt, ...) ((void)0)
 #endif
 
-#define ETH_HLEN 14     /* Default size for ip header */
+#define ETH_HLEN 14     /* Default size for ethernet header */
 #define ETH_CRC_LEN 4
 
 #define ETH_TYPE(hdr)  ((hdr)->type)
@@ -25,7 +25,7 @@
 #define ETH_ADDR_LEN 6
 
 struct eth_addr {
-    uint8_t addr[6];
+    uint8_t addr[ETH_ADDR_LEN];
 } __attribute__((__packed__));
 
 struct eth_hdr {

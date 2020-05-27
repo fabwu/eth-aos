@@ -21,7 +21,9 @@ let
         "nameservicetest",
         "filereader",
         "shell",
-        "terminal"
+        "terminal",
+        "enet",
+        "udpecho"
       ] ]
   in
   [

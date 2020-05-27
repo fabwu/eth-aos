@@ -302,7 +302,7 @@ errval_t aos_rpc_get_device_cap(struct aos_rpc *rpc, lpaddr_t paddr, size_t byte
                                  create_header(rpc, AOS_RPC_GET_DEVICE_CAP), ret_cap,
                                  &ret_paddr, &ret_bytes, &ret_success);
     if (err_is_fail(err)) {
-        return err_push(err, AOS_ERR_RPC_GET_RAM_CAP);
+        return err_push(err, AOS_ERR_RPC_GET_DEVICE_CAP_REMOTE_ERR);
     } else if (!ret_success) {
         return AOS_ERR_RPC_GET_DEVICE_CAP_REMOTE_ERR;
     }

@@ -1488,10 +1488,18 @@ errors hashtable HT_ERR_ {
 
 // errors NIC driver
 errors sata ENET_ERR_ {
-    failure DEV_RESET        "Device reset failed",
-    failure PHY_RESET        "Phy reset failed",
-    failure MDIO_WRITE        "Timeout while trying to write to MDIO",
-    failure MDIO_READ        "Timeout while trying to reading from MDIO",
+    failure DEV_RESET            "Device reset failed",
+    failure PHY_RESET            "Phy reset failed",
+    failure MDIO_WRITE           "Timeout while trying to write to MDIO",
+    failure MDIO_READ            "Timeout while trying to reading from MDIO",
+    failure ETH_BUFFER_FULL      "There is no free ethernet frame buffer. Try again later",
+    failure IP_BUFFER_FULL       "hw address unkown for given ip and ip buffer full. Try again later",
+    failure IP_DROPPING          "Dropping incoming ip package. Turn on IP_DEBUG for more details",
+    failure ICMP_DROPPING        "Dropping incoming icmp package. Turn on ICMP_DEBUG for more details",
+    failure UDP_NOT_FOUND        "Could not find udp service",
+    failure UDP_LISTEN_FAILED    "Failed to listen on given udp port",
+    failure UDP_EXCEEDING_SIZE   "Failed to send udp datagram because the size limit was exceeded",
+    failure NETSERVICE_SEND      "Failed to send udp datagram in netservice",
 };
 
 // errors LPUART driver

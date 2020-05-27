@@ -10,8 +10,12 @@
 #ifndef ENET_H_
 #define ENET_H_
 
+#include <devif/queue_interface_backend.h>
+#include <driverkit/driverkit.h>
+#include <dev/imx8x/enet_dev.h>
+#include <aos/netservice.h>
 
-//#define ENET_DEBUG_OPTION 1
+#define ENET_DEBUG_OPTION 1
 
 #if defined(ENET_DEBUG_OPTION)
 #define ENET_DEBUG(x...) debug_printf("[enet] " x);
@@ -26,7 +30,6 @@
 #define ENET_RX_FRSIZE 2048
 #define ENET_RX_PAGES 256
 
-#define ENET_MAX_PKT_SIZE 1536
 #define ENET_MAX_BUF_SIZE 2048
 
 #define RX_RING_SIZE (BASE_PAGE_SIZE / ENET_RX_FRSIZE) * ENET_RX_PAGES
