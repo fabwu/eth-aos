@@ -37,11 +37,11 @@ static void run_command(void)
 
     if (!strcmp(argv[0], "echo")) {
         for (int i = 1; i < argc; i++) {
-            debug_printf("%s ", argv[i]);
+            printf("%s ", argv[i]);
         }
-        debug_printf("\n");
+        printf("\n");
     } else {
-        debug_printf("Unrecognized command (try 'help')\n");
+        printf("Unrecognized command (try 'help')\n");
     }
 
     free_argv(argv, argv_buf);
@@ -56,59 +56,59 @@ int main(int argc, char *argv[])
 
     struct aos_rpc *process_rpc = aos_rpc_get_process_channel();
     if (!process_rpc) {
-        DEBUG_PRINTF("init RPC channel NULL?\n");
+        printf("init RPC channel NULL?\n");
         return EXIT_FAILURE;
     }
 
 #if 0
     memcpy(cmdline_fixed, "hello", strlen("hello") + 1);
-    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
+    printf("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
     err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
     if (err_is_fail(err)) {
-        DEBUG_PRINTF("starting '%s' failed.\n", cmdline_fixed);
+        printf("starting '%s' failed.\n", cmdline_fixed);
         return EXIT_FAILURE;
     }
-    DEBUG_PRINTF("'%s' started successfully\n", cmdline_fixed);
+    printf("'%s' started successfully\n", cmdline_fixed);
 #endif
 
     memcpy(cmdline_fixed, "memeater", strlen("memeater") + 1);
-    DEBUG_PRINTF("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
+    printf("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
     err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
     if (err_is_fail(err)) {
         DEBUG_ERR(err, "starting '%s' failed.\n", cmdline_fixed);
         return -EXIT_FAILURE;
     }
-    DEBUG_PRINTF("'%s' started successfully\n", cmdline_fixed);
+    printf("'%s' started successfully\n", cmdline_fixed);
 
     // I get a null pointer with this code (works on nameservicetest...)
 /*    domainid_t *pids;
     size_t pid_count;
-    DEBUG_PRINTF("calling aos_rpc_process_get_all_pids()\n");
+    printf("calling aos_rpc_process_get_all_pids()\n");
     err = aos_rpc_process_get_all_pids(process_rpc, &pids, &pid_count);
     if (err_is_fail(err)) {
-        DEBUG_PRINTF("receiving PIDs failed\n");
+        printf("receiving PIDs failed\n");
         return EXIT_FAILURE;
     }
-    DEBUG_PRINTF("List of processes:\n");
+    printf("List of processes:\n");
     for (int i = 0; i < pid_count; i++) {
         char *name;
         err = aos_rpc_process_get_name(process_rpc, pids[i], &name);
         if (err_is_fail(err)) {
-            DEBUG_PRINTF("failed to get name of process 0x%lx\n", pids[i]);
+            printf("failed to get name of process 0x%lx\n", pids[i]);
             return EXIT_FAILURE;
         }
-        DEBUG_PRINTF("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
+        printf("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
     }*/
 
     while (1) {
         char *ret_str;
         ret_str = fgets(cmdline, sizeof(cmdline), stdin);
         if (ret_str == NULL) {
-            debug_printf("Warning: Failed to get command line\n");
+            printf("Warning: Failed to get command line\n");
             continue;
         }
 
-        debug_printf("\n");
+        printf("\n");
 
         run_command();
     }
