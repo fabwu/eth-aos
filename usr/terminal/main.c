@@ -27,11 +27,23 @@ static int pos, read_pos;
 static bool line_ready;
 static char line_end = '\n';
 
+static char print_buffer[MAX_LINE_SIZE];
+static int print_pos;
+
 static void terminal_putchar(char c)
 {
     grading_rpc_handler_serial_putchar(c);
 
-    lpuart_putchar(uart, c);
+    print_buffer[print_pos++] = c;
+
+    if (c == '\n' || print_pos == MAX_LINE_SIZE) {
+        for (int i = 0; i < print_pos; i++) {
+            lpuart_putchar(uart, print_buffer[i]);
+        }
+        if (c == '\n')
+            lpuart_putchar(uart, '\r');
+        print_pos = 0;
+    }
 }
 
 static void terminal_getchar(void **response, size_t *response_bytes)
