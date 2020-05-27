@@ -65,6 +65,36 @@ static errval_t map_led_mem(void)
     return SYS_ERR_OK;
 }
 
+static void ps(void)
+{
+    errval_t err;
+
+    struct aos_rpc *process_rpc = aos_rpc_get_process_channel();
+    if (!process_rpc) {
+        printf("failed to get process channel\n");
+        return;
+    }
+
+    domainid_t *pids;
+    size_t pid_count;
+    err = aos_rpc_process_get_all_pids(process_rpc, &pids, &pid_count);
+    if (err_is_fail(err)) {
+        printf("receiving PIDs failed\n");
+        return;
+    }
+
+    printf("Name             PID    Core\n");
+    for (int i = 0; i < pid_count; i++) {
+        char *name;
+        err = aos_rpc_process_get_name(process_rpc, pids[i], &name);
+        if (err_is_fail(err)) {
+            printf("failed to get name of process 0x%lx\n", pids[i]);
+            return;
+        }
+        printf("%s%*llx%8u\n", name, (20 - strlen(name)), pids[i], (pids[i] >> 24) & 0xff);
+    }
+}
+
 static void run_command(void)
 {
     char **argv;
@@ -80,6 +110,7 @@ static void run_command(void)
         printf("Usage:\n");
         printf("echo            - display a line of text\n");
         printf("led [on|off]    - turn the LED on/off\n");
+        printf("ps              - list current processes\n");
     } else if (!strcmp(argv[0], "echo")) {
         for (int i = 1; i < argc; i++) {
             printf("%s ", argv[i]);
@@ -92,6 +123,8 @@ static void run_command(void)
             else if (!strcmp(argv[1], "off"))
                 led(0);
         }
+    } else if (!strcmp(argv[0], "ps")) {
+        ps();
     } else {
         printf("Unrecognized command (try 'help')\n");
     }
@@ -132,26 +165,6 @@ int main(int argc, char *argv[])
         return -EXIT_FAILURE;
     }
     printf("'%s' started successfully\n", cmdline_fixed);
-
-    // I get a null pointer with this code (works on nameservicetest...)
-/*    domainid_t *pids;
-    size_t pid_count;
-    printf("calling aos_rpc_process_get_all_pids()\n");
-    err = aos_rpc_process_get_all_pids(process_rpc, &pids, &pid_count);
-    if (err_is_fail(err)) {
-        printf("receiving PIDs failed\n");
-        return EXIT_FAILURE;
-    }
-    printf("List of processes:\n");
-    for (int i = 0; i < pid_count; i++) {
-        char *name;
-        err = aos_rpc_process_get_name(process_rpc, pids[i], &name);
-        if (err_is_fail(err)) {
-            printf("failed to get name of process 0x%lx\n", pids[i]);
-            return EXIT_FAILURE;
-        }
-        printf("  %s (PID = %llx, core = %u)\n", name, pids[i], (pids[i] >> 24) & 0xff);
-    }*/
 #endif
 
     err = map_led_mem();
