@@ -16,6 +16,7 @@
 #endif
 
 #define ENET_UDP_SERVICE_NAME "udp"
+#define ENET_ARP_SERVICE_NAME "arp"
 #define ENET_UDP_LISTEN_PREFIX "_udp"
 #define ENET_MAX_PKT_SIZE 1536
 #define ENET_UDP_MAX_DATA (ENET_MAX_PKT_SIZE - ETH_HLEN - IP_HLEN - UDP_HLEN)
@@ -23,9 +24,10 @@
 /**
  * UDP service message types
  */
-#define AOS_UDP_LISTEN 0x11  // Start listening on given port
-#define AOS_UDP_CLOSE 0x12   // Stop listening on given port
-#define AOS_UDP_SEND 0x21    // Send udp datagram
+#define AOS_UDP_LISTEN      0x11  // Start listening on given port
+#define AOS_UDP_CLOSE       0x12  // Stop listening on given port
+#define AOS_UDP_SEND        0x21  // Send udp datagram
+#define AOS_ARP_PRINT_CACHE 0x31  // Print arp ip to ethernet translation table
 
 #define AOS_UDP_CALLBACK_MAX_LEN 10
 
@@ -103,5 +105,7 @@ errval_t netservice_udp_listen(uint16_t port, netservice_udp_handler_t udp_handl
  * \param port               Port to close.
  */
 errval_t netservice_udp_close(uint16_t port);
+
+errval_t netservice_arp_print_cache(void);
 
 #endif /* INCLUDE_NETSERVICE_H_ */

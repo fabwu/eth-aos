@@ -21,21 +21,28 @@ struct netservice_listener_node {
 };
 
 static nameservice_chan_t udp_chan = NULL;
+static nameservice_chan_t arp_chan = NULL;
 static struct netservice_listener_node *local_listeners = NULL;
 
-static errval_t netservice_setup(void) {
+static nameservice_chan_t netservice_lookup(const char *name) {
     errval_t err;
+    nameservice_chan_t chan;
     do {
-        err = nameservice_lookup(ENET_UDP_SERVICE_NAME, &udp_chan);
+        err = nameservice_lookup(name, &chan);
         if (err_is_fail(err)) {
-            NETS_DEBUG("Failed to lookup udp service.. Trying again later\n");
+            NETS_DEBUG("Failed to lookup %s service.. Trying again later\n", name);
             errval_t sleep_err = barrelfish_usleep(NETSERVICE_CONNECT_SLEEP_US);  // 100ms
             if (err_is_fail(sleep_err)) {
-                return sleep_err;
+                DEBUG_ERR(err, "Error in barrelfish_usleep");
             }
         }
     } while (err_is_fail(err));
 
+    return chan;
+}
+
+static errval_t netservice_setup(void) {
+    udp_chan = netservice_lookup(ENET_UDP_SERVICE_NAME);
     return SYS_ERR_OK;
 }
 
@@ -219,6 +226,28 @@ errval_t netservice_udp_close(uint16_t port)
         local_listeners = current->next;
     }
     free(current);
+
+    return SYS_ERR_OK;
+}
+
+errval_t netservice_arp_print_cache(void) {
+    errval_t err;
+
+    if (arp_chan == NULL) {
+        err = nameservice_lookup(ENET_ARP_SERVICE_NAME, &arp_chan);
+        if (err_is_fail(err)) {
+            printf("Could not print arp table (arp service unreachable)\n");
+            return err_push(err, ENET_ERR_ARP_NOT_FOUND);
+        }
+    }
+
+    uint8_t message = AOS_ARP_PRINT_CACHE;
+    void *response;
+    size_t response_size;
+    err = nameservice_rpc(arp_chan, (void *)&message, 1, &response, &response_size, NULL_CAP, NULL_CAP);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
     return SYS_ERR_OK;
 }

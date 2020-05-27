@@ -6,6 +6,7 @@
 #include <netutil/udp.h>
 #include <netutil/htons.h>
 #include "enet.h"
+#include "arp.h"
 #include "udp.h"
 
 #include "rpc.h"
@@ -28,7 +29,8 @@ static errval_t enet_rpc_udp_listen(struct rpc_udp_listen *message, size_t bytes
     *response = &udp_response;
     *response_bytes = sizeof(struct rpc_udp_response);
 
-    nameservice_chan_t chan = collections_hash_find(state.listeners, (uint64_t)message->port);
+    nameservice_chan_t chan = collections_hash_find(state.listeners,
+                                                    (uint64_t)message->port);
     if (chan != NULL) {
         ERPC_DEBUG("Discarding udp listen request: Port is already in use\n", bytes);
         return SYS_ERR_OK;
@@ -143,8 +145,8 @@ static errval_t enet_rpc_udp_send(struct rpc_udp_send *message, size_t bytes,
 }
 
 static void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **response,
-                          size_t *response_bytes, struct capref tx_cap,
-                          struct capref *rx_cap)
+                                 size_t *response_bytes, struct capref tx_cap,
+                                 struct capref *rx_cap)
 {
     assert(message != NULL);
 
@@ -153,7 +155,7 @@ static void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **r
     *response_bytes = 0;
 
     if (bytes <= 0) {
-        ERPC_DEBUG("Discarding empty rpc message\n");
+        ERPC_DEBUG("Discarding empty udp rpc message\n");
         return;
     }
 
@@ -183,12 +185,30 @@ static void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **r
     }
 }
 
+static void enet_rpc_arp_handler(void *st, void *message, size_t bytes, void **response,
+                                 size_t *response_bytes, struct capref tx_cap,
+                                 struct capref *rx_cap)
+{
+    if (bytes <= 0 || *(uint8_t *)message != AOS_ARP_PRINT_CACHE) {
+        ERPC_DEBUG("Discarding invalid arp rpc message\n");
+        return;
+    }
+
+    arp_print_cache();
+}
+
 errval_t enet_rpc_init(void)
 {
+    errval_t err;
     collections_hash_create(&state.listeners, NULL);
     assert(state.listeners != NULL);
 
-    return nameservice_register(ENET_UDP_SERVICE_NAME, enet_rpc_udp_handler, NULL);
+    err = nameservice_register(ENET_UDP_SERVICE_NAME, enet_rpc_udp_handler, NULL);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return nameservice_register(ENET_ARP_SERVICE_NAME, enet_rpc_arp_handler, NULL);
 }
 
 errval_t enet_rpc_handle_udp(struct udp_hdr *udp, ip_addr_t src)

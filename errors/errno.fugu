@@ -1506,6 +1506,7 @@ errors sata ENET_ERR_ {
     failure UDP_EXCEEDING_SIZE   "Failed to send udp datagram because the size limit was exceeded",
     failure NETSERVICE_SEND      "Failed to send udp datagram in netservice",
     failure NETSERVICE_CLOSE     "Failed to close udp listener in netservice",
+    failure ARP_NOT_FOUND        "Could not find arp service",
 };
 
 // errors LPUART driver
