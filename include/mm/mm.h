@@ -79,6 +79,8 @@ struct mm {
 
     char mm_node_slab_refilling;
     char avl_node_slab_refilling;
+
+    struct thread_mutex alloc_mutex;
 };
 
 errval_t mm_init(struct mm *mm);

@@ -31,6 +31,8 @@ errval_t mm_init(struct mm *mm)
     mm->mm_node_slab_refilling = 0;
     mm->avl_node_slab_refilling = 0;
 
+    thread_mutex_init(&mm->alloc_mutex);
+
     return SYS_ERR_OK;
 }
 
@@ -167,24 +169,23 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment,
     // TODO: handle alignment
     assert(alignment <= BASE_PAGE_SIZE);
 
-    size_t size = BASE_PAGE_SIZE;
-    while (size < wanted_size) {
-        size += BASE_PAGE_SIZE;
-    }
+    size_t size = ROUND_UP(wanted_size, BASE_PAGE_SIZE);
 
     struct capref cap;
-    // FIXME: Improve cleanup
+    // TODO: Improve cleanup
     // Alloc capability
     err = slot_alloc(&cap);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_SLOT_ALLOC);
     }
 
-    // FIXME: Add lock, like in paging, as a canary if we missed something triggering reentrancy during critical section
+    thread_mutex_lock(&mm->alloc_mutex);
+
     struct mm_node *node;
     err = aos_avl_find_ge(mm->free, size, (void **)&node);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_AVL_FIND_GE);
+        err = err_push(err, LIB_ERR_AVL_FIND_GE);
+        goto out;
     }
 
     assert(node->size >= size);
@@ -250,14 +251,22 @@ errval_t mm_alloc_aligned(struct mm *mm, size_t wanted_size, size_t alignment,
     err = cap_retype(cap, new_mm->origin->cap, new_mm->base - new_mm->origin->base,
                      ObjType_RAM, size, 1);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_CAP_RETYPE);
+        err = err_push(err, LIB_ERR_CAP_RETYPE);
+        goto out;
     }
 
     struct aos_avl_node *new_avl = (struct aos_avl_node *)slab_alloc(&mm->avl_node_slab);
     assert(new_avl != NULL);
     err = aos_avl_insert(&mm->allocated, new_mm->base, (void *)new_mm, new_avl);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_AVL_INSERT);
+        err = err_push(err, LIB_ERR_AVL_INSERT);
+        goto out;
+    }
+
+out:
+    thread_mutex_unlock(&mm->alloc_mutex);
+    if (err_is_fail(err)) {
+        return err;
     }
 
     DEBUG_MM("mm_alloc_aligned add node to allocated with key: 0x%" PRIx64 "\n",
@@ -343,11 +352,13 @@ errval_t mm_free(struct mm *mm, genpaddr_t addr)
 
     // FIXME: add debug cap_retype/cap_destroy, to check if really is free
 
-    // FIXME: Add lock, like in paging, as a canary if we missed something triggering reentrancy during critical section
+    thread_mutex_lock(&mm->alloc_mutex);
+
     struct mm_node *old_node;
     err = aos_avl_find(mm->allocated, addr, (void **)&old_node);
     if (err_is_fail(err)) {
-        return err_push(err, LIB_ERR_AVL_FIND);
+        err = err_push(err, LIB_ERR_AVL_FIND);
+        goto out;
     }
 
     assert(old_node->base == addr);
@@ -418,7 +429,11 @@ errval_t mm_free(struct mm *mm, genpaddr_t addr)
     err = mm_add_to_free(mm, old_node);
     assert(err_is_ok(err));
 
+    err = SYS_ERR_OK;
+
     DEBUG_MM("mm_free end\n");
 
-    return SYS_ERR_OK;
+out:
+    thread_mutex_unlock(&mm->alloc_mutex);
+    return err;
 }

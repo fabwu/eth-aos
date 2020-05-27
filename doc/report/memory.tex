@@ -2,23 +2,157 @@
 
 123 \cite{aos-book}
 
-Ram capabilities are the foundation everything else is built upon in the barrelfish world. One needs a ram cap to create cnodes to store capabilites. One needs ram caps to store the shadow paging tables. One needs ram caps to feed different allocators, be it the simple
+The memory manager manages ranges of physical address space, we started to call
+them memory ranges.
+If one compares with paging, there there is a manager of ranges of virtual
+address space, called addr\_mgr.
+What both have in common is the invariant that ranges are to be disjunct, and
+that a certain range should only be given out once, from the managers view there
+exists only one owner of a certain range.
+That's why both have quite similiar code, and one might have found a common
+abstraction to refactor out, get the memory manager to use the addr\_mgr.
+But the memory manager must also cope with the fact that there exists a physical
+representation of it's ranges, the ram capabilites. And it needs to split them
+according to a given request.
+
+Ram capabilities are the foundation on which everything else (except device
+frame), is built upon in the barrelfish world.
+One needs a ram cap to create cnodes to store capabilites.
+One needs ram caps to store the shadow paging tables.
+One needs ram caps to for allocators.
+
+\section{Access Control}
+
+From an access control point of view, the memory manager does the following thins:
+\begin{itemize}
+	\item Propagation, in that it copies capabilities to send over lmp
+	\item Restriciton, it splits the capabilities received from the boot info
+	\item Amplification, ordinary processes don't have the boot info capabilities
+		 		use RPC to get ram caps
+\end{itemize}
+
+\section{How}
+
+The init process receives via the second argument (\verb|argv[1]|) the bootinfo
+structure.
+This structure contains information about the memory regions at \verb|regions|.
+
+We iterate through this array of memory regions, and search for a memory region
+of type \verb|RegionType_Empty| (which signifies its a ram cap).
+We pass this to \verb|usr/init/mem_alloc.c:initialize_ram_alloc|.
+
+This initialises the memory manager (\verb|lib/mm/mm.c:mm_init|).
+An overview over the datastructures initialised is given in \ref{mem-data}.
+We need to initialiase the three slab allocator used in the memory manager.
+Also it zero initalises the member of \verb|struct mm|, so that we would catch
+errors early.
+Additionally, we initialise a mutex (\verb|alloc_mutex|), which is needed later
+on when guarding against concurrency bugs.
+
+After that, we grow each slab with statically allocated arrays (with space for
+32 \verb|bi_node|'s, 64 \verb|mm_node|'s, and 64 \verb|aos_avl_node|'s).
+This should be enough to satisfy to potentially add upto 32 memory regions,
+and then also allow for refilling when serving alloc requests ($64-32=32$).
+Why a reserve of 32 is needed is explained later in \ref{mem-con}.
+
+The memory manager is now initialised to a point where we can pass it memory
+regions via \verb|lib/mm/mm.c:mm_add|.
+Compared to free, there two additionally thing to be considered when adding the
+memory regions to the memory manager compared to a normal free of a memory
+range.
+They are not yet part of the \verb|all| double linked list.
+This list contains all memory range in ascending order of their base address.
+When adding memory regions them to it, we need to consider that the memory
+ranges are not necessarily added in ascending order of their base address.
+Additionally, from memory regions are the origin nodes (\verb|bi_node|) created
+and added it to the \verb|bi| double linked list.
+After having done that, the ram cap from the boot info has been transformed into
+an ordinary memory range, which references the origin node, and can be added to
+the free memory ranges using \verb|lib/mm/mm.c:mm_add_to_free|.
+
+With all this done, the memory manager can now serve alloc and free requests.
+
+------
 
 Steps taken in implementation:
 \begin{itemize}
-	\item Used multiple linked list initially to manage memory
+	\item Used multiple linked list initially to manage memory.
+				Which was actually not too bad, because if memory is not freed, we can
+				just chop off of the large object, having allocation in O(1), better than
+				with trees (But only if the threes are badly done, as in this case the
+				free avl tree also only contains one node, is basically also O(1)).
+				Freeing is whole other story, as searching for the address to free is O(n).
 	\item Changed later on to avl tree, when paging became too slow, memory was first to switch
 	\item Fuses memory with adjacent free memory upon return
 \end{itemize}
 
+Fragmentation:
+\begin{itemize}
+	\item Allocations always multiples of BASE\_PAGE\_SIZE
+	\begin{itemize}
+		\item Easy to fulfill requests with alignment <= BASE\_PAGE\_SIZE
+		\item Reduces number of differen size held in avl tree of free memory ranges
+		\item Should also reduce the amount of external fragmentation into the system
+	\end{itemize}
+\end{itemize}
+
+% We painted us a bit in a corner by not requiring to have capability as an
+% argument to mm_free
+Problems with lib/aos/capabilites.c:frame\_create, because it destroys the ram\_cap
+immediately. Not really, we could just as well have passed through frame cap.
+
+Memory server, deletes cap as soon as sent off, not requiring cap makes for lighter
+free.
+
+\section{Datastructures} \label{mem-data}
+
+Every memory range refers to its origin ram capability, and is always a direct
+child of the origin capability. This makes splitting and fusing of ram
+capabilities very easy, are there are no intermediaries to consider.
+
 Datastructures of memory manager:
 \begin{itemize}
-	\item Linked list of boot info ram chunks, provides the capabilities off which everything else is split, not intermediaries
+	\item Linked list of boot info ram chunks, provides the capabilities off which
+				everything else is split, not intermediaries
 	\item Linked list of all memory ranges, in ascending order of adderss
 	\item Avl tree of free memory ranges, indexed by their size
 	\item Avl tree of allocated memory ranges, indexed by their address
 \end{itemize}
 
-The linked list of all nodes in ascending order of address can be managed with O(1) operations, and allows for easy fusing of memory ranges, if for example an allocated gets returned, and there is an adjacent free on.
-The avl tree of allocatee memory ranges, indexed by their address, is need because we only get the adress to free, but not the size, so thats for remembering the size of a certain memory range.
-The avl tree of free memory ranges, indexed by ther size, allows for fast lookup when allocating memory, one just for the least element that's greater or euqal to the size requested.
+The linked list of all nodes in ascending order of address can be managed with
+O(1) operations, and allows for easy fusing of memory ranges, if for example an
+allocated memory range gets freed, and there is an adjacent free on.
+
+The avl tree of allocatee memory ranges, indexed by their address, is need
+because we only get the adress to free, but not the size, so thats for
+remembering the size of a certain memory range.
+
+The avl tree of free memory ranges, indexed by ther size, allows for fast
+lookup when allocating memory, one just for the least element that's greater or
+euqal to the size requested.
+
+\section{Concurrency}\label{mem-con}
+
+A reserve of 32 has so far deemed to be large enough to serve every
+slab/slot\_allocator refill recursion loop we have encountered
+We werent able to verify this reserve staticly because of the complexity of the
+\verb|lib/aos/slot_alloc| construct, especially with it's
+\verb|twolevel_slot_alloc.c|.
+
+That's also the reason why we only use the global slot\_allocator, not like with
+the slabs, where we have separate slabs for the memory manager.
+via \verb|lib/mm/mm.c:mm_add|.
+
+Slab\_alloc can't trigger reentrancy, because it is explicitly filled. Slot\_alloc
+in contrast can trigger unwanted reentrancy.
+
+Have lock which guarantees invariant that critical sections are reentrancy free.
+If not, we get a deadlock, and have an early warning that our critical section
+is not reentrancy free anymore.
+It would also have been nice if lib/aos/thread\_sync.c:thread\_mutex\_lock would
+have an assert checking if the same thread id retakes the lock, which would
+always be a deadlock condition.
+
+\section{Limitations}
+
+Support for at most one memory region coming from the boot info.
