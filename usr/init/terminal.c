@@ -13,6 +13,7 @@
 #include <drivers/lpuart.h>
 #include <grading.h>
 #include <maps/imx8x_map.h>
+#include "terminal.h"
 
 #define ASCII_LF        0xA
 #define ASCII_CR        0xD
@@ -21,16 +22,23 @@
 static struct gic_dist_s *gic;
 static struct lpuart_s *uart;
 
+static struct lmp_chan *receiver;
+
 #define MAX_LINE_SIZE   4096
 static char buffer[MAX_LINE_SIZE];
 static int pos, read_pos;
 static bool line_ready;
-static char line_end = '\n';
+#define LINE_END        '\n'
 
 static char print_buffer[MAX_LINE_SIZE];
 static int print_pos;
 
-static void terminal_putchar(char c)
+static void send_char(char c)
+{
+    lmp_protocol_send1(receiver, AOS_RPC_SERIAL_GETCHAR, c);
+}
+
+void terminal_putchar(char c)
 {
     grading_rpc_handler_serial_putchar(c);
 
@@ -46,48 +54,34 @@ static void terminal_putchar(char c)
     }
 }
 
-static void terminal_getchar(void **response, size_t *response_bytes)
+void terminal_getchar(struct lmp_chan *chan)
 {
-    errval_t err;
-
     grading_rpc_handler_serial_getchar();
 
-    while (!line_ready) {
-        err = event_dispatch(get_default_waitset());
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "event_dispatch failed\n");
-            return;
-        }
-    }
-
-    if (read_pos < pos) {
+    if (!line_ready) {
+        receiver = chan;
+    } else if (read_pos < pos) {
         /* send next char */
-        *response = &buffer[read_pos++];
-        *response_bytes = 1;
+        send_char(buffer[read_pos++]);
     } else {
         /* whole line has been sent */
-        *response = &line_end;
-        *response_bytes = 1;
+        send_char(LINE_END);
         pos = 0;
         read_pos = 0;
         line_ready = false;
     }
 }
 
-static void terminal_handle_rpc(void *st, void *message, size_t bytes,
-                                void **response, size_t *response_bytes,
-                                struct capref rx_cap, struct capref *tx_cap)
+static void send_first_char(void)
 {
-    char *msg = message;
-
-    if (!strcmp(msg, "putchar")) {
-        terminal_putchar(msg[8]);
-        *response_bytes = 0;
-    } else if (!strcmp(msg, "getchar")) {
-        terminal_getchar(response, response_bytes);
-    } else {
-        DEBUG_PRINTF("Unknown message: %s\n", msg);
-        return;
+    if (receiver) {
+        if (pos > 0) {
+            send_char(buffer[0]);
+            read_pos = 1;
+        } else {
+            send_char(LINE_END);
+            line_ready = false;
+        }
     }
 }
 
@@ -105,6 +99,7 @@ static void irq_handler(void *arg)
         case ASCII_CR:
         case ASCII_EOT:
             line_ready = true;
+            send_first_char();
             break;
         default:
             if (pos >= MAX_LINE_SIZE) {
@@ -122,13 +117,24 @@ static void irq_handler(void *arg)
 }
 
 static errval_t gic_setup(void) {
-    struct aos_rpc *init_rpc = aos_rpc_get_init_channel();
     struct paging_state *st = get_current_paging_state();
+    struct capref device_register_capref = { .cnode = { .croot = CPTR_ROOTCN,
+                                                        .cnode = CPTR_TASKCN_BASE,
+                                                        .level = CNODE_TYPE_OTHER },
+                                             .slot = TASKCN_SLOT_DEV };
     errval_t err;
 
+    struct capability device_register_cap;
+    err = cap_direct_identify(device_register_capref, &device_register_cap);
+    assert(err_is_ok(err));
+
     struct capref gic_capref;
-    err = aos_rpc_get_device_cap(init_rpc, IMX8X_GIC_DIST_BASE,
-                                 IMX8X_GIC_DIST_SIZE, &gic_capref);
+    err = slot_alloc(&gic_capref);
+    assert(err_is_ok(err));
+
+    err = cap_retype(gic_capref, device_register_capref,
+                     IMX8X_GIC_DIST_BASE - get_address(&device_register_cap),
+                     ObjType_DevFrame, IMX8X_GIC_DIST_SIZE, 1);
     assert(err_is_ok(err));
 
     void *gic_vaddr;
@@ -144,13 +150,24 @@ static errval_t gic_setup(void) {
 
 static errval_t uart_setup(void)
 {
-    struct aos_rpc *init_rpc = aos_rpc_get_init_channel();
     struct paging_state *st = get_current_paging_state();
+    struct capref device_register_capref = { .cnode = { .croot = CPTR_ROOTCN,
+                                                        .cnode = CPTR_TASKCN_BASE,
+                                                        .level = CNODE_TYPE_OTHER },
+                                             .slot = TASKCN_SLOT_DEV };
     errval_t err;
 
+    struct capability device_register_cap;
+    err = cap_direct_identify(device_register_capref, &device_register_cap);
+    assert(err_is_ok(err));
+
     struct capref uart_capref;
-    err = aos_rpc_get_device_cap(init_rpc, IMX8X_UART3_BASE, IMX8X_UART_SIZE,
-                                 &uart_capref);
+    err = slot_alloc(&uart_capref);
+    assert(err_is_ok(err));
+
+    err = cap_retype(uart_capref, device_register_capref,
+                     IMX8X_UART3_BASE - get_address(&device_register_cap),
+                     ObjType_DevFrame, IMX8X_UART_SIZE, 1);
     assert(err_is_ok(err));
 
     void *uart_vaddr;
@@ -164,11 +181,9 @@ static errval_t uart_setup(void)
     return SYS_ERR_OK;
 }
 
-int main(int argc, char *argv[])
+errval_t terminal_init(void)
 {
     errval_t err;
-
-    USER_PANIC("separate terminal domain currently not used\n");
 
     /* initialize interrupt controller */
     err = gic_setup();
@@ -196,22 +211,6 @@ int main(int argc, char *argv[])
     err = lpuart_enable_interrupt(uart);
     assert(err_is_ok(err));
 
-    // TODO make sure nameservice has started before we call this
-    err = nameservice_register("terminal", terminal_handle_rpc, NULL);
-    assert(err_is_ok(err));
-
-    /* notify init that the terminal driver is ready to use */
-    err = lmp_protocol_send0(get_init_aos_rpc_chan(), AOS_RPC_TERMINAL_READY);
-    assert(err_is_ok(err));
-
-    while (1) {
-        err = event_dispatch(get_default_waitset());
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "event_dispatch failed\n");
-            return EXIT_FAILURE;
-        }
-    }
-
-    return EXIT_SUCCESS;
+    return SYS_ERR_OK;
 }
 

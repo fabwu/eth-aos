@@ -34,6 +34,7 @@
 #include "mem_alloc.h"
 #include "rpc.h"
 #include "process.h"
+#include "terminal.h"
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 0
@@ -189,6 +190,11 @@ static int bsp_main(int argc, char *argv[])
         USER_PANIC_ERR(err, "Couldn't spawn nameserver\n");
     }
 
+    err = terminal_init();
+    if (err_is_fail(err)) {
+        USER_PANIC_ERR(err, "Couldn't init terminal driver\n");
+    }
+#if 0
     err = process_spawn_init("terminal");
     if (err_is_fail(err)) {
         USER_PANIC_ERR(err, "Couldn't spawn terminal driver\n");
@@ -200,6 +206,7 @@ static int bsp_main(int argc, char *argv[])
             USER_PANIC_ERR(err, "event_dispatch failed while waiting for terminal driver\n");
         }
     }
+#endif
 
     err = coreboot(1, "boot_armv8_generic", "cpu_imx8x", "init", urpc_frame_id);
     if (err_is_fail(err)) {

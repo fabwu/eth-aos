@@ -5,6 +5,7 @@
 
 #include "rpc.h"
 #include "process.h"
+#include "terminal.h"
 #include <aos/lmp_protocol.h>
 #include <aos/kernel_cap_invocations.h>
 
@@ -172,7 +173,9 @@ static errval_t rpc_free_ram(struct lmp_chan *chan, genpaddr_t addr)
  */
 static errval_t rpc_serial_getchar(struct lmp_chan *chan)
 {
-    grading_rpc_handler_serial_getchar();
+    //grading_rpc_handler_serial_getchar();
+
+    terminal_getchar(chan);
 
     return SYS_ERR_OK;
 }
@@ -186,6 +189,7 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
 {
     char c = (char)arg1;
 
+#if 0
     // XXX Here we would call serial_put_char or similar
     char str[2];
     str[0] = c;
@@ -194,6 +198,8 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
     sys_print(str, 2);
 
     grading_rpc_handler_serial_putchar(c);
+#endif
+    terminal_putchar(c);
 
     return SYS_ERR_OK;
 

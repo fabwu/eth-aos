@@ -86,8 +86,10 @@ __attribute__((__used__)) static size_t syscall_terminal_write(const char *buf, 
 
 static size_t aos_terminal_read(char *buf, size_t len)
 {
+    struct aos_rpc *serial_chan = aos_rpc_get_serial_channel();
     errval_t err;
 
+#if 0
     // TODO switch to aos_rpc_serial_getchar() after it works with nameservice
     nameservice_chan_t terminal_chan;
     err = nameservice_lookup("terminal", &terminal_chan);
@@ -95,9 +97,12 @@ static size_t aos_terminal_read(char *buf, size_t len)
         DEBUG_ERR(err, "nameservice lookup for terminal failed\n");
         return -1;
     }
+#endif
 
+    char c;
     int pos = 0;
     while (1) {
+#if 0
         void *response;
         size_t response_bytes;
         err = nameservice_rpc(terminal_chan, "getchar", strlen("getchar"),
@@ -106,8 +111,14 @@ static size_t aos_terminal_read(char *buf, size_t len)
             DEBUG_ERR(err, "getchar rpc failed\n");
             return -1;
         }
-
         char c = *(char *)response;
+#endif
+        err = aos_rpc_serial_getchar(serial_chan, &c);
+        if (err_is_fail(err)) {
+            debug_printf("Warning: Failed to get char\n");
+            continue;
+        }
+
         buf[pos++] = c;
         if (c == '\n' || pos == len) {
             break;
@@ -121,6 +132,7 @@ static size_t aos_terminal_write(const char *buf, size_t len)
 {
     errval_t err;
 
+#if 0
     // TODO switch to aos_rpc_serial_putchar() after nameservice supports UMP
     if (disp_get_core_id() == 0) {
         // TODO switch to aos_rpc_serial_putchar() after it works with nameservice
@@ -144,6 +156,7 @@ static size_t aos_terminal_write(const char *buf, size_t len)
             }
         }
     } else {
+#endif
         if (len) {
             struct aos_rpc *chan = aos_rpc_get_serial_channel();
 
@@ -157,7 +170,9 @@ static size_t aos_terminal_write(const char *buf, size_t len)
                 }
             }
         }
+#if 0
     }
+#endif
 
     return 0;
 }
