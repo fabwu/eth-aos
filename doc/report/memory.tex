@@ -72,6 +72,121 @@ the free memory ranges using \verb|lib/mm/mm.c:mm_add_to_free|.
 
 With all this done, the memory manager can now serve alloc and free requests.
 
+\section{Datastructures} \label{mem-data}
+
+To understand how alloc and free requests are served we introduce the
+datastructures used in the memory manager.
+
+\subsection{History}
+
+Originally, everything has been implemented using two double linked lists (can
+be seen on \verb|milestone2|).
+One for \verb|struct capnode|, which stored the origin ram capabilities.
+And one for \verb|struct mmnode|, which stored the memory ranges.
+The memory ranges are stored in ascending order, and all of them, irrespective
+if free or allocated.
+Every memory range has a reference to a capnode.
+
+When now \verb|lib/mm/mm.c:mm_alloc_aligned| is called, we would search the
+mmnode linked list from the beginning, until we found a free node which is
+greater than the size requested.
+We split the mmnode from the left.
+As free mmnode don't have a capability yet created for them, we don't need to
+call \verb|cap_destroy|, but can go right for \verb|cap_retype|.
+For this we use the reference to the capnode, because the capnode has the
+original base, and so the \verb|cap_retype| is quite easy to do, as there are
+no indirections, all ram capabilities handed out are direct descendants.
+
+For \verb|lib/mm/mm.c:mm_free|, we again search the mmnode linked list, and we
+expect to find an allocated mmnode with the base address given to free.
+We mark this node simply as free.
+
+Both of these operations have a cost of $\mathcal{O}(n)$, so this way of
+implementing it is quite expensive.
+Additionally, any external fragmentation isn't undone, even though the
+datastructures have been setup to make this easy, by having memory ranges in
+ascending order and using doubly linked list.
+
+\subsection{Current State}
+
+The current state still hase a double linked list of all memory ranges in
+ascending order. This to allow for easy splitting (insertion) and fusing of
+memory ranges (deletion), which are both $\mathcal{O}(1)$ operations on a doubly
+linked list.
+
+For allocation, we change from using the first memory range that's larger than
+the requested size, to using the memory range with least size, which is greater
+than the requested size.
+
+As in \verb|lib/collections| the is no datastructure with allows for this
+request to be fulfilled (hash table only allows for lookup of known keys), we
+implemented an avl tree.
+We chose the avl tree because we know it from the lectures, and didn't find
+convincing literature that for example a red black tree is significantly better.
+% TODO: Potentially add Performance Analysis of BSTs in System Software as
+% source
+The implementation of the avl tree is done so it doesn't allocate memory itself
+(important later on, \ref{mem-con}).
+If using slab allocator per avl tree, the avl nodes shouldn't be too dispersed
+in memory, in theory making the pointer chasing somewhat cache friendly.
+Also, it's versatile, in that it just stores opaque pointers (\verb|void *|),
+allowing for reuse later on.
+Additionally, when we have a reference to the specific avl node, we save one
+lookup, making things a bit faster but the implementation also more complicated,
+because we need to swap nodes under the hood (easy to get wrong).
+
+So for allocation we have an avl tree that is indexed by the size of a memory
+range, and as nodes double linked lists of memory ranges of that size (as it
+can be that multiple free memory ranges have the same size).
+Potentially the memory range is still to large, so we split it and add back to
+the free avl tree ($\mathcal{O}(log(n))$), and insert into the all doubly linked
+list ($\mathcal{O}(1)$).
+As any of these memory range is ok, removing from this list is $\mathcal{0}(1)$.
+With this, allocation is now an $\mathcal{O}(log(n))$ operation, which for worst
+case performance is the theoretical optimum (comparison based search).
+
+For freeing we need another avl tree indexed by the base address, the allocated
+avl tree.
+There is only ever one memory range with a certain base address, so here we
+don't need a list as node.
+We remove the memory range from the allocated tree.
+Having a doubly linked list of memory ranges in ascending orders, and references
+to the capnodes comes in handy now.
+We can just check if the left neighbour is also free, and has same origin, and
+fuse them together in $\mathcal{O}(log(n))$ (we need to reinsert into avl free
+tree).
+Vice versa for the right neighbour.
+
+To note in all of this is that we do only one
+\verb|cap_retype|/\verb|cap_destroy| per alloc/free, minimizing context
+switches.
+E.g. free memory ranges don't have their ram capabilites eagerly, because they
+might be fused later on.
+And additionally there is no hierarchy of ram capabilities to keep track of,
+making \verb|cap_retype| simple to implement, just subtract the base of capnode
+and one is set.
+
+Datastructures of memory manager:
+\begin{itemize}
+	\item Linked list of boot info ram chunks, provides the capabilities off which
+				everything else is split, not intermediaries
+	\item Linked list of all memory ranges, in ascending order of adderss
+	\item Avl tree of free memory ranges, indexed by their size
+	\item Avl tree of allocated memory ranges, indexed by their address
+\end{itemize}
+
+The linked list of all nodes in ascending order of address can be managed with
+O(1) operations, and allows for easy fusing of memory ranges, if for example an
+allocated memory range gets freed, and there is an adjacent free on.
+
+The avl tree of allocatee memory ranges, indexed by their address, is need
+because we only get the adress to free, but not the size, so thats for
+remembering the size of a certain memory range.
+
+The avl tree of free memory ranges, indexed by ther size, allows for fast
+lookup when allocating memory, one just for the least element that's greater or
+euqal to the size requested.
+
 ------
 
 Steps taken in implementation:
@@ -103,33 +218,6 @@ immediately. Not really, we could just as well have passed through frame cap.
 
 Memory server, deletes cap as soon as sent off, not requiring cap makes for lighter
 free.
-
-\section{Datastructures} \label{mem-data}
-
-Every memory range refers to its origin ram capability, and is always a direct
-child of the origin capability. This makes splitting and fusing of ram
-capabilities very easy, are there are no intermediaries to consider.
-
-Datastructures of memory manager:
-\begin{itemize}
-	\item Linked list of boot info ram chunks, provides the capabilities off which
-				everything else is split, not intermediaries
-	\item Linked list of all memory ranges, in ascending order of adderss
-	\item Avl tree of free memory ranges, indexed by their size
-	\item Avl tree of allocated memory ranges, indexed by their address
-\end{itemize}
-
-The linked list of all nodes in ascending order of address can be managed with
-O(1) operations, and allows for easy fusing of memory ranges, if for example an
-allocated memory range gets freed, and there is an adjacent free on.
-
-The avl tree of allocatee memory ranges, indexed by their address, is need
-because we only get the adress to free, but not the size, so thats for
-remembering the size of a certain memory range.
-
-The avl tree of free memory ranges, indexed by ther size, allows for fast
-lookup when allocating memory, one just for the least element that's greater or
-euqal to the size requested.
 
 \section{Concurrency}\label{mem-con}
 
