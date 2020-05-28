@@ -84,6 +84,7 @@ static void run_client(void)
 
     err = nameservice_rpc(chan, NULL, 0, NULL, NULL, NULL_CAP, NULL_CAP);
     PANIC_IF_FAIL(err, "failed to do the nameservice rpc\n");
+    debug_printf("client: done\n");
 }
 
 /*
@@ -109,6 +110,7 @@ static void server_no_response(void *st, void *message, size_t bytes, void **res
 {
     debug_printf("server: got a request: %s\n", (char *)message);
     debug_printf("server: but sending no response MUHAHA!\n");
+    *response = NULL;
     *response_bytes = 0;
 }
 

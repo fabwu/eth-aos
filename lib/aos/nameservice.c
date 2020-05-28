@@ -118,7 +118,9 @@ static void nameservice_handler(void *arg)
 
         // copy and send response
         strcpy(response_buf, name);
-        memcpy(response_buf + name_bytes, response, response_bytes);
+        if(response != NULL && response_bytes > 0) {
+            memcpy(response_buf + name_bytes, response, response_bytes);
+        }
 
         uintptr_t arg1 = (uintptr_t)response_bytes;
         uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), client,
