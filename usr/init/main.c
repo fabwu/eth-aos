@@ -38,6 +38,7 @@
 
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 0
+#define INIT_EXECUTE_HELLO_SDCARD 1
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVICETEST 1
 #define INIT_EXECUTE_SHELL 1
@@ -249,6 +250,15 @@ static int bsp_main(int argc, char *argv[])
             DEBUG_ERR(err, "Couldn't initialise filesystem\n");
         }
     }
+
+    if (INIT_EXECUTE_HELLO_SDCARD) {
+        err = process_spawn_init_sdcard("/sdcard/HELLO.BIN", "hello");
+        if (err_is_fail(err)) {
+            DEBUG_ERR(err, "Couldn't spawn memeater\n");
+            return -EXIT_FAILURE;
+        }
+    }
+
 
     if (INIT_EXECUTE_SPAWNTEST) {
         err = process_spawn_init("spawnTester");

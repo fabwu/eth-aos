@@ -37,12 +37,19 @@ struct fat32fs_dir_state {
     bool is_eof;
 };
 
+struct fat32fs_dir_pos {
+    uint32_t clus;
+    uint32_t sec;
+    uint16_t entry;
+};
+
 struct fat32fs_dirent {
     char *name;
     size_t size;
     uint32_t clus;
 
-    uint32_t dir_clus;
+    uint32_t parent_clus;
+    struct fat32fs_dir_pos parent_dir_pos;
 
     struct fat32fs_dir_state dir_state;
     bool is_dir;
@@ -194,6 +201,8 @@ static errval_t fat32fs_free_clus_chain(struct fat32_fs *fs, uint32_t clus_to_fr
 // Finds a free_cluster, marks it with EOC, and returns its number
 static errval_t fat32fs_get_free_clus(struct fat32_fs *fs, uint32_t *free_clus)
 {
+    DEBUG_FAT32FS("fat32fs_get_free_clus begin\n");
+
     errval_t err;
 
     uint32_t tmp_free_clus = fs->last_free_clus + 1;
@@ -232,6 +241,8 @@ static errval_t fat32fs_get_free_clus(struct fat32_fs *fs, uint32_t *free_clus)
 
     fs->last_free_clus = tmp_free_clus;
     *free_clus = tmp_free_clus;
+
+    DEBUG_FAT32FS("fat32fs_get_free_clus end\n");
 
     return SYS_ERR_OK;
 }
@@ -274,7 +285,7 @@ static errval_t fat32fs_is_last_dir_entry(struct fat32_fs *fs,
 
 static errval_t fat32fs_next_dir_entry(struct fat32_fs *fs,
                                        struct fat32fs_dir_state *state, void **entry,
-                                       bool *end)
+                                       bool *end, struct fat32fs_dir_pos *dir_pos)
 {
     errval_t err;
 
@@ -290,6 +301,11 @@ static errval_t fat32fs_next_dir_entry(struct fat32_fs *fs,
 
     *end = 0;
     *entry = fs->data.virt + state->entry;
+    if (dir_pos) {
+        dir_pos->clus = state->clus;
+        dir_pos->sec = state->sec;
+        dir_pos->entry = state->entry;
+    }
 
     if (*(uint8_t *)*entry == FAT_32_ONLY_FREE_DIR_ENTRY) {
         *end = 1;
@@ -336,26 +352,24 @@ static errval_t fat32fs_expand(struct fat32_fs *fs, uint32_t to_expand_clus,
     if (err_is_fail(err)) {
         return err;
     }
-    // Set free cluster to eof
-    uint32_t new_fat_sector = get_sector_for_fat(fs, new_clus);
-    err = fs_read_sector(fs->sd, &fs->fat, new_fat_sector);
-    if (err_is_fail(err)) {
-        return err;
-    }
+
+    DEBUG_FAT32FS("fat32fs_expand middle to_expand_clus: 0x%" PRIx32 "\n", to_expand_clus);
 
     // Change fat data to chain in free cluster
     uint32_t to_expand_fat_sector = get_sector_for_fat(fs, to_expand_clus);
+    DEBUG_FAT32FS("fat32fs_expand middle to_expand_clus_sec: 0x%" PRIx32 "\n",
+                  to_expand_fat_sector);
     err = fs_read_sector(fs->sd, &fs->fat, to_expand_fat_sector);
     if (err_is_fail(err)) {
         return err;
     }
 
+    fs->fat.dirty = true;
+
     uint32_t *to_expand_clus_fat = (uint32_t *)(fs->fat.virt
                                                 + get_offset_for_fat(fs, to_expand_clus));
     *to_expand_clus_fat = (new_clus & FAT_32_CLUSTER_ENTRY_MASK)
                           | (*to_expand_clus_fat & ~FAT_32_CLUSTER_ENTRY_MASK);
-
-    fs->fat.dirty = true;
 
     if (ret_clus) {
         *ret_clus = new_clus;
@@ -367,14 +381,15 @@ static errval_t fat32fs_expand(struct fat32_fs *fs, uint32_t to_expand_clus,
 }
 
 static errval_t fat32fs_get_free_dir_entry(struct fat32_fs *fs,
-                                           struct fat32fs_dirent *dirent, void **entry)
+                                           struct fat32fs_dirent *dirent, void **entry,
+                                           struct fat32fs_dir_pos *dir_pos)
 {
     errval_t err;
 
     struct fat32fs_dir_state *dir_state = &dirent->dir_state;
     bool end;
     do {
-        err = fat32fs_next_dir_entry(fs, dir_state, entry, &end);
+        err = fat32fs_next_dir_entry(fs, dir_state, entry, &end, dir_pos);
         if (err_is_fail(err)) {
             return err;
         }
@@ -398,7 +413,7 @@ static errval_t fat32fs_get_free_dir_entry(struct fat32_fs *fs,
         dir_state->entry = 0;
         dir_state->is_eof = false;
 
-        err = fat32fs_next_dir_entry(fs, dir_state, entry, &end);
+        err = fat32fs_next_dir_entry(fs, dir_state, entry, &end, dir_pos);
         if (err_is_fail(err)) {
             return err;
         }
@@ -409,8 +424,8 @@ static errval_t fat32fs_get_free_dir_entry(struct fat32_fs *fs,
 }
 
 static errval_t fat32fs_create_dirent(uint32_t clus, char *name, uint32_t parent_clus,
-                                      bool is_dir, uint32_t size,
-                                      struct fat32fs_dirent **ret_dirent)
+                                      struct fat32fs_dir_pos *parent_dir_pos, bool is_dir,
+                                      uint32_t size, struct fat32fs_dirent **ret_dirent)
 {
     struct fat32fs_dirent *dirent = calloc(1, sizeof(struct fat32fs_dirent));
     if (dirent == NULL) {
@@ -428,7 +443,8 @@ static errval_t fat32fs_create_dirent(uint32_t clus, char *name, uint32_t parent
     dirent->dir_state.entry = 0;
     dirent->dir_state.is_eof = false;
 
-    dirent->dir_clus = parent_clus;
+    dirent->parent_clus = parent_clus;
+    dirent->parent_dir_pos = *parent_dir_pos;
 
     *ret_dirent = dirent;
 
@@ -437,7 +453,8 @@ static errval_t fat32fs_create_dirent(uint32_t clus, char *name, uint32_t parent
 
 static errval_t fat32fs_create_dirent_from_entry(void *entry,
                                                  struct fat32fs_dirent **ret_dirent,
-                                                 char *name, uint32_t parent_clus)
+                                                 char *name, uint32_t parent_clus,
+                                                 struct fat32fs_dir_pos *parent_dir_pos)
 {
     uint32_t clus;
     fat32fs_read_entry_clus(entry, &clus);
@@ -453,14 +470,15 @@ static errval_t fat32fs_create_dirent_from_entry(void *entry,
         fat32fs_read_entry_file_size(entry, &size);
     }
 
-    return fat32fs_create_dirent(clus, name, parent_clus, is_dir, size, ret_dirent);
+    return fat32fs_create_dirent(clus, name, parent_clus, parent_dir_pos, is_dir, size,
+                                 ret_dirent);
 
     return SYS_ERR_OK;
 }
 
 static errval_t fat32fs_find_dirent_entry(struct fat32_fs *fs, uint32_t cluster,
                                           const char *name, void **ret_entry,
-                                          char **ret_name)
+                                          char **ret_name, struct fat32fs_dir_pos *dir_pos)
 {
     DEBUG_FAT32FS("fat32fs_find_dirent_entry begin start_clus: 0x%" PRIx32 "\n", cluster);
 
@@ -476,7 +494,7 @@ static errval_t fat32fs_find_dirent_entry(struct fat32_fs *fs, uint32_t cluster,
     bool end;
 
     do {
-        err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end);
+        err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end, dir_pos);
         if (err_is_fail(err)) {
             return err;
         }
@@ -530,12 +548,14 @@ static errval_t fat32fs_find_dirent(struct fat32_fs *fs, uint32_t cluster,
 
     void *entry;
     char *normal_name;
-    err = fat32fs_find_dirent_entry(fs, cluster, name, &entry, &normal_name);
+    struct fat32fs_dir_pos dir_pos;
+    err = fat32fs_find_dirent_entry(fs, cluster, name, &entry, &normal_name, &dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
 
-    err = fat32fs_create_dirent_from_entry(entry, ret_dirent, normal_name, cluster);
+    err = fat32fs_create_dirent_from_entry(entry, ret_dirent, normal_name, cluster,
+                                           &dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
@@ -589,7 +609,12 @@ static errval_t fat32fs_resolve_path(struct fs_mount *mount, const char *path,
 
         name[0] = '\0';
 
-        err = fat32fs_create_dirent(fs->root_clus, name, 0, true, 0, &next_dirent);
+        struct fat32fs_dir_pos root_dir_pos;
+        root_dir_pos.clus = 0;
+        root_dir_pos.sec = 0;
+        root_dir_pos.entry = 0;
+        err = fat32fs_create_dirent(fs->root_clus, name, 0, &root_dir_pos, true, 0,
+                                    &next_dirent);
         if (err_is_fail(err)) {
             return err;
         }
@@ -684,14 +709,15 @@ errval_t fat32fs_open(void *st, const char *path, fs_dirhandle_t *ret_handle)
 // TODO: Too many arguments
 static errval_t fat32fs_add_to_dir(struct fat32_fs *fs, struct fat32fs_dirent *dirent,
                                    uint32_t clus, const char *dir_entry_name, bool is_dir,
-                                   uint32_t size, void **ret_entry)
+                                   uint32_t size, void **ret_entry,
+                                   struct fat32fs_dir_pos *dir_pos)
 {
     errval_t err;
 
     // Add new directory to parent directory
     // Find free directory entry
     void *entry;
-    err = fat32fs_get_free_dir_entry(fs, dirent, &entry);
+    err = fat32fs_get_free_dir_entry(fs, dirent, &entry, dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
@@ -773,8 +799,10 @@ errval_t fat32fs_create(void *st, const char *path, fs_dirhandle_t *ret_handle)
         return err;
     }
 
+    struct fat32fs_dir_pos parent_dir_pos;
     void *entry;
-    err = fat32fs_add_to_dir(fs, parent_dirent, 0, dir_entry_name, false, 0, &entry);
+    err = fat32fs_add_to_dir(fs, parent_dirent, 0, dir_entry_name, false, 0, &entry,
+                             &parent_dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
@@ -782,7 +810,8 @@ errval_t fat32fs_create(void *st, const char *path, fs_dirhandle_t *ret_handle)
     free(dir_entry_name);
 
     struct fat32fs_dirent *dirent;
-    err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus);
+    err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus,
+                                           &parent_dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
@@ -797,11 +826,18 @@ errval_t fat32fs_create(void *st, const char *path, fs_dirhandle_t *ret_handle)
     return SYS_ERR_OK;
 }
 
-static bool fat32fs_right_clus(struct fat32_fs *fs, uint32_t des_pos, uint32_t depth)
+static bool fat32fs_is_despos_before_clus(struct fat32_fs *fs, uint32_t des_pos,
+                                          uint32_t depth)
 {
     uint32_t current_clus_pos = depth * get_bytes_per_clus(fs);
-    return des_pos >= current_clus_pos
-           && des_pos < current_clus_pos + get_bytes_per_clus(fs);
+    return des_pos < current_clus_pos;
+}
+
+static bool fat32fs_is_despos_after_clus(struct fat32_fs *fs, uint32_t des_pos,
+                                         uint32_t depth)
+{
+    uint32_t current_clus_pos = depth * get_bytes_per_clus(fs);
+    return current_clus_pos + get_bytes_per_clus(fs) <= des_pos;
 }
 
 static errval_t fat32fs_move_to_des_pos_clus(struct fat32_fs *fs,
@@ -810,23 +846,30 @@ static errval_t fat32fs_move_to_des_pos_clus(struct fat32_fs *fs,
 {
     errval_t err;
     *current_clus_pos = dirent->dir_state.depth * get_bytes_per_clus(fs);
-    if (!fat32fs_right_clus(fs, dirent->dir_state.des_pos, dirent->dir_state.depth)) {
+    if (fat32fs_is_despos_before_clus(fs, dirent->dir_state.des_pos,
+                                      dirent->dir_state.depth)) {
         dirent->dir_state.depth = 0;
         dirent->dir_state.clus = dirent->clus;
-        while (
-            !fat32fs_right_clus(fs, dirent->dir_state.des_pos, dirent->dir_state.depth)) {
-            assert(!fat32fs_is_clus_eof(dirent->dir_state.clus));
+    }
+    while (fat32fs_is_despos_after_clus(fs, dirent->dir_state.des_pos,
+                                        dirent->dir_state.depth)) {
+        assert(!fat32fs_is_clus_eof(dirent->dir_state.clus));
 
-            err = fat32fs_get_next_clus(fs, dirent->dir_state.clus,
-                                        &dirent->dir_state.clus);
-            if (err_is_fail(err)) {
-                return err;
-            }
-            ++dirent->dir_state.depth;
+        uint32_t next_clus;
+        err = fat32fs_get_next_clus(fs, dirent->dir_state.clus, &next_clus);
+        if (err_is_fail(err)) {
+            return err;
         }
 
-        *current_clus_pos = dirent->dir_state.depth * get_bytes_per_clus(fs);
+        if (fat32fs_is_clus_eof(next_clus)) {
+            return FS_ERR_INDEX_BOUNDS;
+        } else {
+            dirent->dir_state.clus = next_clus;
+        }
+        ++dirent->dir_state.depth;
     }
+
+    *current_clus_pos = dirent->dir_state.depth * get_bytes_per_clus(fs);
 
     return SYS_ERR_OK;
 }
@@ -883,7 +926,8 @@ errval_t fat32fs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_re
         return SYS_ERR_OK;
     }
 
-    DEBUG_FAT32FS("fat32fs_read size: %zu\n", dirent->size);
+    DEBUG_FAT32FS("fat32fs_read size: %zu, des_pos: %zu\n", dirent->size,
+                  dirent->dir_state.des_pos);
 
     size_t loc_bytes_read = 0;
     uint32_t bytes_left = dirent->size - dirent->dir_state.des_pos;
@@ -917,6 +961,26 @@ errval_t fat32fs_read(void *handle, void *buffer, size_t bytes, size_t *bytes_re
     return SYS_ERR_OK;
 }
 
+static errval_t fat32fs_get_dir_entry(struct fat32_fs *fs,
+                                      struct fat32fs_dir_pos *dir_pos, void **entry)
+{
+    errval_t err;
+
+    DEBUG_FAT32FS("fat32fs_get_dir_entry clus: 0x%" PRIx32 ", sec: 0x%" PRIx32
+                  ", entry: 0x%" PRIx32 "\n",
+                  dir_pos->clus, dir_pos->sec, dir_pos->entry);
+
+    uint32_t data_sector = dir_pos->sec + get_sector_for_data(fs, dir_pos->clus);
+    err = fs_read_sector(fs->sd, &fs->data, data_sector);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    *entry = fs->data.virt + dir_pos->entry;
+
+    return SYS_ERR_OK;
+}
+
 static errval_t fat32fs_add_first_clus_to_file(struct fat32_fs *fs,
                                                struct fat32fs_dirent *dirent)
 {
@@ -929,7 +993,10 @@ static errval_t fat32fs_add_first_clus_to_file(struct fat32_fs *fs,
     }
 
     void *entry;
-    err = fat32fs_find_dirent_entry(fs, dirent->dir_clus, dirent->name, &entry, NULL);
+    err = fat32fs_get_dir_entry(fs, &dirent->parent_dir_pos, &entry);
+    if (err_is_fail(err)) {
+        return err;
+    }
 
     fs->data.dirty = true;
 
@@ -954,7 +1021,7 @@ static errval_t fat32fs_update_file_size(struct fat32_fs *fs,
 
     // TODO: Cache upon creation
     void *entry;
-    err = fat32fs_find_dirent_entry(fs, dirent->dir_clus, dirent->name, &entry, NULL);
+    err = fat32fs_get_dir_entry(fs, &dirent->parent_dir_pos, &entry);
 
     fs->data.dirty = true;
 
@@ -983,12 +1050,8 @@ errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
     bool update_file_size = false;
     while (bytes > 0) {
         if (dirent->size == 0 && dirent->clus == 0) {
+            DEBUG_FAT32FS("fat32fs_write adding first clus\n");
             err = fat32fs_add_first_clus_to_file(fs, dirent);
-            if (err_is_fail(err)) {
-                return err;
-            }
-        } else if (fat32fs_is_clus_eof(dirent->dir_state.clus)) {
-            err = fat32fs_expand(fs, dirent->dir_state.clus, NULL);
             if (err_is_fail(err)) {
                 return err;
             }
@@ -996,7 +1059,18 @@ errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
 
         uint32_t current_clus_pos;
         err = fat32fs_move_to_des_pos_clus(fs, dirent, &current_clus_pos);
-        if (err_is_fail(err)) {
+        if (err_is_fail(err) && err_no(err) == FS_ERR_INDEX_BOUNDS) {
+            DEBUG_FAT32FS("fat32fs_write expanding\n");
+            err = fat32fs_expand(fs, dirent->dir_state.clus, NULL);
+            if (err_is_fail(err)) {
+                return err;
+            }
+
+            err = fat32fs_move_to_des_pos_clus(fs, dirent, &current_clus_pos);
+            if (err_is_fail(err)) {
+                return err;
+            }
+        } else if (err_is_fail(err)) {
             return err;
         }
 
@@ -1023,7 +1097,7 @@ errval_t fat32fs_write(void *handle, const void *buffer, size_t bytes,
         loc_bytes_written += chunk;
     }
 
-    DEBUG_FAT32FS("fat32fs_write size: %zu", dirent->size);
+    DEBUG_FAT32FS("fat32fs_write size: %zu\n", dirent->size);
 
     if (update_file_size) {
         err = fat32fs_update_file_size(fs, dirent);
@@ -1110,29 +1184,15 @@ errval_t fat32fs_close(void *handle)
     return SYS_ERR_OK;
 }
 
-static errval_t fat32fs_remove_dirent(void *st, const char *path, uint32_t clus)
+static errval_t fat32fs_remove_dirent(void *st, struct fat32fs_dirent *dirent)
 {
     errval_t err;
 
     struct fs_mount *mount = st;
     struct fat32_fs *fs = mount->state;
 
-    char *parent_path;
-    char *childname;
-    err = fat32fs_split_path(path, &parent_path, &childname);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    struct fs_handle *parent_fh;
-    err = fat32fs_resolve_path(st, parent_path, &parent_fh);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    struct fat32fs_dirent *parent_dirent = parent_fh->state;
     void *entry;
-    err = fat32fs_find_dirent_entry(fs, parent_dirent->clus, childname, &entry, NULL);
+    err = fat32fs_get_dir_entry(fs, &dirent->parent_dir_pos, &entry);
     if (err_is_fail(err)) {
         return err;
     }
@@ -1142,14 +1202,10 @@ static errval_t fat32fs_remove_dirent(void *st, const char *path, uint32_t clus)
 
     fs->data.dirty = true;
 
-    err = fat32fs_free_clus_chain(fs, clus);
+    err = fat32fs_free_clus_chain(fs, dirent->clus);
     if (err_is_fail(err)) {
         return err;
     }
-
-    free(parent_path);
-    free(childname);
-    fat32fs_close_handle(parent_fh);
 
     return SYS_ERR_OK;
 }
@@ -1170,7 +1226,7 @@ errval_t fat32fs_remove(void *st, const char *path)
 
     // FIXME: Check if busy
 
-    err = fat32fs_remove_dirent(st, path, dirent->clus);
+    err = fat32fs_remove_dirent(st, dirent);
     if (err_is_fail(err)) {
         return err;
     }
@@ -1197,7 +1253,6 @@ errval_t fat32fs_opendir(void *st, const char *path, fs_dirhandle_t *ret_handle)
         return FS_ERR_NOTDIR;
     }
 
-    // DEBUG_FAT32FS("fat32fs_opendir found start_clus: 0x%" PRIx32 "\n", dirent->clus);
     DEBUG_FAT32FS("fat32fs_opendir found start_clus: 0x%" PRIx32 ", clus: 0x%" PRIx32
                   ", sec: 0x%" PRIx32 ", entry: 0x%" PRIx32 "\n",
                   dirent->clus, dirent->dir_state.clus, dirent->dir_state.sec,
@@ -1252,8 +1307,8 @@ errval_t fat32fs_mkdir(void *st, const char *path)
         return err;
     }
 
-    // Needed, such that the provision that all first bytes of names after the first name
-    // starting with a zero byte are zero, is uphold
+    // Needed, such that the provision that all first bytes of names after the first
+    // name starting with a zero byte are zero, is uphold
     err = fat32fs_zero_cluster(fs, clus);
     if (err_is_fail(err)) {
         return err;
@@ -1267,7 +1322,9 @@ errval_t fat32fs_mkdir(void *st, const char *path)
     }
 
     void *entry;
-    err = fat32fs_add_to_dir(fs, parent_dirent, clus, dir_entry_name, true, 0, &entry);
+    struct fat32fs_dir_pos parent_dir_pos;
+    err = fat32fs_add_to_dir(fs, parent_dirent, clus, dir_entry_name, true, 0, &entry,
+                             &parent_dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
@@ -1275,18 +1332,20 @@ errval_t fat32fs_mkdir(void *st, const char *path)
     free(dir_entry_name);
 
     struct fat32fs_dirent *dirent;
-    err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus);
+    err = fat32fs_create_dirent_from_entry(entry, &dirent, childname, parent_dirent->clus,
+                                           &parent_dir_pos);
     if (err_is_fail(err)) {
         return err;
     }
 
-    err = fat32fs_add_to_dir(fs, dirent, clus, DOT_DIR_ENT_NAME, true, 0, NULL);
+    err = fat32fs_add_to_dir(fs, dirent, clus, DOT_DIR_ENT_NAME, true, 0, NULL, NULL);
+
     if (err_is_fail(err)) {
         return err;
     }
 
     err = fat32fs_add_to_dir(fs, dirent, parent_dirent->clus, DOTDOT_DIR_ENT_NAME, true,
-                             0, NULL);
+                             0, NULL, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -1325,7 +1384,7 @@ errval_t fat32fs_readdir(void *handle, char **retname)
         DEBUG_FAT32FS("fat32fs_readdir getting next entry\n");
 
         bool end;
-        err = fat32fs_next_dir_entry(fs, &dirent->dir_state, &entry, &end);
+        err = fat32fs_next_dir_entry(fs, &dirent->dir_state, &entry, &end, NULL);
         if (err_is_fail(err)) {
             return err;
         }
@@ -1390,7 +1449,7 @@ static errval_t fat32fs_check_if_dir_is_empty(struct fat32_fs *fs, uint32_t clus
 
     // The first two entries are defined to be "." and "..", and we are not in the
     // root directory
-    err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end);
+    err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -1402,7 +1461,7 @@ static errval_t fat32fs_check_if_dir_is_empty(struct fat32_fs *fs, uint32_t clus
         return FS_ERR_INVAL;
     }
 
-    err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end);
+    err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end, NULL);
     if (err_is_fail(err)) {
         return err;
     }
@@ -1411,7 +1470,7 @@ static errval_t fat32fs_check_if_dir_is_empty(struct fat32_fs *fs, uint32_t clus
     }
 
     while (!end) {
-        err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end);
+        err = fat32fs_next_dir_entry(fs, &dir_state, &entry, &end, NULL);
 
         if (*(uint8_t *)entry != FAT_32_ONLY_FREE_DIR_ENTRY
             && *(uint8_t *)entry != FAT_32_HOLE_DIR_ENTRY) {
@@ -1458,7 +1517,7 @@ errval_t fat32fs_rmdir(void *st, const char *path)
         return err;
     }
 
-    err = fat32fs_remove_dirent(st, path, dirent->clus);
+    err = fat32fs_remove_dirent(st, dirent);
     if (err_is_fail(err)) {
         return err;
     }

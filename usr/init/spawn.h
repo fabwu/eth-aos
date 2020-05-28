@@ -16,6 +16,8 @@ struct spawn_node {
 
 errval_t init_spawn_by_name(char *name, domainid_t *did);
 
+errval_t init_spawn_by_name_sdcard(const char *dir, const char *name, domainid_t *did);
+
 errval_t init_spawn_by_argv(int argc, char *argv[], domainid_t *did);
 
 void init_spawn_get_lmp_client_chan(domainid_t did, struct lmp_chan **chan);

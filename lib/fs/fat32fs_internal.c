@@ -40,17 +40,49 @@ static errval_t fs_init_sd(struct sdhc_s **sd)
     assert(IMX8X_SDHC_SIZE % BASE_PAGE_SIZE == 0);
     assert(IMX8X_SDHC2_BASE % BASE_PAGE_SIZE == 0);
 
-    struct aos_rpc *init_rpc = aos_rpc_get_init_channel();
+    struct capref device_register_capref = { .cnode = { .croot = CPTR_ROOTCN,
+                                                        .cnode = CPTR_TASKCN_BASE,
+                                                        .level = CNODE_TYPE_OTHER },
+                                             .slot = TASKCN_SLOT_DEV };
+
+
+    // FIXME: Use nicer check to see if we are init
+    struct capability device_register_cap;
+    err = cap_direct_identify(device_register_capref, &device_register_cap);
+    if (err_is_fail(err)) {
+        goto not_init;
+        return err_push(err, LIB_ERR_CAP_IDENTIFY);
+    }
+
+    struct capref device_register_frame_capref;
+    err = slot_alloc(&device_register_frame_capref);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_SLOT_ALLOC);
+    }
+
+    err = cap_retype(device_register_frame_capref, device_register_capref,
+                     IMX8X_SDHC2_BASE - get_address(&device_register_cap),
+                     ObjType_DevFrame, IMX8X_SDHC_SIZE, 1);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_CAP_RETYPE);
+    }
+
+    goto end;
+
+    struct aos_rpc *init_rpc;
+    void *device_register;
+not_init:
+    init_rpc = aos_rpc_get_init_channel();
     if (!init_rpc) {
         return AOS_ERR_RPC_GET_INIT_CHANNEL;
     }
 
-    struct capref device_register_frame_capref;
     err = aos_rpc_get_device_cap(init_rpc, IMX8X_SDHC2_BASE, IMX8X_SDHC_SIZE,
                                  &device_register_frame_capref);
     assert(err_is_ok(err));
 
-    void *device_register;
+end:
+
     err = paging_map_frame_attr(get_current_paging_state(), &device_register,
                                 IMX8X_SDHC_SIZE, device_register_frame_capref,
                                 VREGION_FLAGS_READ_WRITE_NOCACHE, NULL, NULL);
@@ -312,7 +344,7 @@ static int fs_is_illegal_character_dir_entry_name(char c)
 // FIXME: Handle path (Check if uppercase etc.)
 // FIXME: Raise error instead of asserts
 errval_t fs_normal_name_to_dir_entry_name(const unsigned char *normal_name,
-                                      unsigned char **ret_dir_entry_name)
+                                          unsigned char **ret_dir_entry_name)
 {
     unsigned char *dir_entry_name = malloc(sizeof(char) * FAT_32_MAX_BYTES_DIR_ENTRY_NAME);
     if (dir_entry_name == NULL) {

@@ -12,6 +12,9 @@
 #include <barrelfish_kpi/domain_params.h>
 #include <spawn/multiboot.h>
 #include <spawn/argv.h>
+#include <stdio.h>
+#include <fs/fs.h>
+#include <fs/dirent.h>
 
 #define L1_NODE_SLOT_OFFSET 50
 
@@ -296,8 +299,8 @@ static errval_t elf_alloc(void *state, genvaddr_t base, size_t size, uint32_t fl
     }
 
     DEBUG_SPAWN("Allocate ELF section at address %p with size %d and ELF flags 0x%x and "
-                 "frame flags 0x%x\n",
-                 base, size, flags, frame_flags);
+                "frame flags 0x%x\n",
+                base, size, flags, frame_flags);
 
     genvaddr_t aligned_base = ROUND_DOWN(base, BASE_PAGE_SIZE);
     size_t aligned_size = ROUND_UP(size + (base - aligned_base), BASE_PAGE_SIZE);
@@ -420,7 +423,7 @@ static errval_t spawn_dispatch(struct spawninfo *si, domainid_t pid)
     disp_gen->domain_id = pid;
     // Virtual address of the dispatcher frame in child’s VSpace
     disp->udisp = si->child_dispframe_map;
-    disp->disabled = 1;  // Start in disabled mode
+    disp->disabled = 1;                                   // Start in disabled mode
     strncpy(disp->name, si->binary_name, DISP_NAME_LEN);  // Dispatcher name for debugging
 
     // Set program counter (where it should start to execute)
@@ -442,7 +445,7 @@ static errval_t spawn_dispatch(struct spawninfo *si, domainid_t pid)
     disp_gen->eh_frame_hdr_size = 0;
 
     DEBUG_SPAWN("Dispatcher setup completed\n");
-    //dump_dispatcher(disp);
+    // dump_dispatcher(disp);
 
     struct capref vspace = { .cnode = si->page_cnode_ref, .slot = 0 };
     err = invoke_dispatcher(si->dispatcher, cap_dispatcher, si->cspace, vspace,
@@ -478,7 +481,8 @@ static errval_t spawn_free(struct spawninfo *si)
     return SYS_ERR_OK;
 }
 
-static errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
+static errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si,
+                                domainid_t *pid)
 {
     assert(argv[0]);
     errval_t err;
@@ -497,10 +501,11 @@ static errval_t spawn_load_argv(int argc, char *argv[], struct spawninfo *si, do
 
     // currently the location of the binary is given by si->module_base and si->module_size
     DEBUG_SPAWN("Located ELF binary at address %p with size %d\n", si->module_base,
-                 si->module_size);
+                si->module_size);
 
     uint8_t magic_number = *(uint8_t *)si->module_base;
-    DEBUG_SPAWN("ELF Magic number: 0x%hhx\n", magic_number);  // Required for assessment milestone2
+    DEBUG_SPAWN("ELF Magic number: 0x%hhx\n",
+                magic_number);  // Required for assessment milestone2
     if (magic_number != 0x7f) {
         return ELF_ERR_HEADER;
     }
@@ -571,7 +576,7 @@ static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char
     }
 
     DEBUG_SPAWN("Found image of type %d and size %d at paddress %p with data diff %d\n",
-                 module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
+                module->mr_type, module->mrmod_size, module->mr_base, module->mrmod_data);
 
     // spawn binary
     err = spawn_load_argv(argc, argv, si, pid);
@@ -588,6 +593,83 @@ static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char
     return SYS_ERR_OK;
 }
 
+static errval_t spawn_load_module_argv_sdcard(const char *dir, int argc, char *argv[],
+                                              struct spawninfo *si, domainid_t *pid)
+{
+    errval_t err;
+
+    // This might fail because of rpc
+    err = filesystem_init();
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    FILE *f;
+    f = fopen(dir, "r");
+    err = ferror(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_OPEN);
+    }
+
+    // FIXME: Make stat work, size should be large enough to allow for loading
+    // of a hello
+    struct fs_fileinfo finfo;
+    finfo.size = 600000;
+
+    void *buf = malloc(finfo.size);
+    if (buf == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+
+    size_t read;
+    read = fread(buf, 1, finfo.size, f);
+    err = ferror(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_READ);
+    }
+    assert(read < finfo.size);
+
+    finfo.size = read;
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+
+    si->module_size = finfo.size;
+    si->module_base = buf;
+
+    assert(argc > 0);
+
+    DEBUG_SPAWN("Found image of size %zu\n", finfo.size);
+
+    // spawn binary
+    err = spawn_load_argv(argc, argv, si, pid);
+    if (err_is_fail(err)) {
+        return err_push(err, SPAWN_ERR_LOAD_ARGV);
+    }
+
+    // free elf
+    free(buf);
+
+    return SYS_ERR_OK;
+}
+
+
+errval_t spawn_load_by_name_sdcard(const char *dir, const char *name,
+                                   struct spawninfo *si, domainid_t *pid)
+{
+    char **argv = malloc(sizeof(char *) * 2);
+    if (argv == NULL) {
+        return LIB_ERR_MALLOC_FAIL;
+    }
+    argv[0] = (char *)name;
+    argv[1] = NULL;
+
+    return spawn_load_module_argv_sdcard(dir, 1, argv, si, pid);
+}
+
+
 /**
  * \brief Spawn a new dispatcher executing argv[0]
  *
@@ -601,8 +683,7 @@ static errval_t spawn_load_module_argv(struct mem_region *module, int argc, char
  * \return Either SYS_ERR_OK if no error occured or an error
  * indicating what went wrong otherwise.
  */
-errval_t spawn_load_by_argv(int argc, char *argv[], struct spawninfo *si,
-                                 domainid_t *pid)
+errval_t spawn_load_by_argv(int argc, char *argv[], struct spawninfo *si, domainid_t *pid)
 {
     assert(argc > 0);
     assert(argv[0]);
