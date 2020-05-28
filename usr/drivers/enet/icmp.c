@@ -16,7 +16,10 @@ errval_t icmp_handle_package(struct icmp_echo_hdr *icmp, ip_addr_t src, uint16_t
     }
 
     ICMP_DEBUG("Handling echo request from 0x%x\n", src);
-    uint16_t checksum = inet_checksum(icmp, sizeof(struct icmp_echo_hdr));
+    ICMP_DEBUG("type=%d code=%d chksum=0x%x\n", icmp->type, icmp->code, ntohs(icmp->chksum));
+    ICMP_DEBUG("id=%d seqno=%d\n", ntohs(icmp->id), ntohs(icmp->seqno));
+
+    uint16_t checksum = inet_checksum((void *)icmp, size);
     if (checksum != 0) {
         ICMP_DEBUG("Invalid checksum: 0x%x\n", checksum);
     }
