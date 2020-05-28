@@ -19,8 +19,7 @@
 #include <aos/systime.h>
 #include <spawn/argv.h>
 
-
-nameservice_chan_t terminal_chan;
+static struct aos_rpc *process_rpc;
 
 #define MAX_LINE_SIZE   4096
 static char cmdline[MAX_LINE_SIZE + 1];
@@ -70,12 +69,6 @@ static void ps(void)
 {
     errval_t err;
 
-    struct aos_rpc *process_rpc = aos_rpc_get_process_channel();
-    if (!process_rpc) {
-        printf("failed to get process channel\n");
-        return;
-    }
-
     domainid_t *pids;
     size_t pid_count;
     err = aos_rpc_process_get_all_pids(process_rpc, &pids, &pid_count);
@@ -96,8 +89,26 @@ static void ps(void)
     }
 }
 
+static errval_t run_process(char **argv, char *argv_buf, int idx)
+{
+    errval_t err;
+
+    // find where the command starts
+    char *cmd = cmdline + (argv[idx] - argv_buf);
+
+    domainid_t pid;
+    coreid_t coreid = 0;
+    err = aos_rpc_process_spawn(process_rpc, cmd, coreid, &pid);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    return SYS_ERR_OK;
+}
+
 static void run_command(void)
 {
+    errval_t err;
     char **argv;
     char *argv_buf;
     int argc;
@@ -139,8 +150,11 @@ static void run_command(void)
     } else if (!strcmp(argv[idx], "ps")) {
         ps();
     } else {
-        printf("Unrecognized command (try 'help')\n");
-        goto out;
+        err = run_process(argv, argv_buf, idx);
+        if (err_is_fail(err)) {
+            printf("Unrecognized command (try 'help')\n");
+            goto out;
+        }
     }
 
     if (time) {
@@ -155,28 +169,17 @@ out:
 int main(int argc, char *argv[])
 {
     errval_t err;
+
+    process_rpc = aos_rpc_get_process_channel();
+    if (!process_rpc) {
+        printf("failed to get process channel\n");
+        return EXIT_FAILURE;
+    }
+
 #if 1
     char cmdline_fixed[100];
     coreid_t coreid = 1;
     domainid_t pid;
-
-    struct aos_rpc *process_rpc = aos_rpc_get_process_channel();
-    if (!process_rpc) {
-        printf("init RPC channel NULL?\n");
-        return EXIT_FAILURE;
-    }
-
-#if 0
-    memcpy(cmdline_fixed, "hello", strlen("hello") + 1);
-    printf("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
-    err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
-    if (err_is_fail(err)) {
-        printf("starting '%s' failed.\n", cmdline_fixed);
-        return EXIT_FAILURE;
-    }
-    printf("'%s' started successfully\n", cmdline_fixed);
-#endif
-
     memcpy(cmdline_fixed, "nameservicetest", strlen("nameservicetest") + 1);
     printf("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
     err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
