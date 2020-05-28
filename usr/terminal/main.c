@@ -199,7 +199,7 @@ int main(int argc, char *argv[])
     assert(err_is_ok(err));
 
     /* notify init that the terminal driver is ready to use */
-    err = lmp_protocol_send0(get_init_server_chan(), AOS_RPC_TERMINAL_READY);
+    err = lmp_protocol_send0(get_init_aos_rpc_chan(), AOS_RPC_TERMINAL_READY);
     assert(err_is_ok(err));
 
     while (1) {

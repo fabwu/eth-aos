@@ -12,7 +12,7 @@
 
 #include <hashtable/hashtable.h>
 
-#if 1
+#if 0
 #    define DEBUG_NS(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_NS(fmt...) ((void)0)
@@ -216,9 +216,8 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
 
     struct lmp_chan *chan = get_init_client_chan();
     struct nameservice_chan *nschan = (struct nameservice_chan *)nschan_ref;
-    domainid_t server = nschan->rpc.recv_id;
 
-    DEBUG_NS("Sending rpc to service %s running at DID %p\n", nschan->name, server);
+    DEBUG_NS("Sending rpc to service %s running at DID %p\n", nschan->name, nschan->rpc.recv_id);
 
     // allocate send buffer
     size_t name_bytes = strlen(nschan->name) + 1;

@@ -392,6 +392,9 @@ static void rpc_aos_rpc_handler(void *arg)
         case AOS_RPC_PROCESS_EXIT:
             process_handle_lmp_request(message_type, &msg, chan);
             break;
+        case AOS_RPC_TERMINAL_READY:
+            terminal_service_ready = 1;
+            break;
         default:
             debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
         }
