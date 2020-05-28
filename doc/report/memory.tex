@@ -166,40 +166,40 @@ And additionally there is no hierarchy of ram capabilities to keep track of,
 making \verb|cap_retype| simple to implement, just subtract the base of capnode
 and one is set.
 
---- End ---
-
-Datastructures of memory manager:
-\begin{itemize}
-	\item Linked list of boot info ram chunks, provides the capabilities off which
-				everything else is split, not intermediaries
-	\item Linked list of all memory ranges, in ascending order of adderss
-	\item Avl tree of free memory ranges, indexed by their size
-	\item Avl tree of allocated memory ranges, indexed by their address
-\end{itemize}
-
-The linked list of all nodes in ascending order of address can be managed with
-O(1) operations, and allows for easy fusing of memory ranges, if for example an
-allocated memory range gets freed, and there is an adjacent free on.
-
-The avl tree of allocatee memory ranges, indexed by their address, is need
-because we only get the adress to free, but not the size, so thats for
-remembering the size of a certain memory range.
-
-The avl tree of free memory ranges, indexed by ther size, allows for fast
-lookup when allocating memory, one just for the least element that's greater or
-euqal to the size requested.
-
-Steps taken in implementation:
-\begin{itemize}
-	\item Used multiple linked list initially to manage memory.
-				Which was actually not too bad, because if memory is not freed, we can
-				just chop off of the large object, having allocation in O(1), better than
-				with trees (But only if the threes are badly done, as in this case the
-				free avl tree also only contains one node, is basically also O(1)).
-				Freeing is whole other story, as searching for the address to free is O(n).
-	\item Changed later on to avl tree, when paging became too slow, memory was first to switch
-	\item Fuses memory with adjacent free memory upon return
-\end{itemize}
+% TODO: Potentially more material
+% 
+% Datastructures of memory manager:
+% \begin{itemize}
+% 	\item Linked list of boot info ram chunks, provides the capabilities off which
+% 				everything else is split, not intermediaries
+% 	\item Linked list of all memory ranges, in ascending order of adderss
+% 	\item Avl tree of free memory ranges, indexed by their size
+% 	\item Avl tree of allocated memory ranges, indexed by their address
+% \end{itemize}
+% 
+% The linked list of all nodes in ascending order of address can be managed with
+% O(1) operations, and allows for easy fusing of memory ranges, if for example an
+% allocated memory range gets freed, and there is an adjacent free on.
+% 
+% The avl tree of allocatee memory ranges, indexed by their address, is need
+% because we only get the adress to free, but not the size, so thats for
+% remembering the size of a certain memory range.
+% 
+% The avl tree of free memory ranges, indexed by ther size, allows for fast
+% lookup when allocating memory, one just for the least element that's greater or
+% euqal to the size requested.
+% 
+% Steps taken in implementation:
+% \begin{itemize}
+% 	\item Used multiple linked list initially to manage memory.
+% 				Which was actually not too bad, because if memory is not freed, we can
+% 				just chop off of the large object, having allocation in O(1), better than
+% 				with trees (But only if the threes are badly done, as in this case the
+% 				free avl tree also only contains one node, is basically also O(1)).
+% 				Freeing is whole other story, as searching for the address to free is O(n).
+% 	\item Changed later on to avl tree, when paging became too slow, memory was first to switch
+% 	\item Fuses memory with adjacent free memory upon return
+% \end{itemize}
 
 \section{Fragmentation}
 
@@ -224,48 +224,99 @@ This makes answering if there is a large enough memory range simple, as what
 can be fused is fused.
 We did not further investigate if this is detrimental to external fragmentation.
 
---- END ---
+% TODO: Potentially more material
+% 
+% Fragmentation:
+% \begin{itemize}
+% 	\item Allocations always multiples of BASE\_PAGE\_SIZE
+% 	\begin{itemize}
+% 		\item Easy to fulfill requests with alignment <= BASE\_PAGE\_SIZE
+% 		\item Reduces number of differen size held in avl tree of free memory ranges
+% 		\item Should also reduce the amount of external fragmentation into the system
+% 	\end{itemize}
+% \end{itemize}
+% 
+% % We painted us a bit in a corner by not requiring to have capability as an
+% % argument to mm_free
+% Problems with lib/aos/capabilites.c:frame\_create, because it destroys the ram\_cap
+% immediately. Not really, we could just as well have passed through frame cap.
+% 
+% Memory server, deletes cap as soon as sent off, not requiring cap makes for lighter
+% free.
 
-Fragmentation:
-\begin{itemize}
-	\item Allocations always multiples of BASE\_PAGE\_SIZE
-	\begin{itemize}
-		\item Easy to fulfill requests with alignment <= BASE\_PAGE\_SIZE
-		\item Reduces number of differen size held in avl tree of free memory ranges
-		\item Should also reduce the amount of external fragmentation into the system
-	\end{itemize}
-\end{itemize}
+\section{Reentrancy and Concurrency}\label{mem-con}
 
-% We painted us a bit in a corner by not requiring to have capability as an
-% argument to mm_free
-Problems with lib/aos/capabilites.c:frame\_create, because it destroys the ram\_cap
-immediately. Not really, we could just as well have passed through frame cap.
+The memory manager needs to be able to pull himself out of a ditch by it's own
+hair (see Münchhausen).
+To do that, it needs to always have enough ressources in reserve to build out
+its datastructures without needing to build out its datastructures.
 
-Memory server, deletes cap as soon as sent off, not requiring cap makes for lighter
-free.
-
-\section{Concurrency}\label{mem-con}
-
-A reserve of 32 has so far deemed to be large enough to serve every
-slab/slot\_allocator refill recursion loop we have encountered
+That's we use separate \verb|slab_allocator|'s, which we refill when we reach a
+certain watermark.
+A watermark of 32 nodes each for the tree and all list has so far proven to be
+enough.
 We werent able to verify this reserve staticly because of the complexity of the
 \verb|lib/aos/slot_alloc| construct, especially with it's
 \verb|twolevel_slot_alloc.c|.
-
 That's also the reason why we only use the global slot\_allocator, not like with
 the slabs, where we have separate slabs for the memory manager.
 via \verb|lib/mm/mm.c:mm_add|.
+Also that watermark refilling needs to be locked, and needs to be less or equal,
+or else the refilling might not trigger early enough, or multiple times.
+For the \verb|slot_allocator|, we assume it itself keeps enough reserves to build
+itself, as it doesn't provide any method to check it's free slots, allows for
+explicit refill.
 
-Slab\_alloc can't trigger reentrancy, because it is explicitly filled. Slot\_alloc
-in contrast can trigger unwanted reentrancy.
+Also, to build out it's datastructures, it needs to call \verb|ram_alloc| while
+it's still in a ram alloc.
+E.g. the code needs to handle reentrancy, a form of concurrency, correctly.
 
-Have lock which guarantees invariant that critical sections are reentrancy free.
-If not, we get a deadlock, and have an early warning that our critical section
-is not reentrancy free anymore.
+For that we need to identify sections of code, so called critical sections, that
+can't handle being preemted, another request running through concurrently, then
+resuming.
+This is for example the case when we for alloc have a suiting avl node, then
+would get preemted, get that suiting avl node snatched away, but we being
+oblivious to that, stil continue with that avl node, corrupting the
+datastructures.
+
+Having identified the critical sections, we move out all calls that might to
+reentrancy, for an isr that would be equivalent to disable interrupts.
+That's why having avl trees not manage their own memory is so critical,
+otherwise we wouldn't be able to write correct code.
+To make sure we didn't miss a call, and to explicitly state this invariant, the
+critical sections are guarded by the \verb|alloc_mutex|.
+We call this type of not explicitly needed mutexes a canary mutex, and like a
+canary in a mine, it would warn us if something changed in the system that we
+did not anticipate, by leading to a deadlock, locking up the system.
 It would also have been nice if lib/aos/thread\_sync.c:thread\_mutex\_lock would
 have an assert checking if the same thread id retakes the lock, which would
 always be a deadlock condition.
 
+% --- End ---
+% 
+% A reserve of 32 has so far deemed to be large enough to serve every
+% slab/slot\_allocator refill recursion loop we have encountered
+% 
+% Slab\_alloc can't trigger reentrancy, because it is explicitly filled. Slot\_alloc
+% in contrast can trigger unwanted reentrancy.
+% 
+% Have lock which guarantees invariant that critical sections are reentrancy free.
+% If not, we get a deadlock, and have an early warning that our critical section
+% is not reentrancy free anymore.
+
 \section{Limitations}
 
-Support for at most one memory region coming from the boot info.
+We only support for at most one memory region coming from the boot info.
+
+In case of an error, we might not fully clean up after us.
+This shouldn't invalidate our invariants, but might reduce the amount of memory
+effectively usable.
+
+We do not get a ram cap when freeing, which was already so in the original hand
+out.
+So we are not sure when freeing ram if the one freeing is really owner of the
+freed memory range.
+
+The implementation should work correctly until \verb|slab_default_refill| errors,
+because the code assumes \verb|slab_alloc| always works, this would trigger an
+assert on a later alloc.
