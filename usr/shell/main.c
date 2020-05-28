@@ -155,7 +155,7 @@ out:
 int main(int argc, char *argv[])
 {
     errval_t err;
-#if 0
+#if 1
     char cmdline_fixed[100];
     coreid_t coreid = 1;
     domainid_t pid;
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
     printf("'%s' started successfully\n", cmdline_fixed);
 #endif
 
-    memcpy(cmdline_fixed, "memeater", strlen("memeater") + 1);
+    memcpy(cmdline_fixed, "nameservicetest", strlen("nameservicetest") + 1);
     printf("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
     err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
     if (err_is_fail(err)) {

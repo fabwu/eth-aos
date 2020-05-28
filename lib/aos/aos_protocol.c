@@ -1,6 +1,6 @@
 #include <aos/aos_protocol.h>
 
-#if 1
+#if 0
 #    define DEBUG_AOS_PROTOCOL(fmt...) debug_printf(fmt);
 #else
 #    define DEBUG_AOS_PROTOCOL(fmt...) ((void)0)
@@ -50,10 +50,10 @@ struct aos_chan make_aos_chan_ump(domainid_t local_pid, domainid_t remote_pid)
 static void aos_protocol_dispatch_ump(uint8_t *buf)
 {
     domainid_t pid = (domainid_t)((uint64_t *)buf)[0];
-    uintptr_t message_type = (domainid_t)((uint64_t *)buf)[1];
-    DEBUG_AOS_PROTOCOL("Received ump message 0x%x for pid %d\n", message_type, pid);
+    DEBUG_AOS_PROTOCOL("Received ump message 0x%x for pid %d\n", (domainid_t)((uint64_t *)buf)[1], pid);
     struct ump_event_node *parent = NULL;
     struct ump_event_node *current = head;
+
     while (current != NULL && current->target_pid != pid) {
         parent = current;
         current = current->next;
@@ -61,7 +61,7 @@ static void aos_protocol_dispatch_ump(uint8_t *buf)
 
     if (current == NULL) {
         DEBUG_AOS_PROTOCOL("ERROR: Could not handle ump message 0x%x for pid %d\n",
-                           message_type, pid);
+                           (domainid_t)((uint64_t *)buf)[1], pid);
         return;
     }
 
@@ -145,17 +145,17 @@ static errval_t aos_protocol_recv_state(domainid_t pid, struct ump_msg_state *st
     return aos_protocol_wait_for(&state->done);
 }
 
-errval_t aos_protocol_send(struct aos_chan *chan, uint16_t message_type, struct capref cap,
+errval_t aos_protocol_send(struct aos_chan *chan, uint64_t header, struct capref cap,
                            uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)
 {
     if (chan->is_lmp) {
-        return lmp_protocol_send(chan->lmp, message_type, cap, arg1, arg2, arg3);
+        return lmp_protocol_send(chan->lmp, header, cap, arg1, arg2, arg3);
     }
     assert(capref_is_null(cap));
 
     uint64_t buf[5];
     buf[0] = (((uint64_t)chan->local_pid) << 32) | chan->remote_pid;
-    buf[1] = message_type;
+    buf[1] = header;
     buf[2] = arg1;
     buf[3] = arg2;
     buf[4] = arg3;

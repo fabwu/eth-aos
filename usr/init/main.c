@@ -38,7 +38,7 @@
 #define INIT_EXECUTE_MEMORYTEST 0
 #define INIT_EXECUTE_FS 0
 #define INIT_EXECUTE_SPAWNTEST 0
-#define INIT_EXECUTE_NAMESERVICETEST 0
+#define INIT_EXECUTE_NAMESERVICETEST 1
 #define INIT_EXECUTE_SHELL 1
 #define INIT_EXECUTE_ENET 0
 
@@ -263,11 +263,11 @@ static int bsp_main(int argc, char *argv[])
     grading_test_late();
 
     aos_protocol_set_ump(&ump);
+    rpc_ump_start_handling();
     lmp_protocol_set_ump_dispatch(true);
 
     // dispatch messages forever
-    err = rpc_dispatch();
-
+    aos_protocol_wait_for(NULL);
     return EXIT_SUCCESS;
 }
 
@@ -360,15 +360,12 @@ static int app_main(int argc, char *argv[])
 
     grading_test_late();
 
-//    domainid_t did;
-//    init_spawn_by_name("nameservicetest", &did);
-
     aos_protocol_set_ump(&ump);
     rpc_ump_start_handling();
     lmp_protocol_set_ump_dispatch(true);
 
     // dispatch messages forever
-    err = rpc_dispatch();
+    aos_protocol_wait_for(NULL);
 
     return EXIT_SUCCESS;
 }

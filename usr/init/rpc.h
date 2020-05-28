@@ -26,7 +26,6 @@
 
 void rpc_ump_start_handling(void);
 errval_t rpc_create_child_channel_to_init(struct lmp_chan *chan);
-errval_t rpc_dispatch(void);
 extern struct aos_ump ump;
 
 #endif

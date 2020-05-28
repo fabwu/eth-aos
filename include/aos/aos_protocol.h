@@ -29,7 +29,7 @@ void aos_protocol_set_ump(struct aos_ump *ump);
 errval_t aos_protocol_wait_for(bool *ready_bit);
 
 errval_t aos_protocol_register_recv(domainid_t pid, struct callback callback);
-errval_t aos_protocol_send(struct aos_chan *chan, uint16_t message_type,
+errval_t aos_protocol_send(struct aos_chan *chan, uint64_t header,
                            struct capref cap, uintptr_t arg1, uintptr_t arg2,
                            uintptr_t arg3);
 
