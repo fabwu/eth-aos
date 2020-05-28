@@ -68,6 +68,15 @@ errval_t nameservice_deregister(const char *name);
  */
 errval_t nameservice_lookup(const char *name, nameservice_chan_t *chan);
 
+/**
+ * @brief lookup a service and return domain id
+ *
+ * @param name  name to lookup
+ * @param did   domain id of service
+ *
+ * @return SYS_ERR_OK on success, LIB_ERR_NS_LOOKUP if not found
+ */
+errval_t nameservice_lookup_did(const char *name, domainid_t *did);
 
 /**
  * @brief enumerates all entries that match an query (prefix match)

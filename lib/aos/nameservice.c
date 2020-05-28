@@ -528,6 +528,26 @@ errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan_ref)
     return SYS_ERR_OK;
 }
 
+errval_t nameservice_lookup_did(const char *name, domainid_t *did)
+{
+    errval_t err;
+    nameservice_chan_t chan_ref;
+
+    err = nameservice_lookup(name, &chan_ref);
+    if(err_is_fail(err)) {
+        return err;
+    }
+    assert(chan_ref != NULL);
+
+    struct nameservice_chan *chan = (struct nameservice_chan *)chan_ref;
+
+    *did = chan->rpc.recv_id;
+
+    free(chan);
+
+    return SYS_ERR_OK;
+}
+
 /**
  * @brief enumerates all entries that match an query (prefix match)
  *

@@ -35,7 +35,8 @@ void process_handle_lmp_request(uintptr_t message_type, struct lmp_recv_msg *msg
         case AOS_RPC_PROCESS_SPAWN:
             err = process_spawn_rpc(&chan, (coreid_t)msg->words[1]);
             if (err_is_fail(err)) {
-                DEBUG_ERR(err, "Failed to spawn process in process_spawn_rpc()");
+                // Silence for demo
+                //DEBUG_ERR(err, "Failed to spawn process in process_spawn_rpc()");
             }
             break;
         case AOS_RPC_PROCESS_GET_ALL_PIDS:

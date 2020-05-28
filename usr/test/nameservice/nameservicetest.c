@@ -152,11 +152,13 @@ static void run_server(void)
     err = nameservice_deregister(SERVICE_NAME_3);
     PANIC_IF_FAIL(err, "failed to deregister...\n");
 
-    //    domainid_t did;
+#if 0
+    domainid_t did;
     debug_printf("spawning test binary '%s'\n", TEST_BINARY);
-    //    err = aos_rpc_process_spawn(get_init_rpc(), TEST_BINARY " a", disp_get_core_id(),
-    //                                &did);
+    err = aos_rpc_process_spawn(get_init_rpc(), TEST_BINARY " a", disp_get_core_id(),
+                                &did);
     PANIC_IF_FAIL(err, "failed to spawn test\n");
+#endif
 
     while (1) {
         event_dispatch(get_default_waitset());
@@ -171,7 +173,7 @@ static void run_server(void)
 
 int main(int argc, char *argv[])
 {
-    if (disp_get_core_id() == 1) {
+    if (argc == 2) {
         debug_printf("nameservicetest: running client!\n");
         run_client();
     } else {

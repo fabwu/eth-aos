@@ -146,7 +146,7 @@ static errval_t handle_lookup(char *name, domainid_t server_did)
         did = entry->did;
         success = SYS_ERR_OK;
     } else {
-        DEBUG_PRINTF("Couldn't find service %s\n", name);
+        DEBUG_NS("Couldn't find service %s\n", name);
         success = LIB_ERR_NS_LOOKUP;
     }
 

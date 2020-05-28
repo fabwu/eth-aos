@@ -107,6 +107,23 @@ static errval_t run_process(char **argv, char *argv_buf, int idx)
     return SYS_ERR_OK;
 }
 
+static void nslookup(char *name)
+{
+    errval_t err;
+    printf("Looking up PID of service '%s'...\n", name);
+    domainid_t did;
+    err = nameservice_lookup_did(name, &did);
+
+    if (err_is_fail(err)) {
+        printf("\033[1;31mError\033[0m Couldn't find entry for service %s\n", name);
+        return;
+    }
+
+    printf("\033[0;32mSuccess\033[0m Service '%s' is running at PID %p\n", name, did);
+
+    return;
+}
+
 static void run_command(void)
 {
     errval_t err;
@@ -158,6 +175,8 @@ static void run_command(void)
         if (err_is_fail(err)) {
             printf("Failed to print arp table\n");
         }
+    } else if (!strcmp(argv[idx], "nslookup") && argc == 2) {
+        nslookup(argv[idx + 1]);
     } else {
         err = run_process(argv, argv_buf, idx);
         if (err_is_fail(err)) {
@@ -185,7 +204,8 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-#if 1
+// @Kristina Use this code if you want to spawn a process on core 0
+#if 0
     char cmdline_fixed[100];
     coreid_t coreid = 1;
     domainid_t pid;
