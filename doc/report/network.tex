@@ -1,0 +1,24 @@
+\chapter{Network}
+
+Interface / API
+
+General architecture
+One of the design goals in the networking project was to reduce copying of data and therefore passing a reference into the same ethernet frame between the network protocol. Another goal was to keep the number of mallocs low and allocate on the stack whenever possible. This should simplify resource management and reduce the amount of bugs.
+
+An important design decison was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed principle when e.g. adding a new protocol. The advantages are, that the
+
+That beeing said, we made it a goal to separate the code for the different protocols: Each network protocol has an own file and a clearly defined interface for interacing with other protocols. For example the ip protocol has its own header and source file and all the ip code is inside those files. When calling functions to send ip packages, the code of the ip protocol will call functions of the ethernet implementation to send ip packages over ethernet frames.
+
+Nameserver interaction
+
+Ethernet
+
+Arp
+
+IP
+
+Icmp
+
+UDP
+UDP Checksum
+To calculate the udp checksum we extended the checksum functionality with the function $inet_checksum_ip_pseudo$ which also takes the pointer to the start of the ip header. The udp checksum requires 
