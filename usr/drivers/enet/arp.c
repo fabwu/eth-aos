@@ -135,7 +135,7 @@ struct eth_addr *arp_lookup_ip(ip_addr_t ip)
 void arp_print_cache(void)
 {
     printf("ARP Cache:\n");
-    printf("Address   HWAddress\n");
+    printf("HWAddress            IPAddress\n");
 
     if (collections_hash_traverse_start(state.cache) <= 0) {
         return;
@@ -149,10 +149,10 @@ void arp_print_cache(void)
             break;
         }
 
-        printf("%d.%d.%d.%d    %02x:%02x:%02x:%02x:%02x:%02x\n", (ip_addr_t)ip >> 24,
-               ((ip_addr_t)ip >> 16) & 0xff, ((ip_addr_t)ip >> 8) & 0xff,
-               (ip_addr_t)ip & 0xff, eth->addr[0], eth->addr[1], eth->addr[2],
-               eth->addr[3], eth->addr[4], eth->addr[5]);
+        printf("%02x:%02x:%02x:%02x:%02x:%02x    %d.%d.%d.%d\n", eth->addr[0],
+               eth->addr[1], eth->addr[2], eth->addr[3], eth->addr[4], eth->addr[5],
+               (ip_addr_t)ip >> 24, ((ip_addr_t)ip >> 16) & 0xff,
+               ((ip_addr_t)ip >> 8) & 0xff, (ip_addr_t)ip & 0xff);
     }
 
     collections_hash_traverse_end(state.cache);

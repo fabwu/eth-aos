@@ -16,6 +16,7 @@
 #include <aos/aos.h>
 #include <aos/aos_rpc.h>
 #include <aos/nameservice.h>
+#include <aos/netservice.h>
 #include <aos/systime.h>
 #include <spawn/argv.h>
 
@@ -131,10 +132,12 @@ static void run_command(void)
 
     if (!strcmp(argv[idx], "help")) {
         printf("Usage:\n");
+        printf("arp             - print arp table\n");
         printf("echo            - display a line of text\n");
         printf("led [on|off]    - turn the LED on/off\n");
         printf("ps              - list current processes\n");
         printf("time [cmd]      - time a command\n");
+        printf("udpecho [port]  - start udp echo server\n");
     } else if (!strcmp(argv[idx], "echo")) {
         for (int i = idx + 1; i < argc; i++) {
             printf("%s ", argv[i]);
@@ -149,6 +152,11 @@ static void run_command(void)
         }
     } else if (!strcmp(argv[idx], "ps")) {
         ps();
+    } else if (!strcmp(argv[idx], "arp")) {
+        err = netservice_arp_print_cache();
+        if (err_is_fail(err)) {
+            printf("Failed to print arp table\n");
+        }
     } else {
         err = run_process(argv, argv_buf, idx);
         if (err_is_fail(err)) {
