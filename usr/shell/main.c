@@ -90,7 +90,7 @@ static void ps(void)
             printf("failed to get name of process 0x%lx\n", pids[i]);
             return;
         }
-        printf("%s%*llx%8u\n", name, (20 - strlen(name)), pids[i], (pids[i] >> 24) & 0xff);
+        printf("%s%*llx%8u\n", name, (20 - strlen(name)), pids[i], (pids[i] >> 12) & 0xff);
     }
 }
 
