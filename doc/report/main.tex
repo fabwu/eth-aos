@@ -17,6 +17,8 @@
 \usepackage{biblatex}
 \addbibresource{main.bib}
 
+\usepackage{listings}
+
 \begin{document}
 
 \title{Advanced Operating Systems - Report}
@@ -51,35 +53,7 @@ TODO: Explain the changes in the paging interface to the given interface
 
 TODO: Maybe document our difficulties that address to params has to be passed in x0 register
 
-\chapter{Message passing}
-
-\section{channel setup init <-> child}
-
-\begin{enumerate}
-    \item in \verb|create_child_channel| (spawn.c) register
-    \verb|recv_setup_closure| from init
-    (used to receive initial ep from child)
-
-    \item in init.c (called before each thread): 
-        \begin{itemize}
-            \item create child endpoint i.e channel for this child (we are already in child)
-            \item register \verb|receive_init_closure| (used to save ep received from init)
-            \item send child ep to init and wait until
-            \verb|receive_init_closure| get called
-        \end{itemize}
-    \item \verb|recv_setup_closure| gets called:
-        \begin{itemize} 
-            \item save child ep in init channel struct (\verb|lmp_chan|)
-            \item send message to child that channel is ready (in
-            \verb|rpc_send_setup_closure|
-        \end{itemize}
-    \item \verb|barrelfish_recv_init_closure| gets called on the child side
-        \begin{itemize}
-            \item child is now ready to communicate with init
-            \item on child side continue after recv init success
-            \item init is now dispatching events in \verb|recv_regular_closure|
-        \end{itemize}
-\end{enumerate}
+\input{milestone3.tex}
 
 \chapter{Page fault handling}
 

@@ -1,0 +1,104 @@
+\chapter{Milestone 3 - (Lightweight) Message Passing}
+
+Documented here is how we designed and implemented the LMP (Lightweight Message Passing) during milestone 3 and some of the improvements we made later on. The changes made in the individual project nameserver are documented in their own chapter. The nameserver project made an overhaul on the LMP and the final code base might look substentially different than what is documented here.
+
+\section{Architecture / Design}
+
+\subsection{Init Monolith vs. Many Services}
+
+One of the first big design decisions in this milestone was, where to run the different services. There were the terminal service and memory service that had to be implemented during this milestone and we knew that later on we had to have a process management service. We considered two options: Running all of those services in the init domain or separating them and starting an own domain for each service.
+
+Disadvantages for a monolithic init:
+\begin{itemize}
+    \item Complexity: Having all the services in init instead of separating them means more complexity. The interfaces between different services are not that well defined and it is harder to maintain and test a monolith.
+\end{itemize}
+
+Advanteges for a monolithic init:
+\begin{itemize}
+    \item Performance: Having all the services run in the same domain and on the same thread means less context switches and when staying in init no context switches at all.
+    \item Easier to develop: Adding the services to init meant we did not have to rewrite any of the working functionality inside of init but could just provide an interface for other applications.
+\end{itemize}
+
+We decided to implement the monolithic init. We did so mainly because we considered it way easier and faster to implement. Moving for example the memory service out of init meant that we would request memory from that service in init and we were at that point not confident that we could handle all the entailing problems in time for the milestone submission.
+
+\section{Channel Setup - Child and Init}
+
+One of the first tasks we had to handle was setting up the communication between init and child domains after spawning them. The following explains how we handled this during milestone 3.
+
+We passed the init endpoint at a well known location in the childs task cnode when spawning the child. Afterwards we setup the communication between child and init by passing the childs endpoint to init and then sending a confirmation message from init to the child. The child only starts running from its main function after receiving this confirmation from init. The following describes these steps in more detail with some implementation details:
+
+\begin{enumerate}
+    \item When spawning a new child: Pass init endpoint in task cnode in slot defined by constant \verb|TASKCN_SLOT_INITEP| using \verb|cap_copy|. This is done in the function \verb|spawn_child_cspace_set_initep| in \verb|lib/spawn/spawn.c|.
+    \item In \verb|create_child_channel| (spawn.c) register
+    \verb|recv_setup_closure| from init
+    (used to receive initial ep from child)
+    \item in init.c (called before each thread):
+        \begin{itemize}
+            \item create child endpoint i.e channel for this child (we are already in child)
+            \item register \verb|receive_init_closure| (used to save ep received from init)
+            \item send child ep to init and wait until
+            \verb|receive_init_closure| get called
+        \end{itemize}
+    \item \verb|recv_setup_closure| gets called:
+        \begin{itemize} 
+            \item save child ep in init channel struct (\verb|lmp_chan|)
+            \item send message to child that channel is ready (in \verb|rpc_send_setup_closure|)
+        \end{itemize}
+    \item \verb|barrelfish_recv_init_closure| gets called on the child side
+        \begin{itemize}
+            \item child is now ready to communicate with init
+            \item on child side continue after recv init success
+            \item init is now dispatching events in \verb|recv_regular_closure|
+        \end{itemize}
+\end{enumerate}
+
+\section{Realisations and Improvements}
+
+When revising our work after finishing milestone 3 we realised that we had a lot of code duplication in the LMP channel handling. Having multiple functions of setting up a closure, registering receive closures, re-registering closures upon transient failure and so on only to set a flag seemed overcomplicated. So we wanted something to make it easier to write LMP code by abstracting away from the provided bare LMP channel functionality.
+
+We also noticed that we experienced a lot of stack ripping as it was described in the book. Following the logic of the communication was made harder as for each message that was sent or received a closure has to be built and registered. The logic of a single RPC call was in init spread over several functions and hard to track.
+
+In the child (in \verb|lib/aos/aos_rpc.c|) some effort was already made in that direction. There the RPC functions had to be blocking, which already required some abstraction. By providing the functions \verb|aos_rpc_lmp_send| and \verb|aos_rpc_lmp_call| as an interface for the RPC functions the LMP channel plumbing could be somewhat abstracted away.
+
+Based on this idea a general LMP interface was developed, which hides all the underlying work with closure and provides a simple blocking interface which was then used by the child (in \verb|lib/aos/aos_rpc.c|) and in init (\verb|usr/init/rpc.c|). The following section describes this new abstraction layer in more detail:
+
+\subsection{LMP Protocol}
+
+The abstraction was implemented in a header (\verb|aos/lmp_protocol.h|) and source file (\verb|lib/aos/lmp_protocol.c|). There functions for sending and receiving LMP messages were provided which had an interface like the following:
+\begin{itemize}
+    \item Simple send
+    \begin{verbatim}errval_t lmp_protocol_send(struct lmp_chan *chan,
+    uint16_t message_type, struct capref cap,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)\end{verbatim}
+    \item Simple receive
+    \begin{verbatim}errval_t lmp_protocol_recv(struct lmp_chan *chan,
+    uint16_t message_type, struct capref *ret_cap,
+    uintptr_t *ret_arg1, uintptr_t *ret_arg2, uintptr_t *ret_arg3)\end{verbatim}
+    \item Send bytes
+    \begin{verbatim}errval_t lmp_protocol_send_bytes_cap(
+    struct lmp_chan *chan, uint16_t message_type, struct capref cap,
+    size_t size, const uint8_t *bytes)\end{verbatim}
+    \item Receive bytes
+    \begin{verbatim}errval_t lmp_protocol_recv_bytes_cap(struct lmp_chan *chan,
+    uint16_t message_type, struct capref *ret_cap,
+    size_t *ret_size, uint8_t **ret_bytes)\end{verbatim}
+\end{itemize}
+
+All capabilities (cap) and numerical arguments (arg1, arg2, arg3) could be omitted and so further definitions were included to provide an interface for all possible combinations of arguments and capabilities. The following snippet shows how this interface was used in the \verb|aos_rpc_process_spawn| function (code is simplified for demonstration):
+
+\begin{lstlisting}[language=c, caption=Usage of aos/lmp\_protocol in aos\_rpc\_process\_spawn]
+// Request process spawn
+lmp_protocol_send0(&rpc->chan, AOS_RPC_PROCESS_SPAWN);
+// Send commandline
+lmp_protocol_send_string(&rpc->chan,
+    AOS_RPC_PROCESS_SPAWN_CMD, cmdline);
+// Get pid and success information
+lmp_protocol_recv2(&rpc->chan,
+    AOS_RPC_PROCESS_SPAWN, &ret_pid, &ret_success);
+\end{lstlisting}
+
+\section{RPC Protocol}
+
+\section{Bonus Objectives}
+
+\subsection{Large Messages}
