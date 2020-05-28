@@ -166,6 +166,8 @@ And additionally there is no hierarchy of ram capabilities to keep track of,
 making \verb|cap_retype| simple to implement, just subtract the base of capnode
 and one is set.
 
+--- End ---
+
 Datastructures of memory manager:
 \begin{itemize}
 	\item Linked list of boot info ram chunks, provides the capabilities off which
@@ -187,8 +189,6 @@ The avl tree of free memory ranges, indexed by ther size, allows for fast
 lookup when allocating memory, one just for the least element that's greater or
 euqal to the size requested.
 
-------
-
 Steps taken in implementation:
 \begin{itemize}
 	\item Used multiple linked list initially to manage memory.
@@ -200,6 +200,31 @@ Steps taken in implementation:
 	\item Changed later on to avl tree, when paging became too slow, memory was first to switch
 	\item Fuses memory with adjacent free memory upon return
 \end{itemize}
+
+\section{Fragmentation}
+
+Every allocation request is rounded up to BASE\_PAGE\_SIZE.
+This has multiple reasons.
+Most ram will get mapped, and for it be able to be mapped, it must be multiple
+of BASE\_PAGE\_SIZE.
+So that's why we don't expect many requests that are note a multiple of
+BASE\_PAGE\_SIZE, and therefore not having too much internal fragmentation.
+Also, we observed that we only get \verb|lib/mm/mm.c:alloc_aligned| requests for
+aligments smaller or equal to \verb|BASE_PAGE_SIZE|.
+By having allocations being a mulitple of \verb|BASSE_PAGE_SIZE|, we don't
+need to concern us further with alignment restrictions, as these are
+automatically fulfilled.
+
+For external fragmentation, we try to undo it by fusing adjacent free memory
+ranges.
+We try to use the smallest memory range that is large enough to fulfill the
+memory request, and splitting off from the left, leaving as much of the free
+memory rang intact.
+This makes answering if there is a large enough memory range simple, as what
+can be fused is fused.
+We did not further investigate if this is detrimental to external fragmentation.
+
+--- END ---
 
 Fragmentation:
 \begin{itemize}
