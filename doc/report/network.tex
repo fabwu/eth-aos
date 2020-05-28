@@ -1,24 +1,61 @@
 \chapter{Network}
 
-Interface / API
+\section{General Architecture}
 
-General architecture
+\subsection{Running the Network Driver}
+
+One of the earliest decision in the network project was, where the driver should run. One of the considered options was, to start an additional core that would be dedicated to run the network driver and handle the network protocols. The advantages of this approach would be:
+\begin{itemize}
+    \item Better performance and lower latency: The network could run uninterrupted and be preemted much less and only for the kernel. (This is an assumption, as we did not try to implement this approach and meassure it.)
+    \item Fast client applications that use networking: Because the networking would run on a different core than any other application, UMP could be used as the sole message passing system. This would not only make the interface simpler but also faster, as the book has already shown that UMP is faster than LMP.
+\end{itemize}
+The disadvanteges would be:
+\begin{itemize}
+    \item Refactoring multi-core memory management: As detailed in previous chapters, we split the memory between the two already running cores. We agreed as a team, that it would not make much sense to split the memory threeways for the network and it is hard to predict which core would need how much memory. So for a networking core to be functional we would have to implement a way to pass memory to the netwroking core, which we previously decided not to do because we deemed it to be a lot of complicated work.
+    \item Unrealistic: If we were to continue work on this OS we would at some point want to start all the cores and use them for user applications. At this point we would not want a core dedicated to networking anymore. When looking at the bigger picture, it therefore does not seem to make sense to have a dedicated networking core and would also feel like cheating to be able to show better performance in the final report.
+\end{itemize}
+
+Considering the arguments above we decided to run the networking driver in its own domain which is pinned to core 0.
+
+The idea of running the driver in the main process was quickly discarded as we already consider that to be a too big monolith that we would like to trim down. Also the idea of running the driver on multiple cores sounds like a nightmare and was not further considered.
+
+\subsection{Running the Network Protocols}
+
+The next decision was where to run the code for the different network protocols and how they would interact with the driver and each other. The book already suggests adding the protocol specific code to the driver application. This comes at a cost of flexibility and modularity, but is way simpler and faster to implement. Additionaly the nameservice project was not started at this point, so the communication between protocols would have to be improvised and be rewritten later on.
+
+With those arguments in mind, the decision to implement the protocols inside the driver application. This also allowed to defer the implementation of the communication with other applications until nameservice made some progress, which was in retrospect a great time saver.
+
+\subsection{General Design Decisions}
+
 One of the design goals in the networking project was to reduce copying of data and therefore passing a reference into the same ethernet frame between the network protocol. Another goal was to keep the number of mallocs low and allocate on the stack whenever possible. This should simplify resource management and reduce the amount of bugs.
 
-An important design decison was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed principle when e.g. adding a new protocol. The advantages are, that the
+An important design decison was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed princIPle when e.g. adding a new protocol. The advantages are, that the
 
-That beeing said, we made it a goal to separate the code for the different protocols: Each network protocol has an own file and a clearly defined interface for interacing with other protocols. For example the ip protocol has its own header and source file and all the ip code is inside those files. When calling functions to send ip packages, the code of the ip protocol will call functions of the ethernet implementation to send ip packages over ethernet frames.
+That beeing said, we made it a goal to separate the code for the different protocols: Each network protocol has its own files and a clearly defined interface for interacting with other protocols. For example the IP protocol has its own header and source file and all the IP code is inside those files. When calling functions to send IP packages, the code of the IP protocol will call functions of the ethernet implementation to send IP packages over ethernet frames.
 
-Nameserver interaction
+\section{Interface / API}
 
-Ethernet
+\section{Driver}
 
-Arp
+The driver to interact
 
-IP
+second mapping
+nochache problem
 
-Icmp
+\section{Ethernet}
 
-UDP
-UDP Checksum
-To calculate the udp checksum we extended the checksum functionality with the function $inet_checksum_ip_pseudo$ which also takes the pointer to the start of the ip header. The udp checksum requires 
+\section{ARP - Address Resolution Protocol}
+
+\section{IP - Internet Protocol}
+
+\section{ICMP - Internet Control Message Protocol}
+
+\section{UDP - User Datagram Protocol}
+
+\subsection{UDP Checksum}
+
+To calculate the UDP checksum we extended the checksum functionality in \verb|lib/netutil/checksum.c| with the function \verb|inet_checksum_IP_pseudo| which also takes the pointer to the start of the IP header. The UDP checksum requires additionaly to the UDP header and payload also that a pseudo header containing source IP, destination IP, protocol (which should always be 17 for UDP in this case) and the length of UDP datagram (length of UDP header + length of UDP payload in bytes).
+Because of how the IP package and UDP datagram are already written directly to the reserved network buffer to reduce the number of memory copies, the pseudo header is never actually constructed. Instead, a pointer to the IP header is passed to the checksum function along with the pointer to the UDP header and the length of the UDP datagram. Using the IP header, the UDP checksum can be calculated by taking the IP addresses and IP protocol directly from the IP header.
+The checksum function was designed to be also useable for calculating the TCP checksum. But this was not tested, as TCP was not implemented in the end due to time restrictions and other functionality having priority.
+
+\section{Nameservice Interaction}
