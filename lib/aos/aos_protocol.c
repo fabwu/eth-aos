@@ -159,9 +159,8 @@ errval_t aos_protocol_send(struct aos_chan *chan, uint64_t header, struct capref
     buf[2] = arg1;
     buf[3] = arg2;
     buf[4] = arg3;
-    aos_ump_enqueue(ump, (void *)buf, sizeof(uint64_t) * 5);
 
-    return SYS_ERR_OK;
+    return aos_ump_enqueue(ump, (void *)buf, sizeof(uint64_t) * 5);
 }
 
 errval_t aos_protocol_recv(struct aos_chan *chan, uint16_t message_type,

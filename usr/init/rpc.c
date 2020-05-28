@@ -185,26 +185,61 @@ static errval_t rpc_serial_getchar(struct lmp_chan *chan)
  */
 // FIXME: Add line buffer, so the output of different processes does not get mixed and
 // sys_print() only gets called once per line.
-static errval_t rpc_serial_putchar(uintptr_t arg1, uintptr_t arg2)
+static errval_t rpc_serial_putchar(struct lmp_chan *lmp_chan, uintptr_t arg1, uintptr_t arg2)
 {
+    errval_t err = SYS_ERR_OK;
     char c = (char)arg1;
     domainid_t pid = (domainid_t)arg2;
 
 #if 0
-    // XXX Here we would call serial_put_char or similar
+    grading_rpc_handler_serial_putchar(c);
+
     char str[2];
     str[0] = c;
     str[1] = '\0';
 
     sys_print(str, 2);
-
-    grading_rpc_handler_serial_putchar(c);
 #endif
-    terminal_putchar(c, pid);
+
+    if (disp_get_core_id() == 0) {
+        terminal_putchar(c, pid);
+    } else {
+        // terminal service runs on core 0, need to use UMP
+        struct aos_chan chan = make_aos_chan_ump(lmp_chan->did, 0);
+        do {
+            err = aos_protocol_send(&chan, AOS_RPC_SERIAL_PUTCHAR, NULL_CAP, arg1, arg2, 0);
+            if (err_is_fail(err) && err != LIB_ERR_UMP_ENQUEUE_FULL) {
+                DEBUG_PRINTF("Sending character over UMP failed\n");
+                return err;
+            }
+        } while (err == LIB_ERR_UMP_ENQUEUE_FULL);
+    }
 
     return SYS_ERR_OK;
-
 }
+
+static void ump_handle_serial(uintptr_t message_type, uint8_t *buf)
+{
+    uint64_t *numbers = (uint64_t *)buf;
+    domainid_t pid;
+    char c;
+
+    assert(disp_get_core_id() == 0);
+
+    switch (message_type) {
+    case AOS_RPC_SERIAL_GETCHAR:
+        debug_printf("Unknown request: %" PRIu64 "\n", message_type);
+        break;
+    case AOS_RPC_SERIAL_PUTCHAR:
+        c = (char)numbers[2];
+        pid = (domainid_t)numbers[3];
+        terminal_putchar(c, pid);
+        break;
+    default:
+        debug_printf("Unknown request: %" PRIu64 "\n", message_type);
+    }
+}
+
 static void handle_ns_ump_request(uint8_t *buf)
 {
     errval_t err;
@@ -284,6 +319,11 @@ static void rpc_ump_handler_recv(void *arg, uint8_t *buf)
             process_handle_ump_request(message_type, buf);
             free(buf);
             break;
+        case AOS_RPC_SERIAL_GETCHAR:
+        case AOS_RPC_SERIAL_PUTCHAR:
+            ump_handle_serial(message_type, buf);
+            free(buf);
+            break;
         default:
             debug_printf("Unknown ump request: 0x%x\n", message_type);
     }
@@ -354,7 +394,7 @@ static void rpc_aos_rpc_handler(void *arg)
             }
             break;
         case AOS_RPC_SERIAL_PUTCHAR:
-            err = rpc_serial_putchar(msg.words[1], msg.words[2]);
+            err = rpc_serial_putchar(chan, msg.words[1], msg.words[2]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_serial_putchar failed");
             }
