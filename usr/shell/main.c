@@ -197,7 +197,7 @@ static void cat(char *path)
     }
 }
 
-static errval_t run_process(char **argv, char *argv_buf, int idx)
+static errval_t run_process(coreid_t coreid, char **argv, char *argv_buf, int idx)
 {
     errval_t err;
 
@@ -205,7 +205,6 @@ static errval_t run_process(char **argv, char *argv_buf, int idx)
     char *cmd = cmdline + (argv[idx] - argv_buf);
 
     domainid_t pid;
-    coreid_t coreid = 0;
     err = aos_rpc_process_spawn(process_rpc, cmd, coreid, &pid);
     if (err_is_fail(err)) {
         return err;
@@ -267,7 +266,8 @@ static void run_command(void)
         printf("rmdir [path]       - remove directory\n");
         printf("time [cmd]         - time a command\n");
         printf("udpecho [port]     - start udp echo server\n");
-        printf("[program] [args]   - run a program with given arguments\n");
+        printf("oncore [#] [cmd]   - run program on given core\n");
+        printf("[cmd] [args]       - run a program with given arguments\n");
         printf("exit               - exit shell\n");
     } else if (!strcmp(argv[idx], "echo")) {
         for (int i = idx + 1; i < argc; i++) {
@@ -300,6 +300,12 @@ static void run_command(void)
         fs_mkdir(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "rmdir") && argc == 2) {
         fs_rmdir(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "oncore") && argc >= 3) {
+        unsigned coreid = argv[idx + 1][0] - 48;
+        printf("coreid = %i\n", coreid);
+        if (coreid > 1)
+            goto out;
+        run_process(coreid, argv, argv_buf, idx + 2);
     } else if (!strcmp(argv[idx], "exit")) {
         err = filesystem_unmount();
         if (err_is_fail(err)) {
@@ -307,7 +313,7 @@ static void run_command(void)
         }
         exit(0);
     } else {
-        err = run_process(argv, argv_buf, idx);
+        err = run_process(0, argv, argv_buf, idx);
         if (err_is_fail(err)) {
             printf("Unrecognized command (try 'help')\n");
             goto out;
@@ -332,21 +338,6 @@ int main(int argc, char *argv[])
         printf("failed to get process channel\n");
         return EXIT_FAILURE;
     }
-
-// @Kristina Use this code if you want to spawn a process on core 0
-#if 0
-    char cmdline_fixed[100];
-    coreid_t coreid = 1;
-    domainid_t pid;
-    memcpy(cmdline_fixed, "nameservicetest", strlen("nameservicetest") + 1);
-    printf("calling aos_rpc_process_spawn(cmd = '%s', core = %i)\n", cmdline_fixed, coreid);
-    err = aos_rpc_process_spawn(process_rpc, cmdline_fixed, coreid, &pid);
-    if (err_is_fail(err)) {
-        DEBUG_ERR(err, "starting '%s' failed.\n", cmdline_fixed);
-        return -EXIT_FAILURE;
-    }
-    printf("'%s' started successfully\n", cmdline_fixed);
-#endif
 
 #if SDCARD_PRESENT
     err = filesystem_init();
