@@ -132,12 +132,13 @@ static void run_command(void)
 
     if (!strcmp(argv[idx], "help")) {
         printf("Usage:\n");
-        printf("arp             - print arp table\n");
-        printf("echo            - display a line of text\n");
-        printf("led [on|off]    - turn the LED on/off\n");
-        printf("ps              - list current processes\n");
-        printf("time [cmd]      - time a command\n");
-        printf("udpecho [port]  - start udp echo server\n");
+        printf("arp                - print arp table\n");
+        printf("echo               - display a line of text\n");
+        printf("led [on|off]       - turn the LED on/off\n");
+        printf("ps                 - list current processes\n");
+        printf("time [cmd]         - time a command\n");
+        printf("udpecho [port]     - start udp echo server\n");
+        printf("[program] [args]   - run a program with given arguments\n");
     } else if (!strcmp(argv[idx], "echo")) {
         for (int i = idx + 1; i < argc; i++) {
             printf("%s ", argv[i]);
