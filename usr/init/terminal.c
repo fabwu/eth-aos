@@ -30,27 +30,49 @@ static int pos, read_pos;
 static bool line_ready;
 #define LINE_END        '\n'
 
-static char print_buffer[MAX_LINE_SIZE];
-static int print_pos;
+struct print_buffer {
+    domainid_t pid;
+    char buffer[MAX_LINE_SIZE];
+    int print_pos;
+    struct print_buffer *next;
+};
+static struct print_buffer *print_bufs;
 
 static void send_char(char c)
 {
     lmp_protocol_send1(receiver, AOS_RPC_SERIAL_GETCHAR, c);
 }
 
-void terminal_putchar(char c)
+void terminal_putchar(char c, domainid_t pid)
 {
     grading_rpc_handler_serial_putchar(c);
 
-    print_buffer[print_pos++] = c;
+    struct print_buffer *buf;
 
-    if (c == '\n' || print_pos == MAX_LINE_SIZE) {
-        for (int i = 0; i < print_pos; i++) {
-            lpuart_putchar(uart, print_buffer[i]);
+    // find print buffer for this process
+    for (buf = print_bufs; buf; buf = buf->next) {
+        if (buf->pid == pid) {
+            break;
+        }
+    }
+    if (buf == NULL) {
+        // no print buffer yet, create one
+        struct print_buffer *newbuf = calloc(1, sizeof(struct print_buffer));
+        newbuf->pid = pid;
+        newbuf->next = print_bufs;
+        print_bufs = newbuf;
+        buf = newbuf;
+    }
+
+    buf->buffer[buf->print_pos++] = c;
+
+    if (c == '\n' || buf->print_pos == MAX_LINE_SIZE) {
+        for (int i = 0; i < buf->print_pos; i++) {
+            lpuart_putchar(uart, buf->buffer[i]);
         }
         if (c == '\n')
             lpuart_putchar(uart, '\r');
-        print_pos = 0;
+        buf->print_pos = 0;
     }
 }
 

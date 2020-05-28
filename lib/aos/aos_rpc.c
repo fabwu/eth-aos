@@ -149,9 +149,9 @@ errval_t aos_rpc_serial_putchar(struct aos_rpc *rpc, char c)
 {
     // Protocol
     // FIXME: Send pid of process, so serial service can add line buffer per child
-    // Request: AOS_RPC_SERIAL_GETCHAR, char
+    // Request: AOS_RPC_SERIAL_GETCHAR, char, PID
     // Response: None
-    return lmp_protocol_send1(aos_rpc_chan, create_header(rpc, AOS_RPC_SERIAL_PUTCHAR), c);
+    return lmp_protocol_send2(aos_rpc_chan, create_header(rpc, AOS_RPC_SERIAL_PUTCHAR), c, disp_get_domain_id());
 }
 
 errval_t aos_rpc_process_spawn(struct aos_rpc *rpc, char *cmdline, coreid_t core,

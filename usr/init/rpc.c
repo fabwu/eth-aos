@@ -185,9 +185,10 @@ static errval_t rpc_serial_getchar(struct lmp_chan *chan)
  */
 // FIXME: Add line buffer, so the output of different processes does not get mixed and
 // sys_print() only gets called once per line.
-static errval_t rpc_serial_putchar(uintptr_t arg1)
+static errval_t rpc_serial_putchar(uintptr_t arg1, uintptr_t arg2)
 {
     char c = (char)arg1;
+    domainid_t pid = (domainid_t)arg2;
 
 #if 0
     // XXX Here we would call serial_put_char or similar
@@ -199,7 +200,7 @@ static errval_t rpc_serial_putchar(uintptr_t arg1)
 
     grading_rpc_handler_serial_putchar(c);
 #endif
-    terminal_putchar(c);
+    terminal_putchar(c, pid);
 
     return SYS_ERR_OK;
 
@@ -353,7 +354,7 @@ static void rpc_aos_rpc_handler(void *arg)
             }
             break;
         case AOS_RPC_SERIAL_PUTCHAR:
-            err = rpc_serial_putchar(msg.words[1]);
+            err = rpc_serial_putchar(msg.words[1], msg.words[2]);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "rpc_serial_putchar failed");
             }

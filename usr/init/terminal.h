@@ -20,6 +20,6 @@
 
 errval_t terminal_init(void);
 void terminal_getchar(struct lmp_chan *chan);
-void terminal_putchar(char c);
+void terminal_putchar(char c, domainid_t pid);
 
 #endif /* _INIT_TERMINAL_H_ */

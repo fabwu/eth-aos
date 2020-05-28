@@ -194,6 +194,7 @@ int main(int argc, char *argv[])
     }
 
     while (1) {
+        printf(">\n");
         char *ret_str;
         ret_str = fgets(cmdline, sizeof(cmdline), stdin);
         if (ret_str == NULL) {
