@@ -18,7 +18,11 @@
 #include <aos/nameservice.h>
 #include <aos/netservice.h>
 #include <aos/systime.h>
+#include <fs/fs.h>
+#include <fs/dirent.h>
 #include <spawn/argv.h>
+
+#define SDCARD_PRESENT  1
 
 static struct aos_rpc *process_rpc;
 
@@ -90,6 +94,109 @@ static void ps(void)
     }
 }
 
+static void ls(char *dir)
+{
+    errval_t err;
+    fs_dirhandle_t dh;
+
+    err = opendir(dir, &dh);
+    if (err_is_fail(err)) {
+        printf("opendir failed\n");
+        return;
+    }
+
+    do {
+        char *name;
+        err = readdir(dh, &name);
+        if (err_no(err) == FS_ERR_INDEX_BOUNDS) {
+            break;
+        } else if (err_is_fail(err)) {
+            printf("readdir failed\n");
+            return;
+        } else {
+            printf("%s\n", name);
+        }
+    } while (err_is_ok(err));
+}
+
+static void fs_mkdir(char *dir)
+{
+    errval_t err;
+
+    err = mkdir(dir);
+    if (err) {
+        printf("mkdir failed\n");
+        return;
+    }
+}
+
+static void fs_rmdir(char *dir)
+{
+    errval_t err;
+
+    err = rmdir(dir);
+    if (err) {
+        printf("mkdir failed\n");
+        return;
+    }
+}
+
+static void touch(char *path)
+{
+    errval_t err;
+
+    FILE *f = fopen(path, "a");
+    if (f == NULL) {
+        printf("fopen failed\n");
+        return;
+    }
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        printf("fclose failed\n");
+        return;
+    }
+}
+
+static void cat(char *path)
+{
+    errval_t err;
+    int res = 0;
+
+    FILE *f = fopen(path, "r");
+    if (f == NULL) {
+        printf("fopen failed\n");
+        return;
+    }
+
+    res = fseek(f, 0, SEEK_END);
+    if (res) {
+        printf("fseek failed\n");
+        return;
+    }
+
+    size_t filesize = ftell(f);
+    rewind(f);
+
+    char *buf = calloc(filesize + 2, sizeof(char));
+    if (buf == NULL) {
+        printf("calloc failed\n");
+        return;
+    }
+
+    size_t read = fread(buf, 1, filesize, f);
+
+    *(buf + read) = '\0';
+    printf("%s\n", buf);
+
+    free(buf);
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        printf("fclose failed\n");
+        return;
+    }
+}
+
 static errval_t run_process(char **argv, char *argv_buf, int idx)
 {
     errval_t err;
@@ -153,9 +260,15 @@ static void run_command(void)
         printf("echo               - display a line of text\n");
         printf("led [on|off]       - turn the LED on/off\n");
         printf("ps                 - list current processes\n");
+        printf("ls [path]          - list directory contents\n");
+        printf("touch [path]       - create file\n");
+        printf("cat [path]         - read file\n");
+        printf("mkdir [path]       - create directory\n");
+        printf("rmdir [path]       - remove directory\n");
         printf("time [cmd]         - time a command\n");
         printf("udpecho [port]     - start udp echo server\n");
         printf("[program] [args]   - run a program with given arguments\n");
+        printf("exit               - exit shell\n");
     } else if (!strcmp(argv[idx], "echo")) {
         for (int i = idx + 1; i < argc; i++) {
             printf("%s ", argv[i]);
@@ -177,6 +290,22 @@ static void run_command(void)
         }
     } else if (!strcmp(argv[idx], "nslookup") && argc == 2) {
         nslookup(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "ls") && argc == 2) {
+        ls(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "touch") && argc == 2) {
+        touch(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "cat") && argc == 2) {
+        cat(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "mkdir") && argc == 2) {
+        fs_mkdir(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "rmdir") && argc == 2) {
+        fs_rmdir(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "exit")) {
+        err = filesystem_unmount();
+        if (err_is_fail(err)) {
+            printf("Failed to unmount filesystem\n");
+        }
+        exit(0);
     } else {
         err = run_process(argv, argv_buf, idx);
         if (err_is_fail(err)) {
@@ -217,6 +346,14 @@ int main(int argc, char *argv[])
         return -EXIT_FAILURE;
     }
     printf("'%s' started successfully\n", cmdline_fixed);
+#endif
+
+#if SDCARD_PRESENT
+    err = filesystem_init();
+    if (err_is_fail(err)) {
+        printf("failed to initialize filesystem\n");
+        return EXIT_FAILURE;
+    }
 #endif
 
     err = map_led_mem();
