@@ -325,6 +325,101 @@ static errval_t rpc_send_ump(aos_rpc_header_t header, bool to_server, uintptr_t 
 }
 
 /**
+ * This closure handles aos_rpc requests which are sent over the LMP_AOS_RPC channel.
+ */
+static void rpc_aos_rpc_handler(void *arg)
+{
+    errval_t err;
+
+    struct lmp_chan *chan = (struct lmp_chan *)arg;
+
+    assert(chan->type == LMP_AOS_RPC);
+
+    struct lmp_recv_msg msg = LMP_RECV_MSG_INIT;
+    struct capref cap;
+    err = lmp_chan_recv(chan, &msg, &cap);
+
+    if (err_is_ok(err)) {
+        if (!capref_is_null(cap)) {
+            lmp_chan_alloc_recv_slot(chan);
+        }
+        aos_rpc_header_t header = msg.words[0];
+        domainid_t receiver = AOS_RPC_HEADER_RECV(header);
+        aos_rpc_msg_t message_type = AOS_RPC_HEADER_MSG(header);
+
+        // Only init can handle these requests
+        assert(receiver == 0x0);
+        switch (message_type) {
+        case AOS_RPC_SEND_NUMBER:
+            rpc_print_number(msg.words[1]);
+            break;
+        case AOS_RPC_SEND_STRING:
+            rpc_print_string(chan, &msg);
+            break;
+        case AOS_RPC_GET_RAM_CAP:
+            err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_send_ram failed");
+            }
+            break;
+        case AOS_RPC_FREE_RAM_CAP:
+            err = rpc_free_ram(chan, msg.words[1]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_free_ram failed");
+            }
+            break;
+        case AOS_RPC_GET_DEVICE_CAP:
+            err = rpc_send_device(chan, msg.words[1], msg.words[2]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_send_device failed");
+            }
+            break;
+        case AOS_RPC_SERIAL_GETCHAR:
+            err = rpc_serial_getchar(chan);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_serial_getchar failed");
+            }
+            break;
+        case AOS_RPC_SERIAL_PUTCHAR:
+            err = rpc_serial_putchar(msg.words[1]);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "rpc_serial_putchar failed");
+            }
+            break;
+        case AOS_RPC_PROCESS_SPAWN:
+        case AOS_RPC_PROCESS_GET_ALL_PIDS:
+        case AOS_RPC_PROCESS_GET_NAME:
+        case AOS_RPC_PROCESS_EXIT:
+            process_handle_lmp_request(message_type, &msg, chan);
+            break;
+        default:
+            debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
+        }
+
+        // Want to receive further messages
+        err = lmp_chan_register_recv(chan, get_default_waitset(),
+                                     MKCLOSURE(rpc_aos_rpc_handler, arg));
+        if (err_is_fail(err)) {
+            goto fail;
+        }
+
+        return;
+    } else if (lmp_err_is_transient(err)) {
+        // Want to receive further messages
+        err = lmp_chan_register_recv(chan, get_default_waitset(),
+                                     MKCLOSURE(rpc_aos_rpc_handler, arg));
+        if (err_is_fail(err)) {
+            goto fail;
+        }
+
+        return;
+    }
+
+fail:
+    DEBUG_ERR(err, "rpc_aos_rpc_handler failed hard");
+}
+
+/**
  * Handles messages from different child channels
  */
 static void rpc_handler_recv_closure(void *arg)
@@ -335,8 +430,6 @@ static void rpc_handler_recv_closure(void *arg)
     struct capref cap;
     err = lmp_chan_recv(chan, &msg, &cap);
 
-    DEBUG_RPC_SETUP("rpc_handler_recv_closure called!\n");
-
     if (err_is_ok(err)) {
         if (!capref_is_null(cap)) {
             lmp_chan_alloc_recv_slot(chan);
@@ -346,127 +439,77 @@ static void rpc_handler_recv_closure(void *arg)
         domainid_t receiver = AOS_RPC_HEADER_RECV(header);
         aos_rpc_msg_t message_type = AOS_RPC_HEADER_MSG(header);
 
-        if (receiver == disp_get_domain_id()) {
-            // init is receiver -> handle message
-            switch (message_type) {
-            case AOS_RPC_SEND_NUMBER:
-                rpc_print_number(msg.words[1]);
-                break;
-            case AOS_RPC_SEND_STRING:
-                rpc_print_string(chan, &msg);
-                break;
-            case AOS_RPC_GET_RAM_CAP:
-                err = rpc_send_ram(chan, msg.words[1], msg.words[2]);
-                if (err_is_fail(err)) {
-                    DEBUG_ERR(err, "rpc_send_ram failed");
-                }
-                break;
-            case AOS_RPC_FREE_RAM_CAP:
-                err = rpc_free_ram(chan, msg.words[1]);
-                if (err_is_fail(err)) {
-                    DEBUG_ERR(err, "rpc_free_ram failed");
-                }
-                break;
-            case AOS_RPC_GET_DEVICE_CAP:
-                err = rpc_send_device(chan, msg.words[1], msg.words[2]);
-                if (err_is_fail(err)) {
-                    DEBUG_ERR(err, "rpc_send_device failed");
-                }
-                break;
-            case AOS_RPC_SERIAL_GETCHAR:
-                err = rpc_serial_getchar(chan);
-                if (err_is_fail(err)) {
-                    DEBUG_ERR(err, "rpc_serial_getchar failed");
-                }
-                break;
-            case AOS_RPC_SERIAL_PUTCHAR:
-                err = rpc_serial_putchar(msg.words[1]);
-                if (err_is_fail(err)) {
-                    DEBUG_ERR(err, "rpc_serial_putchar failed");
-                }
-                break;
-            case AOS_RPC_PROCESS_SPAWN:
-            case AOS_RPC_PROCESS_GET_ALL_PIDS:
-            case AOS_RPC_PROCESS_GET_NAME:
-            case AOS_RPC_PROCESS_EXIT:
-                process_handle_lmp_request(message_type, &msg, chan);
-                break;
-            case AOS_RPC_TERMINAL_READY:
-                terminal_service_ready = 1;
-                break;
-            default:
-                debug_printf("Unknown request: %" PRIu64 "\n", msg.words[0]);
+        // init doesn't support nameserver_rpc
+        assert(receiver != 0x0);
+
+        // Route message to receiver
+        coreid_t recv_core_id = AOS_RPC_CORE_ID(receiver);
+        bool to_server;
+        if (chan->type == LMP_NS_CLIENT) {
+            // msg is from client -> forward to server
+            to_server = true;
+        } else if (chan->type == LMP_NS_SERVER) {
+            // msg is from server -> forward to client
+            to_server = false;
+        } else if (chan->type == LMP_AOS_RPC) {
+            USER_PANIC("Messages over LMP_AOS_RPC channel should be handled by init");
+        } else {
+            USER_PANIC("Unknown channel type\n");
+        }
+
+        if (recv_core_id == disp_get_current_core_id()) {
+            // use lmp to forward message
+            struct lmp_chan *recv_chan;
+
+            if (to_server) {
+                // msg is from client -> forward to server
+                init_spawn_get_lmp_server_chan(receiver, &recv_chan);
+            } else {
+                // msg is from server -> forward to client
+                init_spawn_get_lmp_client_chan(receiver, &recv_chan);
+            }
+
+            if (recv_chan == NULL) {
+                USER_PANIC("Couldn't find lmp chan");
+            }
+
+            err = lmp_protocol_send(recv_chan, msg.words[0], cap, msg.words[1],
+                                    msg.words[2], msg.words[3]);
+            if (err_is_fail(err)) {
+                USER_PANIC_ERR(err, "Couldn't forward\n");
             }
         } else {
-            // Route message to receiver
-            coreid_t recv_core_id = AOS_RPC_CORE_ID(receiver);
-            bool to_server;
-            if (chan->type == LMP_NS_CLIENT) {
-                // msg is from client -> forward to server
-                to_server = true;
-            } else if (chan->type == LMP_NS_SERVER) {
-                // msg is from server -> forward to client
-                to_server = false;
-            } else if (chan->type == LMP_AOS_RPC) {
-                USER_PANIC("Messages over LMP_AOS_RPC channel should be handled by init");
-            } else {
-                USER_PANIC("Unknown channel type\n");
-            }
-
-            if (recv_core_id == disp_get_current_core_id()) {
-                // use lmp to forward message
-                struct lmp_chan *recv_chan;
-
-                if (to_server) {
-                    // msg is from client -> forward to server
-                    init_spawn_get_lmp_server_chan(receiver, &recv_chan);
-                } else {
-                    // msg is from server -> forward to client
-                    init_spawn_get_lmp_client_chan(receiver, &recv_chan);
-                }
-
-                if (recv_chan == NULL) {
-                    USER_PANIC("Couldn't find lmp chan");
-                }
-
-                err = lmp_protocol_send(recv_chan, msg.words[0], cap, msg.words[1],
-                                        msg.words[2], msg.words[3]);
+            // domain not on same core -> use ump to forward message
+            if (message_type == AOS_RPC_MSG_NS_RPC) {
+                // rpc requires shared frame -> send paddr to other core
+                struct frame_identity fi;
+                err = frame_identify(cap, &fi);
                 if (err_is_fail(err)) {
-                    USER_PANIC_ERR(err, "Couldn't forward\n");
+                    USER_PANIC_ERR(err, "Couldn't identify frame for rpc payload\n");
+                }
+
+                // UMP msg format for rpc
+                // buf[0]: header (type, sender did, receiver did)
+                // buf[1]: to_server (true if msg goes from client -> server)
+                // buf[2]: paddr of frame
+                // buf[3]: size of frame
+                // buf[4]: size of payload
+                uintptr_t frame_paddr = (uintptr_t)fi.base;
+                uintptr_t frame_bytes = (uintptr_t)fi.bytes;
+                uintptr_t payload_bytes = (uintptr_t)msg.words[1];  // size
+                err = rpc_send_ump(header, to_server, frame_paddr, frame_bytes,
+                                   payload_bytes);
+                if (err_is_fail(err)) {
+                    USER_PANIC_ERR(err, "Couldn't send rpc frame to other core\n");
                 }
             } else {
-                // domain not on same core -> use ump to forward message
-                if (message_type == AOS_RPC_MSG_NS_RPC) {
-                    // rpc requires shared frame -> send paddr to other core
-                    struct frame_identity fi;
-                    err = frame_identify(cap, &fi);
-                    if (err_is_fail(err)) {
-                        USER_PANIC_ERR(err, "Couldn't identify frame for rpc payload\n");
-                    }
+                // normal msg -> just forward it to the other core
+                assert(capref_is_null(cap));
 
-                    // UMP msg format for rpc
-                    // buf[0]: header (type, sender did, receiver did)
-                    // buf[1]: to_server (true if msg goes from client -> server)
-                    // buf[2]: paddr of frame
-                    // buf[3]: size of frame
-                    // buf[4]: size of payload
-                    uintptr_t frame_paddr = (uintptr_t)fi.base;
-                    uintptr_t frame_bytes = (uintptr_t)fi.bytes;
-                    uintptr_t payload_bytes = (uintptr_t)msg.words[1];  // size
-                    err = rpc_send_ump(header, to_server, frame_paddr, frame_bytes,
-                                       payload_bytes);
-                    if (err_is_fail(err)) {
-                        USER_PANIC_ERR(err, "Couldn't send rpc frame to other core\n");
-                    }
-                } else {
-                    // normal msg -> just forward it to the other core
-                    assert(capref_is_null(cap));
-
-                    err = rpc_send_ump(header, to_server, msg.words[1], msg.words[2],
-                                       msg.words[3]);
-                    if (err_is_fail(err)) {
-                        USER_PANIC_ERR(err, "Couldn't forward msg to other core\n");
-                    }
+                err = rpc_send_ump(header, to_server, msg.words[1], msg.words[2],
+                                   msg.words[3]);
+                if (err_is_fail(err)) {
+                    USER_PANIC_ERR(err, "Couldn't forward msg to other core\n");
                 }
             }
         }
@@ -532,9 +575,16 @@ static void rpc_setup_recv_closure(void *arg)
             goto fail;
         }
 
+        // select child handler based on channel type
+        void *child_handler;
+        if (chan->type == LMP_AOS_RPC) {
+            child_handler = rpc_aos_rpc_handler;
+        } else {
+            child_handler = rpc_handler_recv_closure;
+        }
         // Channel to child is setup, switch to child handler
         err = lmp_chan_register_recv(chan, get_default_waitset(),
-                                     MKCLOSURE(rpc_handler_recv_closure, arg));
+                                     MKCLOSURE(child_handler, arg));
         if (err_is_fail(err)) {
             goto fail;
         }
