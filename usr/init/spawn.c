@@ -43,6 +43,7 @@ static errval_t finish_spawn(struct spawn_node *node, domainid_t *pid)
     node->next = head;
     head = node;
 
+    node->aos_rpc_chan.did = node->pid;
     node->client_chan.did = node->pid;
     node->server_chan.did = node->pid;
 
