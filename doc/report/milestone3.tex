@@ -52,6 +52,34 @@ We passed the init endpoint at a well known location in the childs task cnode wh
         \end{itemize}
 \end{enumerate}
 
+\section{RPC Implementation}
+
+In this section we detail how RPC over LMP was initially implemented. After setting up the communication between init and its children, mainly two files are concerned when talking about RPC at this stage of the project: \verb|lib/aos/aos_rpc.c| contains the implementation of all RPC functions that can be called by the child to communicate with a service. \verb|usr/init/rpc.c| contains the implementation of the services and their RPC interactions in init.
+
+\subsection{Message Type}
+When sending a message over LMP we can send 4 * 64 bytes of data and a capability. In our RPC implementation we reserve the first 64 bytes of each call for metadata. At this stage of the development we store the message type in the lowest 8 bytes of those 64 bytes. The message type is used to determine in init, which RPC call was made and in the child to check if the received response was for the correct RPC call.
+
+In \verb|usr/init/rpc.c| there's a switch statement that is used to route the incoming RPC calls to the correct service function using this message type. The rest of the bytes are then interpreted by the service functions.
+
+\subsection{init - Service Handler}
+The init process was at this point dispatching waitset events at the end of the main function in \verb|usr/init/main.c|. After a communication with a child was setup, each time a child sent something to init over LMP it was received in \verb|usr/init/rpc.c| in the function \verb|rpc_handler_recv_closure|. That is also the where the aforementioned switch for the message type is located.
+After selecting the correct service and handling the RPC request, a receive closure with the function \verb|rpc_handler_recv_closure| was registered again for the child channel. The service functions were designed to be non-blocking and could therefore only receive a single LMP message per call. This turned out to be too limiting as we wanted to receive more than that in some service functions.
+
+\subsection{child - aos\_rpc}
+The \verb|aos/aos_rpc.h| interface has a set of blocking functions that can be called by any child. Each child sets up the internal state of aos\_rpc and the channel communication with init before its main function gets called. There are multiple functions that return the RPC channel to the different services. All of those returned the init channel, as init handled all the RPC calls at this point.
+In the main function a child could call any RPC function, which blocked and reported success or failure over the \verb|errval_t| return value. For example to send a character to the terminal service (running in init) the client could do the following:
+
+\begin{lstlisting}[language=c, caption=Example of child calling an RPC function]
+struct aos_rpc *serial = aos_rpc_get_serial_channel();
+errval_t err = aos_rpc_serial_putchar(serial, 'c');
+bool success = err_is_ok(err);
+\end{lstlisting}
+
+In the listing above the client gets the serial RPC channel (which in our case is pointing to init) and then sends the character 'c' over the blocking call \verb|aos_rpc_serial_putchar| and is able to tell if the transfer was successful by checking the returned \verb|errval_t| value.
+
+\subsection{Blocking RPC}
+Making the RPC calls blocking was not trivial and was deliberated quite a bit before comming to a conclusion on how we wanted to implement it. We knew that it was required to make the RPC calls blocking, but we had to still be able to dispatch waitset events, so that LMP reponses could actually be received while blocking. So we implemented a function \verb|aos_rpc_dispatch_until_set| in \verb|lib/aos/aos_rpc.c| which would take a pointer to a flag and then continuously dispatch on the waitset until this flag was set to true. Before calling this function we would register a closure to receive LMP messages from init on and set the bool flag to true when a message from init was received allowing \verb|aos_rpc_dispatch_until_set| to return.
+
 \section{Realisations and Improvements}
 
 When revising our work after finishing milestone 3 we realised that we had a lot of code duplication in the LMP channel handling. Having multiple functions of setting up a closure, registering receive closures, re-registering closures upon transient failure and so on only to set a flag seemed overcomplicated. So we wanted something to make it easier to write LMP code by abstracting away from the provided bare LMP channel functionality.
@@ -64,7 +92,7 @@ Based on this idea a general LMP interface was developed, which hides all the un
 
 \subsection{LMP Protocol}
 
-The abstraction was implemented in a header (\verb|aos/lmp_protocol.h|) and source file (\verb|lib/aos/lmp_protocol.c|). There functions for sending and receiving LMP messages were provided which had an interface like the following:
+The abstraction was defined in the header (\verb|aos/lmp_protocol.h|) and implemented in the source file (\verb|lib/aos/lmp_protocol.c|). There functions for sending and receiving LMP messages were provided which had an interface like the following:
 \begin{itemize}
     \item Simple send
     \begin{verbatim}errval_t lmp_protocol_send(struct lmp_chan *chan,
@@ -84,7 +112,7 @@ The abstraction was implemented in a header (\verb|aos/lmp_protocol.h|) and sour
     size_t *ret_size, uint8_t **ret_bytes)\end{verbatim}
 \end{itemize}
 
-All capabilities (cap) and numerical arguments (arg1, arg2, arg3) could be omitted and so further definitions were included to provide an interface for all possible combinations of arguments and capabilities. The following snippet shows how this interface was used in the \verb|aos_rpc_process_spawn| function (code is simplified for demonstration):
+All capabilities (cap) and numerical arguments (arg1, arg2, arg3) could be omitted and so further definitions were included to provide an interface for all possible combinations of arguments and capabilities. All these send and receive function in \verb|lmp_protocol| were blocking. Always waiting for the registered closure to be handled before returning. This blocking mechanism was implemented the same way as described above for "blocking RPC". The following snippet shows how this interface was used in the \verb|aos_rpc_process_spawn| function (code is simplified for demonstration):
 
 \begin{lstlisting}[language=c, caption=Usage of aos/lmp\_protocol in aos\_rpc\_process\_spawn]
 // Request process spawn
@@ -96,6 +124,27 @@ lmp_protocol_send_string(&rpc->chan,
 lmp_protocol_recv2(&rpc->chan,
     AOS_RPC_PROCESS_SPAWN, &ret_pid, &ret_success);
 \end{lstlisting}
+
+In the listing above we see a more complex communication than was previously implemented. We see that process spawning is initiated by sending a spawn request that consits only of the message type and 0 additional bytes. That is also what the 0 in \verb|lmp_protocol_send0| stands for. This is followed by sending a string containing the command line which should be used to spawn the process. At the end 2 integers are received which contain a success flag and if the spawning was successful the pid of the newly spawned process.
+
+The code on the init side was adjusted accordingly to handle RPC calls with multiple LMP messages per call. The main entry point in \verb|usr/init/rpc.c| (function \verb|rpc_handler_recv_closure|) was left unchanged, but the service functions are now blocking functions, that also use the \verb|aos/lmp_protocol.h| interface.
+For example the following listing shows an extract of the spawn process service function:
+
+\begin{lstlisting}[language=c, caption=Usage of aos/lmp\_protocol in usr/init/rpc.c]
+// Receive and parse commandline
+lmp_protocol_recv_string(chan,
+    AOS_RPC_PROCESS_SPAWN_CMD, &cmdline);
+char **argv = make_argv(cmdline, &argc, &buf);
+// Spawn process
+init_spawn(argv[0], &pid);
+// Send back pid and success flag
+lmp_protocol_send2(chan,
+    AOS_RPC_PROCESS_SPAWN, pid, true);
+\end{lstlisting}
+
+The listing above was again substentially shortened. Leaving out all of the error handling and the declarations. But it should show, that it is a close parallel to the \verb|lmp_protocol| calls made on the client side, just swaping out receive and send in the respective functions.
+Noteworthy is, that there is no call to receive the first empty LMP message on the service side. This is because the first LMP message is always received by \verb|rpc_handler_recv_closure|. To prevent that all RPC calls had to be sent using 2 LMP messages, relevant bytes from this first LMP message are always passed on to the service function by \verb|rpc_handler_recv_closure|.
+
 
 \section{RPC Protocol}
 
