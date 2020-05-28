@@ -152,7 +152,7 @@ static void run_server(void)
     err = nameservice_deregister(SERVICE_NAME_3);
     PANIC_IF_FAIL(err, "failed to deregister...\n");
 
-#if 0
+#if 1
     domainid_t did;
     debug_printf("spawning test binary '%s'\n", TEST_BINARY);
     err = aos_rpc_process_spawn(get_init_rpc(), TEST_BINARY " a", disp_get_core_id(),
