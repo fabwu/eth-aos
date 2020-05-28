@@ -34,7 +34,7 @@ struct srv_entry {
     domainid_t did;
 };
 
-struct hashtable *ht;
+static struct hashtable *ht;
 
 static errval_t handle_register(char *name, domainid_t server_did)
 {
@@ -44,8 +44,9 @@ static errval_t handle_register(char *name, domainid_t server_did)
     // check if entry is already present
     struct srv_entry *existing_entry;
     ht->d.get(&ht->d, name, strlen(name), (void **)&existing_entry);
-    if(existing_entry != NULL) {
-        DEBUG_NS("Service %s is already registered running at %p\n", name, existing_entry->did);
+    if (existing_entry != NULL) {
+        DEBUG_NS("Service %s is already registered running at %p\n", name,
+                 existing_entry->did);
         err = lmp_protocol_send1(get_init_server_chan(), header, LIB_ERR_NS_DUP_NAME);
         if (err_is_fail(err)) {
             err = err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
@@ -81,6 +82,52 @@ fail_entry:
 
 fail:
     return err;
+}
+
+static errval_t handle_deregister(char *name, domainid_t sender_did)
+{
+    errval_t err;
+    aos_rpc_header_t header = AOS_RPC_HEADER(disp_get_domain_id(), sender_did,
+                                             AOS_RPC_MSG_NS_DEREGISTER);
+    struct lmp_chan *chan = get_init_server_chan();
+    struct srv_entry *entry;
+    ht->d.get(&ht->d, name, strlen(name), (void **)&entry);
+
+    // check if entry exists
+    if (entry == NULL) {
+        DEBUG_NS("Service %s is not registered. Cannot deregister...\n" name);
+        err = lmp_protocol_send1(chan, header, LIB_ERR_NS_NOT_REGISTERED);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
+        }
+        return SYS_ERR_OK;
+    }
+
+    // check if sender is allowed to deregister
+    if (entry->did != sender_did) {
+        DEBUG_NS("DID doesn't match (service %p / sender %p). Cannot deregister...\n",
+                 entry->did, sender_did);
+        err = lmp_protocol_send1(chan, header, LIB_ERR_NS_NOT_REGISTERED);
+        if (err_is_fail(err)) {
+            return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
+        }
+        return SYS_ERR_OK;
+    }
+
+    // remove entry
+    err = ht->d.remove(&ht->d, entry->name, strlen(entry->name));
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    err = lmp_protocol_send1(chan, header, SYS_ERR_OK);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND1);
+    }
+
+    DEBUG_NS("Successfully deregistered %s\n", entry->name);
+
+    return SYS_ERR_OK;
 }
 
 static errval_t handle_lookup(char *name, domainid_t server_did)
@@ -140,6 +187,12 @@ static void handler(void *arg)
             err = handle_register(name, sender);
             if (err_is_fail(err)) {
                 DEBUG_ERR(err, "Failed to handle AOS_RPC_MSG_NS_REGISTER\n");
+            }
+            break;
+        case AOS_RPC_MSG_NS_DEREGISTER:;
+            err = handle_deregister(name, sender);
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed to handle AOS_RPC_MSG_NS_DEREGISTER\n");
             }
             break;
         case AOS_RPC_MSG_NS_LOOKUP:;

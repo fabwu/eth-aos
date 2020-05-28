@@ -12,6 +12,8 @@
 
 #include <hashtable/hashtable.h>
 
+#define NS_DID 0x1
+
 #if 0
 #    define DEBUG_NS(fmt...) debug_printf(fmt);
 #else
@@ -31,7 +33,7 @@ struct nameservice_chan {
     char name[MAX_SERVICE_NAME_LENGTH];
 };
 
-struct hashtable *ht = NULL;
+static struct hashtable *ht = NULL;
 
 static void nameservice_handler(void *arg)
 {
@@ -118,7 +120,7 @@ static void nameservice_handler(void *arg)
 
         // copy and send response
         strcpy(response_buf, name);
-        if(response != NULL && response_bytes > 0) {
+        if (response != NULL && response_bytes > 0) {
             memcpy(response_buf + name_bytes, response, response_bytes);
         }
 
@@ -212,14 +214,15 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
     errval_t err = SYS_ERR_OK;
 
     if (!capref_is_null(tx_cap) || !capref_is_null(rx_cap)) {
-        //TODO Implement caps
+        // TODO Implement caps
         return LIB_ERR_NOT_IMPLEMENTED;
     }
 
     struct lmp_chan *chan = get_init_client_chan();
     struct nameservice_chan *nschan = (struct nameservice_chan *)nschan_ref;
 
-    DEBUG_NS("Sending rpc to service %s running at DID %p\n", nschan->name, nschan->rpc.recv_id);
+    DEBUG_NS("Sending rpc to service %s running at DID %p\n", nschan->name,
+             nschan->rpc.recv_id);
 
     // allocate send buffer
     size_t name_bytes = strlen(nschan->name) + 1;
@@ -345,7 +348,7 @@ errval_t nameservice_register(const char *name,
 
     errval_t err;
 
-    if(ht == NULL) {
+    if (ht == NULL) {
         // init nameservice on the first register call
         ht = create_hashtable();
 
@@ -367,7 +370,8 @@ errval_t nameservice_register(const char *name,
     DEBUG_NS("Sending register request %s to NS\n", buf);
 
     // send register request to NS
-    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), 0x1, AOS_RPC_MSG_NS_REGISTER);
+    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), NS_DID,
+                                      AOS_RPC_MSG_NS_REGISTER);
     err = lmp_protocol_send3(chan, header, buf[0], buf[1], buf[2]);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);
@@ -413,7 +417,53 @@ errval_t nameservice_register(const char *name,
  */
 errval_t nameservice_deregister(const char *name)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    assert(strlen(name) <= MAX_SERVICE_NAME_LENGTH);
+
+    errval_t err;
+
+    struct srv_entry *existing_entry;
+    ENTRY_TYPE ret_type = ht->d.get(&ht->d, name, strlen(name), (void **)&existing_entry);
+    assert(ret_type == TYPE_WORD);
+
+    if (existing_entry == NULL) {
+        return LIB_ERR_NS_NOT_REGISTERED;
+    }
+
+    struct lmp_chan *chan = get_init_client_chan();
+
+    size_t trunc_size = MIN(strlen(name), MAX_SERVICE_NAME_LENGTH);
+    uintptr_t buf[3];
+
+    memset(buf, 0, AOS_RPC_BUFFER_SIZE);
+    memcpy(buf, name, trunc_size);
+
+    DEBUG_NS("Sending deregister request %s to NS\n", buf);
+
+    // send deregister request to NS
+    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), NS_DID,
+                                      AOS_RPC_MSG_NS_DEREGISTER);
+    err = lmp_protocol_send3(chan, header, buf[0], buf[1], buf[2]);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);
+    }
+
+    // wait for ack
+    uintptr_t ret;
+    err = lmp_protocol_recv1(chan, AOS_RPC_MSG_NS_DEREGISTER, &ret);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_RECV1);
+    }
+
+    if (ret != SYS_ERR_OK) {
+        return LIB_ERR_NS_DEREGISTER;
+    }
+
+    err = ht->d.remove(&ht->d, name, strlen(name));
+    if (err_is_fail(err)) {
+        return HT_ERR_PUT_WORD;
+    }
+
+    return SYS_ERR_OK;
 }
 
 /**
@@ -444,7 +494,7 @@ errval_t nameservice_lookup(const char *name, nameservice_chan_t *nschan_ref)
     DEBUG_NS("Sending lookup request %s to NS\n", buf);
 
     // send register request to NS
-    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), 0x1, AOS_RPC_MSG_NS_LOOKUP);
+    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), NS_DID, AOS_RPC_MSG_NS_LOOKUP);
     err = lmp_protocol_send3(chan, header, buf[0], buf[1], buf[2]);
     if (err_is_fail(err)) {
         return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);

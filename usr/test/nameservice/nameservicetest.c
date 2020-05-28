@@ -29,6 +29,7 @@
 
 #define SERVICE_NAME_1 "myservicename"
 #define SERVICE_NAME_2 "empty"
+#define SERVICE_NAME_3 "deregister"
 #define UNKNOWN_SERVICE "???WHAT???"
 #define TEST_BINARY "nameservicetest"
 /*
@@ -45,11 +46,20 @@ static void run_client(void)
 
     // look up unknown service
     nameservice_chan_t chan;
+
     err = nameservice_lookup(UNKNOWN_SERVICE, &chan);
     if (err == err_no(LIB_ERR_NS_LOOKUP)) {
         debug_printf("Got error when looking up unknown service\n");
     } else {
         PANIC_IF_FAIL(err, "no or wrong error for unknown service\n");
+    }
+
+    // look up deregistered service
+    err = nameservice_lookup(SERVICE_NAME_3, &chan);
+    if (err == err_no(LIB_ERR_NS_LOOKUP)) {
+        debug_printf("Got error when looking up deregistered service\n");
+    } else {
+        PANIC_IF_FAIL(err, "no or wrong error for deregistered service\n");
     }
 
     // look up existing service
@@ -105,8 +115,8 @@ static void server_recv_handler(void *st, void *message, size_t bytes, void **re
 }
 
 static void server_no_response(void *st, void *message, size_t bytes, void **response,
-                                size_t *response_bytes, struct capref rx_cap,
-                                struct capref *tx_cap)
+                               size_t *response_bytes, struct capref rx_cap,
+                               struct capref *tx_cap)
 {
     debug_printf("server: got a request: %s\n", (char *)message);
     debug_printf("server: but sending no response MUHAHA!\n");
@@ -134,10 +144,18 @@ static void run_server(void)
     err = nameservice_register(SERVICE_NAME_2, server_no_response, NULL);
     PANIC_IF_FAIL(err, "failed to register...\n");
 
-//    domainid_t did;
+    debug_printf("register with nameservice '%s'\n", SERVICE_NAME_3);
+    err = nameservice_register(SERVICE_NAME_3, server_no_response, NULL);
+    PANIC_IF_FAIL(err, "failed to register...\n");
+
+    debug_printf("deregister with nameservice '%s'\n", SERVICE_NAME_3);
+    err = nameservice_deregister(SERVICE_NAME_3);
+    PANIC_IF_FAIL(err, "failed to deregister...\n");
+
+    //    domainid_t did;
     debug_printf("spawning test binary '%s'\n", TEST_BINARY);
-//    err = aos_rpc_process_spawn(get_init_rpc(), TEST_BINARY " a", disp_get_core_id(),
-//                                &did);
+    //    err = aos_rpc_process_spawn(get_init_rpc(), TEST_BINARY " a", disp_get_core_id(),
+    //                                &did);
     PANIC_IF_FAIL(err, "failed to spawn test\n");
 
     while (1) {
