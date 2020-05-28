@@ -1,6 +1,66 @@
 \chapter{Filesystem}
 
-Implement a FAT32 Filesystem, spawn a process with the binary loaded off of the sdcard, create fileserver to expose filesystem functionality over rpc.
+To stand up the filesystem one needs to call \verb|filesystem_init|, and when
+exiting \verb|filesystem_unmount|, to flush all cached data to the sdcard.
+
+\section{SDCard}
+
+To initialise the SDCard, we first need it's device frame.
+We can get that either by directly refering to the device frame capability put
+into our cspace on startup, which works when we run as init.
+Or we use an rpc call (\verb|aos_rpc_get_device_cap|) to request the device
+frame from init.
+
+Then we simply call \verb|sdhc_init|, as laid out in the book.
+
+\section{VFS}
+
+We don't remember why we implement vfs as a first step, maybe handing the fat32
+methods directly to glibc wasn't obvious enough.
+
+For vfs to work, we need to introduce concepts so that dispatching code can
+easily forward the invocations to the right implementation.
+These are to be found at \verb|lib/fs/fs_internal.h|.
+We have \verb|fs_mount|, which bundles the common function pointers, and an
+opaque state.
+When forwarding an invocation, one just prepends the opaque state to the
+argmuments, and passes them to the matching function pointer.
+Additionally, we need a \verb|fs_handle|, which capsulate the state of an open
+file/directory.
+It has a member an \verb|fs_mount|.
+So when dispatching for an open file/directory, on just prepends first the state
+of the file, then prepends the state of the mount, passes them to the matching
+function pointer.
+This make the dispatching code (\verb|lib/fs/fopen.c|,
+\verb|lib/fs/dirent.c|) fairly regular.
+
+For FAT32 to be supported, we need to expand ramfs to understand not only file
+and directories, but also mountpoints. If during path resolution it encounters a
+mountpoint, the call dispatched as would the central dispatcher do.
+
+In theory, one could initialise the glibc dispatchers (\verb|lib/fs/fs.c|, call
+to \verb|fs_libc_init|) directly with the fat32 filesystem, but we didn't test
+that constellation.
+
+\section{FAT32}
+
+Generally, the FAT32 code tries to follow the spec to the letter.
+Also, the functions mirror the behaviour of the ramfs functions (with common
+sense), as they are not otherwise specified.
+
+The FAT32 filesystem is made out of 4 things, the metadata in the
+\verb|BIOS parameter block| (BPB), the cluster chains in the fat, the
+directories, and the normal files.
+To note is that directories are basically just special files.
+
+We deparse the BPB in \verb|lib/fs/fat32fs_internal.c:fs_read_metadata|
+(a file that also contains all the cruft from the first trials).
+This deparsing is specific to FAT32.
+
+--- END ---
+
+Implement a FAT32 Filesystem, spawn a process with the binary loaded off of the
+sdcard, create fileserver to expose filesystem functionality over rpc.
 
 Steps taken in implementation:
 \begin{itemize}
@@ -18,11 +78,13 @@ Steps taken in implementation:
 		\item Enable seeking, and tell for files
 		\item Enable creation, deletion of directories
 		\item Enable creation, deletion of files
-		\item Enable stat, but can't be used because don't get dirhandle for files from anywhere
+		\item Enable stat, but can't be used because don't get dirhandle for files
+					from anywhere
 	\end{itemize}
 	\item Added tests to /usr/test/filereader/main.c
 	\item Tested if elf image from sdcard boots
-	\item TODO: Expose interface over rpc, hook int /lib/fs/fopen.c, add fd and hook into /lib/fs/dirent.c to call rpc if not fileserver
+	\item TODO: Expose interface over rpc, hook int /lib/fs/fopen.c, add fd and
+				hook into /lib/fs/dirent.c to call rpc if not fileserver
 \end{itemize}
 
 Specifics of virtual filesystem:
@@ -33,7 +95,8 @@ Specifics of virtual filesystem:
 		\item fs\_handle
 		\item having fs\_mount avaiable all the time
 	\end{itemize}
-	\item Describe path resolution (and whish to add layer external to specific fs to deduplicate resolution logic, cache results)
+	\item Describe path resolution (and whish to add layer external to specific
+				fs to deduplicate resolution logic, cache results)
 	\item Describe call dispatching in virtual filesystem
 \end{itemize}
 
@@ -49,3 +112,27 @@ Specifics of fat32:
 	\item Describe lazy write mechanism of sectors
 	\item Idea to have separate buffers per filehandle/dirhandle, improve locality
 \end{itemize}
+
+\section{Limitations}
+
+Needing to zero initialise a full cluster everytime a directory is created,
+which is unnecessary but specified as such.
+One could just keep the entry after the last zero, and if the cluster is full,
+just look if our fat entry is eof.
+
+Generally the filesystem is quite slow.
+This can be attributed to data not being aggresively enough cached.
+Especially the path resolution should be factored out of the specific
+filesystems and aggresively cache results.
+Filesystem wouldn't then not need to bother anymore with mounts and delegating
+invocations, except for handling the mounts as a special file type, so as to
+signal this to the path resolution, which then would do the delegation.
+Also, the sdhc driver is not optimised, so far as we understand, making reading
+a binary off of the sdcard very slow.
+
+Seek of FAT32 doesn't allow for expansion of files, as FAT32 doesn't support
+file holes.
+
+Except for that, the filesystem should work correctly, even when there are no
+more ressources (only sdcard, we exclude ram etc.) to serve, it should continue
+to report error conditions accordingly, but not thrash itself.
