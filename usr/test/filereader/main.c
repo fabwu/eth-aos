@@ -522,13 +522,59 @@ static errval_t test_file_io(char *parent_dir, char *dir, char *filename)
     return SYS_ERR_OK;
 }
 
+static errval_t test_boundaries(char *parent_dir, char *dir, char *filename)
+{
+    errval_t err;
+
+    FILE *f;
+
+    err = test_check_dir_empty(parent_dir);
+    if (err_is_fail(err)) {
+        return err;
+    }
+
+    f = fopen(dir, "w");
+    if (f == NULL) {
+        return FS_ERR_OPEN;
+    }
+
+    char *buf = malloc(512 * sizeof(char));
+    assert(buf != NULL);
+
+    for (size_t i = 0; i < 512; ++i) {
+        buf[i] = 'a' + i % 26;
+    }
+
+    size_t iter = 0;
+    do {
+        size_t written;
+        written = fwrite(buf, 1, 512, f);
+        err = ferror(f);
+        if (err_is_fail(err)) {
+            return err_push(err, FS_ERR_WRITE);
+        }
+
+        if (written != 512) {
+            return FS_ERR_WRITE;
+        }
+        debug_printf("test_boundaries iter: %zu\n", iter);
+        ++iter;
+    } while (true);
+
+    err = fclose(f);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_CLOSE);
+    }
+}
+
 
 #define FS_TEST_READ_DIR 0
 #define FS_TEST_READ 0
 #define FS_TEST_DIR 0
 #define FS_TEST_FILE_CREATE 0
-#define FS_TEST_FILE_IO 1
+#define FS_TEST_FILE_IO 0
 #define FS_TEST_WRITE 0
+#define FS_TEST_BOUNDARIES 1
 
 int main(int argc, char *argv[])
 {
@@ -566,6 +612,10 @@ int main(int argc, char *argv[])
 
     if (FS_TEST_FILE_IO) {
         run_test(test_file_io, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
+    }
+
+    if (FS_TEST_BOUNDARIES) {
+        run_test(test_boundaries, MOUNTPOINT, MOUNTPOINT "/" TEST_FILENAME, TEST_FILENAME);
     }
 
     if (FS_TEST_WRITE) {
