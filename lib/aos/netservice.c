@@ -159,10 +159,12 @@ errval_t netservice_udp_listen(uint16_t port, netservice_udp_handler_t udp_handl
         goto error;
     }
     if (!response->success) {
+        free(response);
         err = ENET_ERR_UDP_LISTEN_FAILED;
         goto error;
     }
 
+    free(response);
     listener->next = local_listeners;
     local_listeners = listener;
     return SYS_ERR_OK;
@@ -217,6 +219,7 @@ errval_t netservice_udp_close(uint16_t port)
     } else if (!response->success) {
         return ENET_ERR_NETSERVICE_CLOSE;
     }
+    free(response);
 
     // Remove listener from local list
     if (parent != NULL) {
@@ -231,10 +234,8 @@ errval_t netservice_udp_close(uint16_t port)
 }
 
 errval_t netservice_arp_print_cache(void) {
-    errval_t err;
-
     if (arp_chan == NULL) {
-        err = nameservice_lookup(ENET_ARP_SERVICE_NAME, &arp_chan);
+        errval_t err = nameservice_lookup(ENET_ARP_SERVICE_NAME, &arp_chan);
         if (err_is_fail(err)) {
             printf("Could not print arp table (arp service unreachable)\n");
             return err_push(err, ENET_ERR_ARP_NOT_FOUND);
@@ -242,12 +243,5 @@ errval_t netservice_arp_print_cache(void) {
     }
 
     uint8_t message = AOS_ARP_PRINT_CACHE;
-    void *response;
-    size_t response_size;
-    err = nameservice_rpc(arp_chan, (void *)&message, 1, &response, &response_size, NULL_CAP, NULL_CAP);
-    if (err_is_fail(err)) {
-        return err;
-    }
-
-    return SYS_ERR_OK;
+    return nameservice_rpc(arp_chan, (void *)&message, 1, NULL, NULL, NULL_CAP, NULL_CAP);
 }

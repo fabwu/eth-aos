@@ -95,9 +95,13 @@ static errval_t enet_rpc_udp_close(struct rpc_udp_close *message, void **respons
     err = nameservice_rpc(chan, &header, sizeof(struct rpc_udp_header),
                           (void **)&response_ack, &response_bytes_ack, NULL_CAP, NULL_CAP);
     if (err_is_fail(err) || !response_ack->success) {
+        if (err_is_ok(err)) {
+            free(response_ack);
+        }
         ERPC_DEBUG("Could not get ack from listener for closing (abort)\n");
         return err;
     }
+    free(response_ack);
 
     collections_hash_delete(state.listeners, (uint64_t)message->port);
 
@@ -189,6 +193,7 @@ static void enet_rpc_arp_handler(void *st, void *message, size_t bytes, void **r
                                  size_t *response_bytes, struct capref tx_cap,
                                  struct capref *rx_cap)
 {
+    *response_bytes = 0;
     if (bytes <= 0 || *(uint8_t *)message != AOS_ARP_PRINT_CACHE) {
         ERPC_DEBUG("Discarding invalid arp rpc message\n");
         return;
@@ -234,9 +239,7 @@ errval_t enet_rpc_handle_udp(struct udp_hdr *udp, ip_addr_t src)
     header->dest_port = ntohs(udp->dest);
     header->src_ip = src;
 
-    void *response;
-    size_t response_bytes;
     ERPC_DEBUG("Sending udp datagram for port %d\n", ntohs(udp->dest));
     return nameservice_rpc(chan, udp + 1, (lvaddr_t)(header + 1) - (lvaddr_t)(udp + 1),
-                           &response, &response_bytes, NULL_CAP, NULL_CAP);
+                           NULL, NULL, NULL_CAP, NULL_CAP);
 }

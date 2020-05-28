@@ -294,7 +294,6 @@ errval_t nameservice_rpc(nameservice_chan_t nschan_ref, void *message, size_t by
         // extract service name from beginning of recv buffer
         char response_name[name_bytes - 1];
         strcpy(response_name, recv_buf);
-        DEBUG_PRINTF("%s %s\n", nschan->name, response_name);
         assert(strcmp(nschan->name, response_name) == 0);
 
         *response_bytes = ((size_t)recv_bytes) - name_bytes;

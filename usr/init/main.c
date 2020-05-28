@@ -42,7 +42,7 @@
 #define INIT_EXECUTE_SPAWNTEST 0
 #define INIT_EXECUTE_NAMESERVICETEST 1
 #define INIT_EXECUTE_SHELL 1
-#define INIT_EXECUTE_ENET 0
+#define INIT_EXECUTE_ENET 1
 
 #define INIT_UMP_BUF_COREBOOT_LENGTH 6
 
@@ -227,12 +227,6 @@ static int bsp_main(int argc, char *argv[])
         err = process_spawn_init("enet");
         if (err_is_fail(err)) {
             DEBUG_ERR(err, "Couldn't spawn enet driver\n");
-        }
-
-        // Spawn echo server
-        err = process_spawn_init("udpecho");
-        if (err_is_fail(err)) {
-            DEBUG_ERR(err, "Couldn't spawn udp echo server\n");
         }
     }
 

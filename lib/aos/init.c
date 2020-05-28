@@ -111,7 +111,9 @@ static size_t aos_terminal_read(char *buf, size_t len)
             DEBUG_ERR(err, "getchar rpc failed\n");
             return -1;
         }
+
         char c = *(char *)response;
+        free(response);
 #endif
         err = aos_rpc_serial_getchar(serial_chan, &c);
         if (err_is_fail(err)) {
