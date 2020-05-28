@@ -120,7 +120,7 @@ allocator, we noticed that the second core lacks the following capabilities:
 \begin{itemize}
     \item RAM capability for the previously reserved memory
     \item Frame capability to bootinfo struct
-    \item Module Cnode with device frame capabilities for each multiboot module
+    \item Module CNode with device frame capabilities for each multiboot module
 \end{itemize}
 All of these capabilities can be created using the dangerous \verb|*_forge| functions which take a base address 
 and a size. We've already had the RAM cap address and got the bootinfo frame address on the boot core. The 
@@ -142,8 +142,21 @@ The second issue was in our implementation of \verb|paging_unmap|.
 While marking a virtual page as unmapped in our bookkeeping structures, we had forgotten to unmap it in hardware by invoking \verb|vnode_unmap|.
 As such, when the page was re-allocated later, the mapping operation would fail, as the old mapping was still active.
 
+\section{Inter-Core Communication}
+
+With the issues resolved, we were able to continue with establishing a communication channel between the two cores.
+No sophisticated messaging is needed for this milestone, but we had some spare time and already implemented
+a working UMP queue, which also handled ARMs weak memory model. The inner workings of this queue are described in  
+the next chapter.
+
+The queue needs a frame that is shared between the two cores in order to exchange messages. We use the already allocated
+URPC frame to initialize the queue on both sides and establish a communication channel. The first message that goes from
+the boot core to the app core is special and contains all the necessary information for the app core to do the remaining
+setup. The last step was to remove the hard-coded addresses and use the values from the initial message. Now we were at
+the same point as before when we hard-coded the values but with a working communication channel between the cores.
+
+The last requirement for this milestone was to use init on the boot core to spawn a process on the app core. As we had the
+UMP queue already running, we started with the implementation of a full inter-core RPC system and migrated the process spawn
+use case to this new framework. More details about the inter-core RPC system are described in the next chapter.
+
 Booting a second core proved to be a useful stress test for our work in previous milestones.
-With the issues resolved, we were able to continue with ...
-
-
- 
