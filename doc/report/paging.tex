@@ -138,33 +138,40 @@ reserve/watermark of 32 for the slabs.
 But importantly this is bounded number, we can't have unlimited reserve
 ressources.
 
+Paging might also get called from multiple threads (see later chapters),
+compared to the memory manager, which is always single threaded, only reentrancy
+can lead to concurrency.
 Also to note is we allow for unmapping, so page tables might also get delete.
 
-Why the unmap is decisive for the critical region, is that we might
-(actually not sure about this, we did not investigate further into this because allow for
-unmapping)
-get away with fairly simple locking when adding child page table and the
-critical region is only spanning one page table level
-(E.g. we want add to a page table into certain slot, but someone else already
-did that.
-Especially for higher page table levels there is quite some contention.)
+We use locks (now they are not just canary locks, they are really needed because
+of multiple threads) in \verb|paging_map_some| when adding to a page table.
+Before the lock, all preparations that might trigger reentrancy are already
+aquired.
+So that in the region of the lock, there won't ever be any concurrency.
+This is needed.
+As an example, if we add to the same slot, say of a l1 page table, we will
+have duplicate keys in the avl tree, breaking it, as it operates on the
+assumption that keys are distinct.
+Also we break the page table, as it is now undefined which mapping will be left
+intact.
+
+We allow for unmapping, and also use the same lock when manipulating page
+tables.
 
 When we now introduce that page tables also might get deleted, the page table we
 are about to add to might just have been pulled from under our feet.
-So we would need to have full blown concurrent data structures (again, we think
-this is possible, but we did not investigate further), which would have
-been "fun" to do, but we chose not to go down that path.
-
-So that forces us to have a critical regions that spans the full page table
-walk.
+For that, we would needed to have a critical regions that spans the full page
+table walk, which we currently don't have.
 
 But we also have upper bound for the critical region which are sure about.
-We might want to cache the results of the page table walk to speed up paging.
-But as we just argued before, this would increase our critical region.
-Therefore, caching of the tree traversal results to speed up further mapping
-requests (potentially unbounded many) would lead to an unbounded size of the
-critical region, the need for unbounded amounts of reserve ressources.
-That's why we chose not to cache results of the page walk.
+Locking of the whole map would lead to an unbounded size of the
+critical region (potentially unbounded many pages to map), resulting in the need
+for unbounded amounts of reserve ressources.
+So if we would wan't to chache page table results, we would need to discern
+between the total mutual exclusion of map and unmap, and the partial mutual
+exclusion between two mappings, that can be broken to a specific page table
+level.
+But we might also starve unmap if we would implement it this way.
 
 \subsubsection{History}
 
@@ -182,8 +189,13 @@ disjunct.
 
 \subsection{Limitations}
 
-We could have cached the page table walk results for fixed number of lookups,
-and increase the ressource reserves accordingly.
+As everything concurrency in paging is quite tricky, we did not do certain
+things which would have potentially made more correct, faster.
+For example, the page table walk results should have been cached for the
+additive case that is map, the code could already handle that case.
+Paging map and paging unmap should be mutual exclusive. As it is there is still
+the possibility that concurrent running paging unmap might preempt a paging map
+call, or even thrash the datastructures.
 
 We don't support mapping of huge pages, which could give quite some speedup, as
 significantly less context switches.
