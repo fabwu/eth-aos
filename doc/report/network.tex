@@ -9,7 +9,7 @@ One of the earliest decision in the network project was, where the driver should
     \item Better performance and lower latency: The network could run uninterrupted and be preemted much less and only for the kernel. (This is an assumption, as we did not try to implement this approach and meassure it.)
     \item Fast client applications that use networking: Because the networking would run on a different core than any other application, UMP could be used as the sole message passing system. This would not only make the interface simpler but also faster, as the book has already shown that UMP is faster than LMP.
 \end{itemize}
-The disadvanteges would be:
+The disadvantages would be:
 \begin{itemize}
     \item Refactoring multi-core memory management: As detailed in previous chapters, we split the memory between the two already running cores. We agreed as a team, that it would not make much sense to split the memory threeways for the network and it is hard to predict which core would need how much memory. So for a networking core to be functional we would have to implement a way to pass memory to the netwroking core, which we previously decided not to do because we deemed it to be a lot of complicated work.
     \item Unrealistic: If we were to continue work on this OS we would at some point want to start all the cores and use them for user applications. At this point we would not want a core dedicated to networking anymore. When looking at the bigger picture, it therefore does not seem to make sense to have a dedicated networking core and would also feel like cheating to be able to show better performance in the final report.
@@ -237,5 +237,86 @@ Because of how the IP package and UDP datagram are already written directly to t
 The checksum function was designed to be also useable for calculating the TCP checksum. But this was not tested, as TCP was not implemented in the end due to time restrictions and other functionality having priority.
 
 \section{Interface / API}
+The server code for interfacing with other applications was implemented in \verb|usr/drivers/enet/rpc.c| and defined in \verb|usr/drivers/enet/rpc.h| (the RPC layer). The client API was implemented in \verb|lib/aos/netservice.c| and its interface defined in \verb|lib/aos/netservice.h|.
 
-\section{Nameservice Interaction}
+So the netservice is the client, while the RPC layer is the server. Both of them implementing one side of the same RPC protocol. The communication was done over the new nameservice interface, which was implemented in one of the other individual projects. The RPC layer exposes UDP listening and sending using a service called "udp" and printing the ARP cache using a service called "arp".
+
+\subsection{UDP Send}
+Sending a UDP datagram is done from any application using the \verb|netservice_udp_send| function defined in netservice. Internally this function does a lookup for the UDP service and then sends a header as defined in the \verb|struct rpc_udp_send| followed by the payload to the service. The service sends back a small response as defined in the \verb|struct rpc_udp_response|.
+The response has only feedback in form of a flag that specifies if sending was successful or not. This could be improved upon by sending back result codes for different error cases.
+
+\subsection{UDP Listen}
+Listening on a port is a bit more complicated, as the nameservice interface only allows the blocking \verb|nameservice_rpc| function for communication. But because there are potentially indevinitely many UDP messages that have to be received this was not ideal. There were multiple possibilities how to solve the problem:
+\begin{enumerate}
+  \item Bypass: Use the nameservice to connect the UDP service with a client and then setup the communication between service and client over other means (e.g. over a URPC frame).
+  \item Polling: Repeatedly poll from the client on the UPD service for new UDP datagrams.
+  \item Anonymous Service: Creating an anonymous service on the client, to which the UDP service can send incoming datagrams for that client.
+\end{enumerate}
+
+All of these possibilities have different advantage and disadvantages:
+\begin{enumerate}
+  \item Bypass: With bypassing we would achieve everything we want, but we would have to implement all of the communication again when there is already an implementation for it. Also we wanted to try to integrate our different individual projects to work together.
+  \item Polling: The main disadvantage would be that a lot of internal traffic over the nameservice API would be created. Another problem is that the UDP service would have to manage an additional buffer for incoming UDP datagrams. With the current implementation of nameservice this would also mean an additional copy of the datagram, which we wanted to avoid as a design goal.
+  \item Anonymous Service: This approach would have the advantages, that the nameservice API would be used for everything and no datagram buffering in the UDP service would have to be done. This resolves the main disadvantages that the other two options had. One disadvantage with this solution would be, that for each UDP listener a service would be created, which fills the nameserver with unneeded services. Another disadvantages would be, that the setup and tear down would be a lot more complicated, as additional services would have to be registered and hooked up in the UDP service.
+\end{enumerate}
+
+We decided to implement the 3rd option (Anonymous Service).
+The following listing \ref{lst:udplisten} shows the interface of the API function in netservice:
+
+\begin{lstlisting}[language=c, caption=Interface for UDP listen, label=lst:udplisten]
+errval_t netservice_udp_listen(
+    uint16_t port, netservice_udp_handler_t udp_handler,
+    void *udp_handler_state);
+\end{lstlisting}
+
+As we can see, the client only needs to specify a port and a callback closure (consisting of a function pointer and state variable). If the API call succeeds, the callback function would get called with every arriving UDP datagram for the specified port until the UDP port is closed again. (See the next section for closing.)
+
+What happens inside the function is, that the client registers a anonymous service to receive UDP datagrams on and then sends the name of this service along with the port to the UDP service. In the udp service we lookup the given client service name and if this succeeds and the port was still free would add the client nameserver channel to a hashtable. This allows a fast lookup for the correct client channel, when receiving UDP datagrams by searching for the destination port in the hashtable.
+
+When sending UDP datagrams to the client we use a trick that was described earlier in the chapter that makes sure the data is only copied once: When sending a datagram to the client we do not want to send all the header information, but we need to send some auxiliary data (like IP address and port numbers) and some connection information. This data is just added to the back of the buffer after the end of the datagram payload. We are sure that there are enough bytes for that in the buffer, because the buffer has more bytes than needed, because it allocates more bytes than could be possibly received on an ethernet frame.
+
+\subsection{UDP Close}
+Because we choose the more difficult setup for UDP listen, closing becomes naturally more difficult as well. There was another important design decision made for closing the UDP ports: Should we allow any application to close just any port or do we want to only allow the client that started listening to be able to close the port. The advantage of the former was, that it is simpler to implement and allows for other applications to reclaim a port, if it was left open by another application. But we see a big disadvantage in beeing able to close ports of other clients, in that we do not want to allow hijacking of a connection between different applications. Also we want to give the client more stable guarantees, that their connection is not suddenly closed by other applications.
+
+\begin{figure}
+  \centering
+
+  \begin{sequencediagram}
+    \newthread{cli}{Client}
+    \newinst{api}{Netservice API}
+    \newinst{clisrv}{Client Service}
+    \newthread{srv}{UDP service}
+
+    \begin{call}{cli}{close(port)}{api}{}
+      \begin{call}{api}{set\_closing(port)}{api}{}
+      \end{call}
+
+      \begin{call}{api}{close(port)}{srv}{}
+        \begin{call}{srv}{close\_ok(port)}{clisrv}{okflag}
+          \begin{call}{clisrv}{is\_closing(port)}{api}{okflag}
+          \end{call}
+        \end{call}
+
+        \begin{sdblock}{if}{[okflag]}
+          \begin{call}{srv}{close(port)}{srv}{}
+          \end{call}
+        \end{sdblock}
+      \end{call}
+
+    \end{call}
+  \end{sequencediagram}
+
+  \caption{Sequence diagram for closing an UDP port}
+  \label{fig:udpclose}
+\end{figure}
+
+We decided to setup a protocol, that would get the confirmation of the client before closing the port. This confirmation process was completly hidden from the client by the netservice API. The listing \ref{lst:udpclose} shows the API that the client is exposed to. The only thing the client observes is, that if he closes his own connections it works, but if he tries to close foreign connections it is going to fail. The following figure \ref{fig:udpclose} shows how this was achieved.
+
+\begin{lstlisting}[language=c, caption=Interface for UDP close, label=lst:udpclose]
+errval_t netservice_udp_close(uint16_t port);
+\end{lstlisting}
+
+The client calls the close function in the netservice API. There the local channel state for the given port is searched and the connection is marked as ready to be closed down. Then an RPC call is sent to the UDP service to close the specified port. The UDP service checks if there is a client listening on the port and if so, sends a confirmation request to the client's anonymous service for the given port. The client service can check the closing flag in constant time and answer the UDP service that it is ok to close the port if the flag is set or not ok otherwise.
+
+\subsection{ARP Print Cache}
+The ARP service has an own service registered that takes requests to print the ARP cache. Then receiving a request the service simply calls the \verb|arp_print_cache| function which uses printf calls to render the ARP cache to the serial output.
