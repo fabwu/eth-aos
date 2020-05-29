@@ -22,19 +22,19 @@
 #include <fs/dirent.h>
 #include <spawn/argv.h>
 
-#define SDCARD_PRESENT  1
+#define SDCARD_PRESENT 1
 
 static struct aos_rpc *process_rpc;
 
-#define MAX_LINE_SIZE   4096
+#define MAX_LINE_SIZE 4096
 static char cmdline[MAX_LINE_SIZE + 1];
 
 /* LED */
-#define GPIO3_BASE          0x5D0B0000
-#define GPIO3_SIZE          0x10000
-#define GPIO3_DR_OFFSET     0x0
-#define GPIO3_GDIR_OFFSET   0x4
-#define PIN_LED4            (1 << 23)
+#define GPIO3_BASE 0x5D0B0000
+#define GPIO3_SIZE 0x10000
+#define GPIO3_DR_OFFSET 0x0
+#define GPIO3_GDIR_OFFSET 0x4
+#define PIN_LED4 (1 << 23)
 static void *led_base;
 
 static void led(bool on)
@@ -169,6 +169,63 @@ static void touch(char *path)
     }
 }
 
+static void cp(char *src_path, char *dst_path)
+{
+    errval_t err;
+
+    void *buf = malloc(512 * sizeof(char));
+    if (buf == NULL) {
+        printf("malloc failed\n");
+        return;
+    }
+
+    FILE *src = fopen(src_path, "r");
+    if (src == NULL) {
+        printf("fopen failed\n");
+        return;
+    }
+
+    FILE *dst = fopen(dst_path, "w");
+    if (dst == NULL) {
+        printf("fopen failed\n");
+        return;
+    }
+
+    while (true) {
+        size_t read = fread(buf, 1, 512, src);
+        err = ferror(src);
+        if (err_is_fail(err)) {
+            printf("fread failed\n");
+            return;
+        }
+
+        if (read > 0) {
+            size_t written = fwrite(buf, 1, read, dst);
+            err = ferror(dst);
+            if (err_is_fail(err) || written != read) {
+                printf("fwrite failed\n");
+                return;
+            }
+        } else {
+            break;
+        }
+    }
+
+    err = fclose(src);
+    if (err_is_fail(err)) {
+        printf("fclose failed\n");
+        return;
+    }
+
+    err = fclose(dst);
+    if (err_is_fail(err)) {
+        printf("fclose failed\n");
+        return;
+    }
+
+    free(buf);
+}
+
 static void cat(char *path)
 {
     errval_t err;
@@ -273,6 +330,7 @@ static void run_command(void)
         printf("ls [path]          - list directory contents\n");
         printf("touch [path]       - create file\n");
         printf("cat [path]         - read file\n");
+        printf("cp [src_path] [dst_path] - read file\n");
         printf("rm [path]          - remove file\n");
         printf("mkdir [path]       - create directory\n");
         printf("rmdir [path]       - remove directory\n");
@@ -308,6 +366,8 @@ static void run_command(void)
         touch(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "cat") && argc == 2) {
         cat(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "cp") && argc == 3) {
+        cp(argv[idx + 1], argv[idx + 2]);
     } else if (!strcmp(argv[idx], "rm") && argc == 2) {
         fs_rm(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "mkdir") && argc == 2) {
