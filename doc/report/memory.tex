@@ -314,8 +314,7 @@ In case of an error, we might not fully clean up after us.
 This shouldn't invalidate our invariants, but might reduce the amount of memory
 effectively usable.
 
-We do not get a ram cap when freeing, which was already so in the original hand
-out.
+We do not get a ram cap when freeing.
 So we are not sure when freeing ram if the one freeing is really owner of the
 freed memory range.
 
