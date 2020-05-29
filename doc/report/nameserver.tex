@@ -36,8 +36,7 @@ implemented and some calls might be never replaced.
 Considering the points above a multi-hop protocol over \verb|init| seems to be easier
 to implement in the setting of this course. In the initial design each domain has a
 LMP channel to \verb|init| and the first word of a message is used for metadata (message
-type, sender, receiver). Figure TODO shows the basic components. 
-
+type, sender, receiver). 
 
 If a domain wants to send a message to another domain, it has to create the correct header 
 using an identification for the receiver (e.g. PID). The sending domain forwards the 
@@ -69,7 +68,19 @@ the existing RPC system. Thus, I decided to limit the PID to 16-bits and use the
 the core id. This limits the number of concurrently running processes to 4096, which is obviously insufficient 
 for a real-world OS. Furthermore, we don't reassign PIDs from terminated domains but this could be easily 
 implemented with a free-list for the PIDs. Nevertheless, this limitation shouldn't affect the small system 
-we build for this course. Figure TODO shows how the complete header is specified. 
+we build for this course. Figure \ref{fig:ns-header} shows how the complete header is specified.  
+\begin{figure}[h]
+\centering
+\begin{bytefield}[bitwidth=0.5em]{64}
+    \bitheader[endianness=big]{0,8,24,40,64} \\
+    \bitbox{24}{unused}
+    \bitbox{16}{receiver PID}
+    \bitbox{16}{sender PID}
+    \bitbox{8}{type}
+\end{bytefield}
+\caption{Message header}
+\label{fig:ns-header}
+\end{figure}
 
 Now \verb|init| can easily extract the receiver of a message from the header using macros. In order to forward
 message \verb|init| has to lookup the LMP channel of the receiver. The LMP channel from init to each domain is
@@ -88,7 +99,10 @@ existing RPC implementation, which also registers a closure when waiting for the
 apparent that several channels to init are required, so I simplified the creation of channels from init to its child
 domains. After this change I had all the necessary functionality to proceed with the implementation of the nameserver.
 
-\section{Architecture}
+\section
+{
+    Architecture
+}
 \label{ns-architecture}
 
 The nameserver is running in a separate process and is the first process that get started after \verb|init| is ready. This makes
