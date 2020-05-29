@@ -166,19 +166,90 @@ he can pass to \verb|nameservice_rpc()| to make a request.
 The function \verb|nameservice_lookup_did()| is a wrapper around \verb|nameservice_lookup| and returns the PID instead of the channel pointer.
 This function is used by the shell command \verb|nslookup|.
 
-Now that the client obtained a channel to the service, he is ready to issue a request.
+At this point, the client obtained a channel to the service, he is ready to issue a request.
 
 \section{Service Call}
 \label{ns-service-call}
 
-As mentioned in section \ref{ns-architecture}
+A client can contact a service with the \verb|nameservice_rpc()| function, send an arbitrary request and get a response back. The nameservice
+library casts the opaque channel pointer back to the \verb|struct nameservice_chan| to get the name and PID of the service. 
 
-no caps, clean up messy
+As mentioned in section \ref{ns-architecture} we restricted the protocol in such a way that we cannot send multiple messages back and forth 
+for one request. The only possibility to transfer arbitrary large payloads is to allocate a frame and transfer the capability to the other 
+domain. We cannot send capabilities across cores but we can forge them using \verb|frame_forge| but I cover UMP communication later on.
 
+After getting all the necessary information to contact the service, the client library allocates a frame of size 
+\verb|name_bytes + request_bytes|. The frame is then mapped into the client's address space and we get a pointer to a send buffer. The client
+copies the name of the service followed by the request content into the send buffer. Then he creates a LMP message, addressed to the server,
+which contains the frame capability and the size of the whole frame. It is not necessary to send the length of the service name or the size
+of the request payload, as we can recover these values using the null character of the service name. This message is now forwarded over the
+client channel to \verb|init| for routing.
 
+When \verb|init| receives the message, it checks if the receiver is on the same core. \verb|init| has to take some additional steps for 
+cross-core communication, so the case where the client and the server are on the same core is explained first. As the server is on the same
+core, we can simply forward the message, including the frame capability, to the server channel.
+
+When the message arrives on the server side, a \verb|nameservice_handler()| closure is called, which handles the message. This closure was
+registered previously on the server channel, when the server called \verb|nameservice_register()| for the first time. The nameservice library
+parses the message for the client PID and the size of the frame. Then the frame, which the server got over LMP, is mapped into the server 
+domain's address space. Now the nameservice library reads the service name from the beginning of the frame and determine the size of the 
+payload using the null terminator. Then we check the hashtable if a closure is registered under the given service name. If not we clean up
+and return an error to the client. If the lookup was successful, we call the closure with the state in the hashtable and the message payload.
+The service is now doing his work in the closure and returns a response. The nameservice library allocates another frame as return buffer and
+copies the service name followed by the response into the buffer. The service name in the return buffer could be omitted, but it acts as
+sentinel on the client side (received response from correct service) and makes sure that the frame size is not zero. Now the capability and
+size of the response frame is sent back to the client. On the client side the frame is again mapped and the response is copied into the buffer
+provided as an argument. This concludes a complete RPC request on the same core.
+
+Before I go to the inter-core RPC I want to briefly discuss the clean-up of the allocated frames after a request is completed. The clean-up
+is a bit tricky because both sides have to allocate resources (e.g. client doesn't now size of response from server). Now if for example the
+server frees an allocate frame too early, the client doesn't receive the complete response. The easiest solution would be a two-stage protocol.
+The client alone is responsible allocating and freeing up resources. Before the server sends back a response, he would tell the client the
+size of the response and get a frame in return. If the client has finished up, he can free both the request and the response frame.
+Unfortunately, this requires sending multiple messages back and forth, which is not possible with the current design. Another solution, is to
+allocate on one side and free on the other side (e.g. server allocates response frame, server deletes cap and client frees response frame).
+This approach doesn't require multiple messages but due to limitations of the memory manager \verb|frame_free| cannot free resources
+of other domains. I didn't have time to investigate this issue further so the current implementation is leaking memory.
+
+If the client and the server are not on the same core, \verb|init.0| forwards messages without a frame over the existing UMP channel to 
+\verb|init.1| on the other core. \verb|init.1| looks up the LMP channel of the receiver and forwards the message accordingly. If the 
+message contains a frame capability i.e. has a payload, \verb|init.0| finds the physical address of the frame and sends a message 
+with the address and the size to \verb|init.1|. On the other core, \verb|init.1| forges a frame capability and sends it to the receiver
+via LMP. The advantage of this approach is that the shared frame acts as a pseudo direct channel between the client and the server, so
+the UMP channel isn't congested with small messages from a fragmented frame. What's more, the nameservice library can be reused on the
+second core without any changes, as the communication still goes over LMP. A huge drawback is that we cannot free the frame, after it
+was used, which leads to more memory leaking. Another issue is that this solution cannot exploit the cache coherence trick, which uses UMP
+to speed up message transport. As I implemented this approach I was a bit surprised that the other process, can see the content of the frame,
+despite ARMs weak memory model. But then I discovered that the UMP queue inserts a data memory barrier, when a message is enqueued. This
+makes the payload frame available on the other core without any additional effort from the nameservice library.
+
+There is one remaining issue with shared frame transfer. As LMP can only transfer one capability per message, we can either send a large
+payload (slot is used by frame capability) or a capability. As we cannot transfer capabilities between cores and I didn't come to the point,
+where I migrated other RPC services (e.g. memory server) to the nameservice API, I omitted this implementation.
 
 \section{Shell Integration}
 
-nslist not implemented
+For this project we had to implement two shell commands to interact with the nameservice. The first is \verb|nslookup <service_name>|, which
+simply prints the PID of the domain which offers the service. I implemented this command using the \verb|nameservice_lookup_did()| function
+described earlier.
 
-\section{Migration}
+The other command is \verb|nslist| that prints all registered services. When the nameserver receives a message from the nameservice library,
+he simply prints the hashtable.
+
+\section{Migration of Existing Services}
+
+Despite several issues with the nameservice library, a fellow team member successfully implemented the network project with it. The
+networking has reasonable performance and works also across cores. Sadly, the file system and the shell didn't use the nameservice
+library. One feature, that was also requested from the network project, was an asynchronous API for the client. Consider the case
+where a shell wants to receive characters from a terminal server. It would be convenient for the shell to register a callback at
+the terminal server, which gets called if a character arrives from the serial port. One can implement this scenario with the current
+API (the shell has to act as server) but it is not cumbersome and not very intuitive.
+
+The other aspect, which also affected the migration of the existing services (e.g. get more memory), is that we simply run out of
+time in the end and had to focus on the report.
+
+In retrospective, I can say that not using direct channels between domains (at least for LMP), was definitely not a good design choice and
+made the implementation of the nameserver more complicated that it should have been. At the point were I realized the problem with freeing
+the resources I have already spend to much time on this design and I couldn't work out a better solution in this limited time frame. 
+Nevertheless, I learned a lot while implementing the nameserver, because I touched many parts of the core system again and had to adapt them
+to the current design.
