@@ -57,71 +57,152 @@ We deparse the BPB in \verb|lib/fs/fat32fs_internal.c:fs_read_metadata|
 (a file that also contains all the cruft from the first trials).
 This deparsing is specific to FAT32.
 
---- END ---
+\subsection{Datastructures}
 
-Implement a FAT32 Filesystem, spawn a process with the binary loaded off of the
-sdcard, create fileserver to expose filesystem functionality over rpc.
+For the metadata and sd blocks, there is the \verb|struct fat32_fs|.
+It also holds the sdhc driver state.
 
-Steps taken in implementation:
+There are two sd blocks, one for the fat datastructre, and one for the data
+itself.
+This works, because all the methods concerning these area of data don't overlap,
+so that was easy to introduce.
+Data is written back lazily when for the same block a different sector is read.
+This helps in reducing block transfer when for example manipulating the cluster
+chains in the fat.
+For that the blocks have a field for the sector their buffer currently contains,
+and if the data is dirty.
+
+To represent an open file, we have the \verb|struct fat32fs_dirent|
+datastructure.
+It stores the name of the file, it's size if it's a regular file, it's start
+cluster.
+Additionally, stores the position of its dir entry, which allows for fast
+removal and updating of dir entry, without needing to reiterate through the dir
+again to find the file.
+
+It also holds something called the \verb|fat32fs_dir_state|, which is a bit a
+misnomer because it also used for reading and writing of files.
+It tracks the position in the file/dir.
 \begin{itemize}
-	\item Added sdcard initialisation
-	\item Methods to read/write from/to sdcard, with cache invalidation/writeback
-	\item Parsing FAT32 metadata
-	\item Tried basic listing of directory
-	\item Added virtual filesystem capability
-	\item Added capability to ramfs to mount other filesystems
-	\item Added rpc call to get device frame
-	\item Implemented FAT32 filesystem according specification
-	\begin{itemize}
-		\item Enable opening, listing, and closing of directories
-		\item Enable opening, reading, and closing of files
-		\item Enable seeking, and tell for files
-		\item Enable creation, deletion of directories
-		\item Enable creation, deletion of files
-		\item Enable stat, but can't be used because don't get dirhandle for files
-					from anywhere
-	\end{itemize}
-	\item Added tests to /usr/test/filereader/main.c
-	\item Tested if elf image from sdcard boots
-	\item TODO: Expose interface over rpc, hook int /lib/fs/fopen.c, add fd and
-				hook into /lib/fs/dirent.c to call rpc if not fileserver
+	\item \verb|clus| together with \verb|depth| and \verb|is_eof| keep track of
+				which cluster we are currently at.
+				Cluster is special, in that it's a single linked list, so we can't go
+				back, and it's expensive to got to a specific element, and also just
+				from knowing the cluster number we don't know how many elements in we
+				are.
+				\verb|depth| so we now at which offset from the beginning we are.
+				\verb|is_eof| should have been used to speed up
+				\verb|fat32fs_is_last_dir_entry|, but that didn't seem to happen.
+				\verb|fat32fs_is_last_dir_entry| is there because it would be expensive
+				if we overwrote \verb|clus| with the eof mark, and then to expand or do
+				anything again, having to iterate through the whole cluster chain again.
+	\item \verb|sector| is just the sector number relative to the cluster.
+	\item \verb|des_pos| is specific to files, it tracks the offset in the file
+				in bytes from 0, the beginning.
+				It does not necessarily need to be in sync with \verb|clus|, \verb|sec|,
+				as it just indicates the position we wish to read from, write to, e.g.
+				set by a \verb|fseek| call.
+	\item \verb|entry| is specific to directories, it tracks the offset in bytes
+				from the current sector, and is incremented in 32 byte steps, the size
+				of a directory entry.
 \end{itemize}
 
-Specifics of virtual filesystem:
-\begin{itemize}
-	\item Describe datastructures of virtual filessystem
-	\begin{itemize}
-		\item fs\_mount
-		\item fs\_handle
-		\item having fs\_mount avaiable all the time
-	\end{itemize}
-	\item Describe path resolution (and whish to add layer external to specific
-				fs to deduplicate resolution logic, cache results)
-	\item Describe call dispatching in virtual filesystem
-\end{itemize}
-
-Specifics of fat32:
-\begin{itemize}
-	\item Describe datastructures specific to FAT32
-	\begin{itemize}
-		\item fat32\_fs
-		\item fat32\_dirent
-		\item fat32\_dirstate
-	\end{itemize}
-	\item Describe separate buffers for fat metadata and data
-	\item Describe lazy write mechanism of sectors
-	\item Idea to have separate buffers per filehandle/dirhandle, improve locality
-\end{itemize}
+% TODO: More content ideas
+% --- END ---
+% 
+% Implement a FAT32 Filesystem, spawn a process with the binary loaded off of the
+% sdcard, create fileserver to expose filesystem functionality over rpc.
+% 
+% Steps taken in implementation:
+% \begin{itemize}
+% 	\item Added sdcard initialisation
+% 	\item Methods to read/write from/to sdcard, with cache invalidation/writeback
+% 	\item Parsing FAT32 metadata
+% 	\item Tried basic listing of directory
+% 	\item Added virtual filesystem capability
+% 	\item Added capability to ramfs to mount other filesystems
+% 	\item Added rpc call to get device frame
+% 	\item Implemented FAT32 filesystem according specification
+% 	\begin{itemize}
+% 		\item Enable opening, listing, and closing of directories
+% 		\item Enable opening, reading, and closing of files
+% 		\item Enable seeking, and tell for files
+% 		\item Enable creation, deletion of directories
+% 		\item Enable creation, deletion of files
+% 		\item Enable stat, but can't be used because don't get dirhandle for files
+% 					from anywhere
+% 	\end{itemize}
+% 	\item Added tests to /usr/test/filereader/main.c
+% 	\item Tested if elf image from sdcard boots
+% 	\item TODO: Expose interface over rpc, hook int /lib/fs/fopen.c, add fd and
+% 				hook into /lib/fs/dirent.c to call rpc if not fileserver
+% \end{itemize}
+% 
+% Specifics of virtual filesystem:
+% \begin{itemize}
+% 	\item Describe datastructures of virtual filessystem
+% 	\begin{itemize}
+% 		\item fs\_mount
+% 		\item fs\_handle
+% 		\item having fs\_mount avaiable all the time
+% 	\end{itemize}
+% 	\item Describe path resolution (and whish to add layer external to specific
+% 				fs to deduplicate resolution logic, cache results)
+% 	\item Describe call dispatching in virtual filesystem
+% \end{itemize}
+% 
+% Specifics of fat32:
+% \begin{itemize}
+% 	\item Describe datastructures specific to FAT32
+% 	\begin{itemize}
+% 		\item fat32\_fs
+% 		\item fat32\_dirent
+% 		\item fat32\_dirstate
+% 	\end{itemize}
+% 	\item Describe separate buffers for fat metadata and data
+% 	\item Describe lazy write mechanism of sectors
+% 	\item Idea to have separate buffers per filehandle/dirhandle, improve locality
+% \end{itemize}
 
 \section{Limitations}
+
+\verb|filesystem_init| can be called from any domain, so technically any domain
+can use the filesystem. But we do not have a central fileserver yet, which
+exposes the api via rpc. For \verb|lib/fs/fopen.c|, this would haven been easy,
+because we already have the fd number as an easy to transmit identifier, so it
+would have just been a one to one call over rpc.
+For \verb|lib/fs/dirent.c|, we would have needed to add the fdtab structure, and
+then we could have proceeded the same way.
+One optional thing could be for the fileserver to make it more secure is add an
+intermediate translation table.
+This way the client can't infer from the gaps in the fd what other clients are
+doing.
+More importantly, this would prevent clients from spoofing their fd, e.g. they
+would only able to use their own file descriptors that are in the translation
+table, others wouldn't translate.
+
+We don't honor if the fat is mirrored, e.g. we update at most one fat.
 
 Needing to zero initialise a full cluster everytime a directory is created,
 which is unnecessary but specified as such.
 One could just keep the entry after the last zero, and if the cluster is full,
 just look if our fat entry is eof.
 
+If staying with the zero initialisation, it might have made sense to have a zero
+buffer and directly write it, instead of zeoring out one sector after the other
+(reading, then zeroing).
+Zeroing a cluster is also a perfect case for having dma requests of multiple
+sectors, which then could also be used for the normal reading and writing.
+
 Generally the filesystem is quite slow.
-This can be attributed to data not being aggresively enough cached.
+This can be attributed to data not being aggressively enough cached.
+There should be at least 3 sd blocks, more if one introduces writing of multiple
+blocks in one go.
+The 3 blocks would be for the fat cluster chain, the dir entry, and finally the
+content of the file.
+This would alleviate the problem that while writing, the current data block is
+contended for updating the file size and file content, which are different
+sectory, leading to unecessary reads and writes of blocks.
 Especially the path resolution should be factored out of the specific
 filesystems and aggresively cache results.
 Filesystem wouldn't then not need to bother anymore with mounts and delegating
