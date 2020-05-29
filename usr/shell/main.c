@@ -136,7 +136,18 @@ static void fs_rmdir(char *dir)
 
     err = rmdir(dir);
     if (err) {
-        printf("mkdir failed\n");
+        printf("rmdir failed\n");
+        return;
+    }
+}
+
+static void fs_rm(char *dir)
+{
+    errval_t err;
+
+    err = rm(dir);
+    if (err) {
+        printf("rm failed\n");
         return;
     }
 }
@@ -262,6 +273,7 @@ static void run_command(void)
         printf("ls [path]          - list directory contents\n");
         printf("touch [path]       - create file\n");
         printf("cat [path]         - read file\n");
+        printf("rm [path]          - remove file\n");
         printf("mkdir [path]       - create directory\n");
         printf("rmdir [path]       - remove directory\n");
         printf("time [cmd]         - time a command\n");
@@ -296,6 +308,8 @@ static void run_command(void)
         touch(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "cat") && argc == 2) {
         cat(argv[idx + 1]);
+    } else if (!strcmp(argv[idx], "rm") && argc == 2) {
+        fs_rm(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "mkdir") && argc == 2) {
         fs_mkdir(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "rmdir") && argc == 2) {
