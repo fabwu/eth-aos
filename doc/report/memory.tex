@@ -219,10 +219,7 @@ automatically fulfilled.
 For external fragmentation, we try to undo it by fusing adjacent free memory
 ranges.
 We try to use the smallest memory range that is large enough to fulfil the
-memory request, and splitting off from the left, leaving as much of the free
-memory rang intact.
-This makes answering if there is a large enough memory range simple, as what
-can be fused is fused.
+memory request, and splitting off from the left.
 We did not further investigate if this is detrimental to external fragmentation.
 
 % TODO: Potentially more material
@@ -308,6 +305,9 @@ always be a deadlock condition.
 % is not reentrancy free anymore.
 
 \subsection{Limitations}
+
+Potentially, a buddy allocator scheme would have clustered mmemory requests
+better according to size, leading to less external fragmentation.
 
 We only support for at most one memory region coming from the boot info.
 
