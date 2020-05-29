@@ -27,3 +27,16 @@ Also, the shell should be disabled for this (\verb|INIT_EXECUTE_SHELL|), as else
 there might be two initialisations of the filesystem.
 We used the hello binary, if a different binary is to be spawned, the path
 under the should be changed appropriately.
+
+\section{Interfaces}
+
+We changed the interfaces of the following functions:
+
+\begin{itemize}
+    \item \verb|aos_ram_free|
+    \item \verb|paging_unmap|
+    \item \verb|paging_init_state|, \verb|paging_init_state_foreign|
+    \item \verb|spawn_load_argv|
+    \item \verb|spawn_load_by_name|
+\end{itemize}
+
