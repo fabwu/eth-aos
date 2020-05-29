@@ -255,7 +255,7 @@ static void cat(char *path)
     size_t read = fread(buf, 1, filesize, f);
 
     *(buf + read) = '\0';
-    printf("%s\n", buf);
+    debug_printf("%s\n", buf);
 
     free(buf);
     err = fclose(f);
