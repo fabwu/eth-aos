@@ -4,7 +4,7 @@
 
 The memory manager manages ranges of physical address space, we started to call
 them memory ranges.
-If one compares with paging, there there is a manager of ranges of virtual
+If one compares with paging, there is a manager of ranges of virtual
 address space, called addr\_mgr.
 What both have in common is the invariant that ranges are to be disjoint, and
 that a certain range should only be given out once, from the managers view there
@@ -305,7 +305,7 @@ always be a deadlock condition.
 
 \subsection{Limitations}
 
-Potentially, a buddy allocator scheme would have clustered mmemory requests
+Potentially, a buddy allocator scheme would have clustered memory requests
 better according to size, leading to less external fragmentation.
 
 We only support for at most one memory region coming from the boot info.

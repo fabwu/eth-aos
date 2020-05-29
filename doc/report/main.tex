@@ -71,8 +71,6 @@ Philippe Mazenauer
 
 \listoffigures
 
-\listoftables
-
 \clearpage
 
 % One chapter, but easier to handle this way
@@ -101,9 +99,9 @@ Philippe Mazenauer
 \chapter{Summary of overall system}
 
 It proved to have been good decision to invest time in writing test code
-(see \verb|lib/grading|, but also other places like \verb|usr/memeater/main.c|,
-\verb|usr/test/filereader/main.c|).
-Because during the intergration we did not encounter further problems with the
+(see \verb|lib/grading|, but also other places like \verb|usr/memeater/main.c|, \newline
+\verb|usr/test/filereader/main.c| or \verb|usr/test/nameservicetest|).
+Because during the integration we did not encounter further problems with the
 core system functionality like paging and memory allocation.
 
 We did not end up with as a modular system as imagined in the beginning, with
@@ -114,7 +112,7 @@ works like the memory server, to not refactor it into it's own domain.
 So init still does all of the core os work, and only the network project managed
 to be truly in it's separate domain.
 
-Especially in the rpc part, it felt sometimes more like programming for a
+Especially in the RPC part, it felt sometimes more like programming for a
 distributed system than just simply for a multicore processor.
 All the many things that happen on Linux hiddenly are much more in present, and
 that's a good thing.
@@ -132,6 +130,6 @@ problems, one feels very much at home even after this short a time.
 
 \input{userguide}
 
-\printbibliography
+%\printbibliography
 
 \end{document}

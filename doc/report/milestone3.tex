@@ -28,7 +28,8 @@ One of the first tasks we had to handle was setting up the communication between
 We passed the init endpoint at a well known location in the childs task cnode when spawning the child. Afterwards we setup the communication between child and init by passing the childs endpoint to init and then sending a confirmation message from init to the child. The child only starts running from its main function after receiving this confirmation from init. The following describes these steps in more detail with some implementation details:
 
 \begin{enumerate}
-    \item When spawning a new child: Pass init endpoint in task cnode in slot defined by constant \verb|TASKCN_SLOT_INITEP| using \verb|cap_copy|. This is done in the function \verb|spawn_child_cspace_set_initep| in \verb|lib/spawn/spawn.c|.
+    \item When spawning a new child: Pass init endpoint in task cnode in slot defined by constant \verb|TASKCN_SLOT_INITEP| using \verb|cap_copy|. This is done in the function \verb|spawn_child_cspace_set_initep| in \newline
+        \verb|lib/spawn/spawn.c|.
     \item In \verb|create_child_channel| (spawn.c) register
     \verb|recv_setup_closure| from init
     (used to receive initial ep from child)
@@ -42,7 +43,8 @@ We passed the init endpoint at a well known location in the childs task cnode wh
     \item \verb|recv_setup_closure| gets called:
         \begin{itemize} 
             \item save child ep in init channel struct (\verb|lmp_chan|)
-            \item send message to child that channel is ready (in \verb|rpc_send_setup_closure|)
+            \item send message to child that channel is ready (in \newline
+                \verb|rpc_send_setup_closure|)
         \end{itemize}
     \item \verb|barrelfish_recv_init_closure| gets called on the child side
         \begin{itemize}

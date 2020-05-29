@@ -48,7 +48,8 @@ a channel using either \verb|make_aos_chan_lmp| or \verb|make_chan_ump|. This ch
 to the specific function e.g. to send a message. The library decides then internally if the message
 should be forwarded over LMP or if the UMP queue should be used.
 
-For the \verb|init| dispatch loop, we used a new function called \verb|aos_protocol_wait_for()|. This
+For the \verb|init| dispatch loop, we used a new function called \newline
+\verb|aos_protocol_wait_for()|. This
 function uses \verb|event_dispatch_non_block()| to dispatch LMP messages and \verb|aos_ump_dequeue()|
 to get messages over UMP. This function could potentially never dispatch LMP messages, if a lot of UMP
 messages arrive over a channel, but this event seems unlikely.

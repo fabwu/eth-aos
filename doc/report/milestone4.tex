@@ -56,7 +56,7 @@ We implemented the \verb|sys_morecore_alloc| function, which is called by \verb|
 
 Whenever \verb|malloc| called \verb|sys_morecore_alloc|, we reserved virtual memory using \verb|paging_alloc|, but did not map it.
 Physical memory for the request was only allocated through page faults.
-Instead of using \verb|paging_alloc|, a probably even faster alternative would have been to reserve a large virtual memory region, and return virtual addresses from it on future \verb|sys_morecore_alloc| calls.
+Instead of using \verb|paging_alloc|, a probably even faster alternative would have been to reserve a large virtual memory region, and return virtual addresses from it on future \newline \verb|sys_morecore_alloc| calls.
 
 
 \section{Address space management}

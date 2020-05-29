@@ -177,7 +177,8 @@ If the lookup was successful the nameserver returns the PID of the domain that o
 \verb|struct nameservice_chan|, which holds the PID and the service name. The caller gets an opaque pointer to this struct back, which
 he can pass to \verb|nameservice_rpc()| to make a request.
 
-The function \verb|nameservice_lookup_did()| is a wrapper around \verb|nameservice_lookup| and returns the PID instead of the channel pointer.
+The function \verb|nameservice_lookup_did()| is a wrapper around \newline
+\verb|nameservice_lookup| and returns the PID instead of the channel pointer.
 This function is used by the shell command \verb|nslookup|.
 
 At this point, the client obtained a channel to the service, he is ready to issue a request.

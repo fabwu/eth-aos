@@ -197,7 +197,8 @@ However, in our RPC waiting code we were calling \verb|event_dispatch()|.
 As it turned out, \verb|event_dispatch()| puts a process to sleep until an event arrives (such as an LMP message), and until then does not schedule a process again.
 Therefore the send closure was not called again either.
 
-To fix the issue, we switched our RPC waiting code to use \verb|event_dispatch_non_block()| followed by \verb|thread_yield()|.
+To fix the issue, we switched our RPC waiting code to use 
+\newline \verb|event_dispatch_non_block()| followed by \verb|thread_yield()|.
 This ensured that the process would get scheduled again, the closure would be called, and the process would not get stuck.
 
 Alternatively, a call to \verb|thread_yield()| would have been enough, as there was no event to wait for.
