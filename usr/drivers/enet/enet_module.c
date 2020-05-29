@@ -707,7 +707,8 @@ int main(int argc, char *argv[])
             assert(err_is_ok(err));
         } else if (err != DEVQ_ERR_QUEUE_EMPTY) {
             DEBUG_ERR(err, "Polling from ethernet receive queue failed");
-        } else {
+        }
+        if (err_is_fail(err)) {
             err = event_dispatch_non_block(default_ws);
             if (err == LIB_ERR_NO_EVENT) {
                 thread_yield();
