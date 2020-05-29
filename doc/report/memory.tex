@@ -247,9 +247,11 @@ We did not further investigate if this is detrimental to external fragmentation.
 
 \subsection{Reentrancy and Concurrency}\label{mem-con}
 
-The memory manager needs to be able to pull himself out of a ditch by it's own
-hair (see Münchhausen).
-To do that, it needs to always have enough ressources in reserve to build out
+\begin{displayquote}
+Pull himself out of a mire by his own hair
+\end{displayquote}
+
+The memory manager needs to always have enough ressources in reserve to build out
 its datastructures without needing to build out its datastructures.
 
 That's we use separate \verb|slab_allocator|'s, which we refill when we reach a
