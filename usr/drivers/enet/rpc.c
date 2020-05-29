@@ -156,6 +156,7 @@ static void enet_rpc_udp_handler(void *st, void *message, size_t bytes, void **r
 
     errval_t err = SYS_ERR_OK;
     // Setting empty response in advance for all error cases
+    *response = NULL;
     *response_bytes = 0;
 
     if (bytes <= 0) {
@@ -193,6 +194,7 @@ static void enet_rpc_arp_handler(void *st, void *message, size_t bytes, void **r
                                  size_t *response_bytes, struct capref tx_cap,
                                  struct capref *rx_cap)
 {
+    *response = NULL;
     *response_bytes = 0;
     if (bytes <= 0 || *(uint8_t *)message != AOS_ARP_PRINT_CACHE) {
         ERPC_DEBUG("Discarding invalid arp rpc message\n");

@@ -50,6 +50,7 @@ static void netservice_udp_handler(void *st, void *message, size_t bytes, void *
                             size_t *response_bytes, struct capref tx_cap,
                             struct capref *rx_cap)
 {
+    *response = NULL;
     *response_bytes = 0;
     if (bytes < sizeof(struct rpc_udp_header)) {
         NETS_DEBUG("Discarding invalid message in netservice_udp_handler\n");
@@ -68,6 +69,7 @@ static void netservice_udp_handler(void *st, void *message, size_t bytes, void *
     switch (header->_reserved) {
     case AOS_UDP_SEND:
         state->handler(state->handler_state, header, message);
+        *response = NULL;
         *response_bytes = 0;
         break;
     case AOS_UDP_CLOSE:

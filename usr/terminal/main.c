@@ -82,6 +82,7 @@ static void terminal_handle_rpc(void *st, void *message, size_t bytes,
 
     if (!strcmp(msg, "putchar")) {
         terminal_putchar(msg[8]);
+        *response = NULL;
         *response_bytes = 0;
     } else if (!strcmp(msg, "getchar")) {
         terminal_getchar(response, response_bytes);
