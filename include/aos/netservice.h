@@ -81,13 +81,6 @@ typedef void (*netservice_udp_handler_t)(void *state, struct rpc_udp_header *hea
 errval_t netservice_udp_send_single(struct rpc_udp_send *message, size_t size);
 
 /**
- * \brief Send the given data using udp to the given ip. Using this function has an
- * overhead to aos_udp_send_single as data needs to be copied an additional time.
- */
-errval_t netservice_udp_send(uint16_t src_port, uint16_t dest_port, uint32_t dest_ip,
-                             void *data, size_t size);
-
-/**
  * \brief Start listening for udp datagrams on the given port.
  *
  * \param port               Port to receive datagrams on.

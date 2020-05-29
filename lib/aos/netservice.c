@@ -112,12 +112,6 @@ errval_t netservice_udp_send_single(struct rpc_udp_send *message, size_t size)
     return success ? SYS_ERR_OK : ENET_ERR_NETSERVICE_SEND;
 }
 
-errval_t netservice_udp_send(uint16_t src_port, uint16_t dest_port, uint32_t dest_ip, void *data,
-                      size_t size)
-{
-    return LIB_ERR_NOT_IMPLEMENTED;
-}
-
 errval_t netservice_udp_listen(uint16_t port, netservice_udp_handler_t udp_handler,
                                void *udp_handler_state)
 {
