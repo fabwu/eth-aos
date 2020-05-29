@@ -1,4 +1,253 @@
 \chapter{Shell}
 
-TODO
+The shell is a command-line interface which provides access to commands and programs on a system.
+It makes the system interactive, such that it takes input from the user and performs actions accordingly.
+
+This project consisted of two parts.
+The first was the infrastructure for running the shell, specifically running the UART driver in userspace, reading from the console, and enabling access to the console over RPCs.
+This turned out to be the more challenging part.
+The second part was the shell itself, namely parsing a line, running programs and executing built-in commands.
+
+In the following sections we will walk over each of these steps, describing the design and challenges in each.
+
+
+\section{Userspace UART driver}
+
+In order to allow reading characters from the UART, the first step was to enable the userspace UART driver.
+The driver itself was already provided in the handout.
+
+Enabling the driver was fairly straightforward. It consisted of the following steps:
+\begin{itemize}
+
+    \item
+        Map the device registers into the virtual address space of the process.
+        The \verb|DevFrame| capability required for device access was already present in \verb|init| (in the \verb|TASKCN_SLOT_DEV| slot).
+        The capability could also be requested by other processes using the \verb|aos_rpc_get_device_cap| RPC call (already implemented as part of the filesystem project).
+        The physical address of the LPUART3 register was provided in a header file.
+        We mapped the device memory as read-write non-cacheable, to ensure that all character reads and writes would access the UART device immediately.
+
+    \item
+        Call the UART driver's initialization function (\verb|lpuart_init|).
+
+\end{itemize}
+
+
+\section{Character input}
+
+The next step was reading characters from the UART.
+
+The function provided by the UART driver (\verb|lpuart_getchar|) was non-blocking, returning when a character was not available.
+Polling the driver would however block the rest of the system.
+Fortunately the UART device can deliver an interrupt when a character is typed.
+This enables the characters to be processed in an event-driven manner, without polling.
+
+To use the interrupt, we needed to additionally configure the ARM Generic Interrupt Controller (GIC).
+The userspace driver for the GIC was provided in the handout.
+
+Enabling interrupt-driven character processing consisted of the following steps:
+
+\begin{itemize}
+
+    \item
+        Map the GIC device registers. This was similar to mapping the UART device registers (see above).
+
+    \item
+        Initialize the GIC by calling the driver's \verb|gic_dist_init| function.
+
+    \item
+        Obtain an interrupt capability for the UART's interrupt line.
+        This could be done via the \verb|inthandler_alloc_dest_irq_cap| function.
+        In order to obtain the capability, the domain needed to additionally have access to the \verb|IRQTable| capability.
+        While the capability is passed to \verb|init| in the Task CNode, it is not passed to other domains.
+        We modified the spawning code to also pass it to the terminal domain.
+
+    \item
+        Register an interrupt handler using \verb|inthandler_setup|.
+        This creates an LMP endpoint, ensuring that a message is delivered to the terminal domain whenever a UART interrupt occurs.
+        We selected a high interrupt priority level, as with the lowest levels the interrupt did not get delivered.
+
+    \item
+        Enable the interrupt in the GIC hardware (using \verb|gic_dist_enable_interrupt|).
+
+    \item
+        Enable the interrupt in the UART hardware (using \verb|lpuart_enable_interrupt|).
+
+\end{itemize}
+
+With the interrupt controller configured, we were able to read characters from the UART whenever a key was pressed.
+
+We quickly noticed that pressing multiple keys quickly in sequence would cause no more characters to be delivered.
+This was because the interrupt only fired when the UART character buffer changed between empty and non-empty state.
+Therefore, if one character arrived while another was being read by the driver, the buffer would be left non-empty, and no more interrupts would be triggered.
+The correct approach was to read all characters out of the buffer whenever the interrupt arrived.
+
+
+\section{Accessing the serial driver from other processes}
+
+The serial driver needs to be accessible from any process, including the shell.
+Access is provided through the \verb|aos_rpc_serial_getchar| and \verb|aos_rpc_serial_putchar| RPC calls, which respectively read and write one character.
+
+A central question is whether the serial driver should run in a separate domain or within the \verb|init| process.
+While a separate domain would be better for modularity, it requires routing to and from the driver.
+For simplicity, we chose to run the driver in \verb|init| (but see Section~\ref{shell-integration-ns} for efforts to integrate with the nameserver).
+
+The driver ran as part of \verb|init| on core 0.
+We enabled writing a character from any process on the same core (via LMP) or another core (via UMP).
+Due to time constraints, reading a character was only enabled on core 0.
+
+
+\subsection{Reading a character}
+
+Reading a character was done on a line-by-line basis.
+Upon interrupt arrival, characters are stored in a buffer.
+When a newline is typed, the first character in the buffer is sent to the currently registered domain.
+
+When a \verb|getchar| request arrives, the channel of the requesting domain is saved.
+No RPC response is sent, which ensures that the domain is blocked on the call, and does not need to poll.
+As mentioned, when a newline is typed, the first character in the buffer is sent to the domain (using the saved channel).
+The domain then executes further \verb|aos_rpc_serial_getchar| requests to read the rest of the line.
+
+There are multiple corner cases to consider.
+When multiple domains execute an \verb|aos_rpc_serial_getchar| request, then the last one gets the characters.
+It would be better to have some kind of line-based session management.
+Secondly, while a line is being read, the serial driver does not allow any further characters to be typed, which may be a limitation if the line is long.
+We (arbitrarily) chose to allow lines up to one page in size (4096 bytes).
+If the input gets longer, the entire line is simply dropped.
+We also had to support an empty line being typed (just pressing Enter).
+
+\subsection{Writing a character}
+
+Writing a character was also done on a line-by-line basis.
+Characters are buffered until a newline is typed (or the buffer capacity is reached).
+This allows to have per-process line buffers, which ensures that prints from different processes are not mixed.
+We implemented the buffers with dynamic allocation and a linked list to keep track of the buffers.
+This also required the \verb|aos_rpc_serial_putchar| call to take the sending domain ID as an argument.
+
+
+\section{C library integration}
+
+While \verb|putchar| and \verb|getchar| are necessary building blocks, it would not be reasonable to expect applications to read or write one character at a time.
+For this reason, a wrapper for reading or writing a line (or any string) was required.
+While we could have added our own wrapper, the C library already supports functions which also do string formatting and other useful things.
+The C library also supports callbacks to be registered with it.
+By registering our functions (\verb|aos_terminal_read| and \verb|aos_terminal_write|) with the C library, applications (including the shell) were able to use the standard \verb|printf| and \verb|fgets| functions to read and write using the userspace serial driver.
+
+
+\section{The shell}
+
+We implemented the shell as a standalone process.
+After a line of input arrives, the shell parses it into tokens (using the handy \verb|make_argv| function provided in the handout) and executes commands based on it.
+We implemented several built-in commands as well as the ability to run processes:
+
+\begin{itemize}
+
+    \item
+        \textbf{echo}. Prints a line.
+
+    \item
+        \textbf{help}. Lists all possible commands and how to run them.
+
+    \item 
+        \textbf{led (on, off)}. Turns an LED on or off.
+
+    \item
+        \textbf{ps}. Lists all currently running processes (name, PID, core ID), fetching the information from the process manager (\verb|init| on core 0) using the \verb|aos_rpc_process_get_all_pids| and \verb|aos_rpc_process_get_name| RPC calls.
+
+    \item
+        \textbf{time}. Times a command using the \verb|systime_now| function. Unfortunately due to time constraints we were not able to implement the timing of processes (only built-in commands), which makes the command significantly less useful for performance measurements.
+
+    \item
+        \textbf{Create processes}. As running a program is very common, then whenever a typed command is not recognized as a built-in command, the shell tries to start a process with that name. A process is created by performing the \verb|aos_rpc_process_spawn| RPC call to \verb|init|, which starts the process on core 0. Due to time constraints we were only able to spawn processes from the multiboot image, not from the SD card.
+
+    \item
+        \textbf{oncore}. Creates a process as above, except allows to specify the core ID to start the process on.
+
+    \item
+        \textbf{ls, mkdir, rmdir, touch, cat}. Enables to access and modify the filesystem on the SD card.
+
+    \item
+        \textbf{udpecho, arp}. Starts a UDP echo server and prints ARP tables used in networking.
+
+\end{itemize}
+
+
+\section{Bonus tasks}
+
+Unfortunately due to time constraints we were not able to implement the I/O redirection or network login.
+
+
+\section{Additional challenges}
+
+During the course of implementing this project, several challenges had to be overcome.
+While we have already described most of them, a few are not directly related to the shell.
+Here we describe the remaining challenges and how they were solved.
+
+\subsection{Running multiple processes on the same core}
+
+The first challenge appeared before the project had even started.
+As it turned out, when we ran multiple processes on the same core, one of them would get stuck.
+Until now we had always ran one process at a time, but now we needed to run both the nameserver and the shell.
+
+After a lengthy debugging session, we discovered that something was going wrong when both processes performed RPCs at the same time.
+Specifically, whenever we were not able to send an LMP message immediately (because the other process was sending lots of messages), we would call \verb|lmp_chan_register_send()| to register a closure for sending later.
+However, we found that the send closure was never being called.
+
+We eventually discovered that the closure would only be called when the process was scheduled again.
+However, in our RPC waiting code we were calling \verb|event_dispatch()|.
+As it turned out, \verb|event_dispatch()| puts a process to sleep until an event arrives (such as an LMP message), and until then does not schedule a process again.
+Therefore the send closure was not called again either.
+
+To fix the issue, we switched our RPC waiting code to use \verb|event_dispatch_non_block()| followed by \verb|thread_yield()|.
+This ensured that the process would get scheduled again, the closure would be called, and the process would not get stuck.
+
+Alternatively, a call to \verb|thread_yield()| would have been enough, as there was no event to wait for.
+However our waiting code was shared by the send and receive handlers, and using \verb|event_dispatch_non_block()| ensured that it worked for both (albeit with a likely performance penalty).
+
+\subsection{Integration with the nameserver}
+\label{shell-integration-ns}
+
+While we did successfully implement a nameserver, the serial driver was unfortunately not integrated with it.
+Instead, the serial driver was run as part of the \verb|init| process.
+There were several reasons for this.
+
+First, the serial driver posed the unique challenge that it required one RPC call (a \verb|getchar| request from one domain) to block while other RPC calls (\verb|putchar| requests from other domains) were serviced.
+As the nameserver processed all requests to a domain/service over one channel, this was not possible.
+Unfortunately we discovered this too late.
+Had we had more time, we would have made it possible to allow a domain to register services over multiple channels.
+
+Second, the nameserver was implemented to pass each message over a large frame, to allow quick transfer of large amounts of data.
+However, for \verb|putchar| and \verb|getchar| requests, only a single byte was being passed, leading to a large performance overhead from frame allocation.
+Had we had more time, we would have optimized the nameserver to allocate less memory for small messages.
+
+
+\section{Limitations}
+
+There are several things that could have been done better had we had more time:
+
+For the \textbf{serial driver}:
+\begin{itemize}
+
+    \item
+        Support for control characters, such as backspace/delete, or moving within a line, were frequently requested by team members.
+
+\end{itemize}
+
+For the \textbf{RPC} interface:
+\begin{itemize}
+
+    \item
+        It would have been good to support multiple processes reading a line, including switching input to another process when the shell starts it.
+
+    \item
+        A \verb|flush| RPC would have enabled a better command line prompt (as otherwise only a newline triggered printing).
+
+\end{itemize}
+
+For the \textbf{shell}:
+\begin{itemize}
+
+    \item
+        Additional commands would have been useful, such as setting a process to run in the background.
+
+\end{itemize}
 
