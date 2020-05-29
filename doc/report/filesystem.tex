@@ -195,19 +195,27 @@ Zeroing a cluster is also a perfect case for having dma requests of multiple
 sectors, which then could also be used for the normal reading and writing.
 
 Generally the filesystem is quite slow.
+
 This can be attributed to data not being aggressively enough cached.
-There should be at least 3 sd blocks, more if one introduces writing of multiple
-blocks in one go.
+There should be at least 3 sd blocks per file, more if one introduces writing of
+multiple blocks in one go.
 The 3 blocks would be for the fat cluster chain, the dir entry, and finally the
 content of the file.
 This would alleviate the problem that while writing, the current data block is
 contended for updating the file size and file content, which are different
 sector, leading to unnecessary reads and writes of blocks.
-Especially the path resolution should be factored out of the specific
-filesystems and aggressively cache results.
+To not have concistency problems, there could be hash table, where the sd blocks
+are indexed by sector number, and also have a ref counter.
+This would still allow "separate" sd blocks per file, but all would be
+automatically consistent with other.
+Also unmount would be made very, just flush the hash table.
+
+ALso the path resolution should be factored out of the specific filesystems and
+aggressively cache results.
 Filesystem wouldn't then not need to bother anymore with mounts and delegating
 invocations, except for handling the mounts as a special file type, so as to
 signal this to the path resolution, which then would do the delegation.
+
 Also, the sdhc driver is not optimised, so far as we understand, making reading
 a binary off of the sdcard very slow.
 
