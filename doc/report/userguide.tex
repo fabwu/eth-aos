@@ -1,0 +1,13 @@
+\chapter{User guide}
+
+\section{Shell}
+
+To run the shell, the \verb|INIT_EXECUTE_SHELL| macro in \verb|usr/init/main.c| must be set to 1.
+
+If an SD card is attached to the board, then the \verb|SDCARD_PRESENT| macro in \verb|usr/shell/main.c| can be set to 1.
+If an SD card is not attached, then the macro must be set to 0.
+
+\section{Networking}
+
+To enable networking, the \verb|INIT_EXECUTE_ENET| macro in \verb|usr/init/main.c| must be set to 1.
+
