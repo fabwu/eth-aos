@@ -1,0 +1,88 @@
+\chapter{Page fault handling}
+
+The use of virtual memory presents both benefits and drawbacks.
+On one hand, it provides applications with a simple view of memory, enables relocation, isolates processes, improves performance of application startup via copy-on-write, and enables demand paging to disk.
+On the other hand, it can reduce performance, as translations take time and an application does not get full control of its memory.
+
+One use case of virtual memory is to allow an application to reserve a large region of memory, but use page faults to only allocate physical memory for those parts of it which are used (and only when they are used).
+While in Unix page faults are handled by the kernel, in Barrelfish physical memory is managed by applications themselves (using capabilities), which means that page faults are handled by applications as well.
+A self-paging application creates its own virtual-to-physical mappings, while the kernel handles unsafe operations and ensures safety (via capabilities) and completeness.
+
+In this milestone we implemented page fault handling in applications.
+We also re-designed paging and memory functionality to use more efficient data structures.
+In the following sections we describe the steps we took, the design and challenges.
+
+
+\section{Page faults}
+
+As mentioned, a self-paging process manages its own page faults, by running a handler in userspace.
+The handler maps a page when the application accesses it.
+This requires an exception handling mechanism.
+
+
+\subsection{Exception handling}
+
+The first step was to enable exception handling.
+A handler for a thread could be easily registered with \verb|thread_set_exception_handler|.
+The exception handler is called from the same upcall that dispatches the application when exiting the kernel.
+When it returns, the thread is restarted.
+
+We had to set a separate exception stack for the exception handler.
+This stack had to be allocated and mapped immediately whenever a thread was created, as otherwise we could get a recursive page fault, which is not supported.
+The stack also needed to be per-thread, to prevent corruption.
+
+This was enough to trigger a page fault whenever a non-mapped address was accessed.
+
+\subsection{Mapping pages}
+
+To map a page, the page fault handler needed to acquire a RAM capability and map it.
+Acquiring the capability was done using \verb|frame_alloc|, which fetched it from the memory manager (over an RPC).
+Mapping was done using the \verb|paging_map_fixed_attr| interface, mapping the new RAM capability to the virtual address of the page that the fault occurred in.
+
+We also checked that a faulting address had indeed been allocated for the heap or stack (using e.g. \verb|paging_alloc|), by checking in our virtual address manager.
+If it had not, the cause was a bug, and the process was aborted.
+
+To make the reporting more useful, NULL pointer detection was also added.
+Unfortunately there was not enough time to add a stack guard page, which would have helped to debug stack overflows.
+
+Locking (with a mutex) was also added to the handler to ensure that two threads of a process would not map the same address at the same time.
+
+
+\subsection{Heap management}
+
+Page fault handling made it possible to lazily allocate memory for the heap.
+The handout originally had a 16 MB static array as the heap.
+We implemented the \verb|sys_morecore_alloc| function, which is called by \verb|malloc| when it runs out of memory.
+
+Whenever \verb|malloc| called \verb|sys_morecore_alloc|, we reserved virtual memory using \verb|paging_alloc|, but did not map it.
+Physical memory for the request was only allocated through page faults.
+Instead of using \verb|paging_alloc|, a probably even faster alternative would have been to reserve a large virtual memory region, and return virtual addresses from it on future \verb|sys_morecore_alloc| calls.
+
+
+\section{Address space management}
+
+In this milestone we also changed the data structures used by our paging code.
+The page fault handler needed to look up virtual mappings and page tables based on virtual address.
+Our existing implementation based on linked lists was too slow, so we reimplemented it using AVL trees.
+In addition to managing the virtual address space and page tables with AVL trees, we also extended it to our memory manager (RAM capabilities), for further performance gains.
+
+A detailed description of the design choices and resulting implementation can be found in Chapter 1.
+
+
+\section{Testing}
+
+To test our page fault handling, we wrote a test that \verb|malloc'ed| 64 MB of memory but only accessed a few bytes in the middle, and verified that it was fast.
+We also tested that accessing many addresses and generating a large number of faults worked.
+To test support for multiple threads, we allocated a memory region and had multiple threads access the same region.
+
+
+\section{Bonus tasks}
+
+We also implemented the bonus task of dynamic stack allocation.
+We \verb|malloc'ed| the entire stack and only mapped it in (via page faults) when the stack grew to the next page.
+
+Unfortunately, during further milestones we discovered some issues with this approach.
+For example, if the stack happened to grow during a \verb|mutex_lock| operation, the domain would abort, as taking a page fault while the dispatcher is disabled was not allowed.
+As we were not sure how to fix this situation, we later switched back to a static stack (mapping it in before a thread starts).
+
+

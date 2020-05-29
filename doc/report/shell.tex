@@ -211,7 +211,7 @@ Instead, the serial driver was run as part of the \verb|init| process.
 There were several reasons for this.
 
 First, the serial driver posed the unique challenge that it required one RPC call (a \verb|getchar| request from one domain) to block while other RPC calls (\verb|putchar| requests from other domains) were serviced.
-As the nameserver processed all requests to a domain/service over one channel, this was not possible.
+As the nameserver processed all requests to a domain/service over one channel (in addition to client and \verb|aos_rpc| channels), this was not possible.
 Unfortunately we discovered this too late.
 Had we had more time, we would have made it possible to allow a domain to register services over multiple channels.
 
