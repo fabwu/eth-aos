@@ -1,0 +1,52 @@
+\chapter{Processes, threads, and dispatch}
+
+Before the Barrelfish kernel will spawn a process for us, a lot of preparation in userspace
+has to be done. We have to create the CSpace and virtual address space for the new domain, load
+the binary and setup the dispatcher. Whereas, all tools needed for creating the CSpace where provided
+by the handout, we had to extend the paging system to create the VSpace for the child. 
+
+At the beginning of this milestone the paging was able to map a frame at a given virtual address. 
+Our first task was to extend the paging code such that we can map a frame at any free virtual address.
+All important changes and design decision about paging are documented in section \ref{sec:paging} and
+are not discussed here. The only relevant design decision for this chapter is, that the paging library
+doesn't handle unaligned addresses. This was a deliberate choice to make the client actively think about
+what they actually map. One of these clients (a certain group member) wasn't thinking hard enough about
+his mappings, which caused a longer debugging session, but more on that later.
+
+Although, the workload of this milestone was quite heavy, there weren't much design decisions involved.
+All we had to do was following a receipt and spawn a process in the end. For that reason is this chapter
+relatively short.
+
+After we extended the paging code we had to locate the ELF binary. This was relatively easy as most code
+was given by the handout. Now that we have a frame capability to the binary, it is time to map it into
+\verb|init|'s address space using the recently implemented \verb|paging_map_frame_attr()|.
+
+Next we had to setup the CSpace of the new domain. This was pretty straight forward, although the whole
+capability system was a bit intimidating at first sight.
+
+In order to setup the virtual address space for the child, we create a new paging state with 
+\verb|paging_init_state_foreign|. We extended this function with the argument \verb|max_addr| to specify
+an upper limit on the virtual address space. The child doesn't know anything about the VSpace, which
+\verb|init| had created before (passing the paging state is marked as extra challenge). Thus, we use
+only addresses from from slot 0 of the level 0 page table to setup the VSpace in \verb|init|. We can set
+this limit with the \verb|max_addr| argument. When the child starts running, the paging is initialized to
+hand out addresses from slot 1 of the level 0 page table onward. This prevents any conflicts, with the 
+mappings setup by \verb|init|.
+
+Now that we have paging state for the child, we can start mapping frames into the child's address space.
+Most mappings were straightforward, only the mapping of the ELF segments caused some troubles. The 
+paging library expects correctly aligned addresses from the client and the addresses for the ELF sections
+where obviously not correctly aligned. This was one reason why we initially failed to spawn a process, but
+after clearly communicating this requirement, we mapped the ELF segments at the correct location.
+
+The next bit was parsing the commandline arguments. We did just the standard parsing without any sophisticated
+features like escaping. Then we initialized the dispatcher structure, set the correct entry point and finally
+called \verb|armv8_set_registers()| to spawn the process and, of course, nothing happened. First we fixed the
+issue with the ELF segments and then debugged the kernel to find out why the new process wasn't coming up. It
+turned out that we had to set register \verb|x0| to the address of the argument frame and after we did that
+the process finally printed a \verb|Hello, world! from userspace|.
+
+It is not mentioned anywhere in the book, that we have to set register \verb|x0| correctly, so we are not
+sure if this was omitted deliberately or by mistake. Anyway, it was a valuable lesson to debug in a very
+limited environment like kernel.
+
