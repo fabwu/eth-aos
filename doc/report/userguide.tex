@@ -11,3 +11,19 @@ If an SD card is not attached, then the macro must be set to 0.
 
 To enable networking, the \verb|INIT_EXECUTE_ENET| macro in \verb|usr/init/main.c| must be set to 1.
 
+\section{Filesystem}
+
+Linux has the tendency to create vfat names if filename is not all uppercase.
+This is especially important as the filesystem not properly recognize that it's
+a vfat name and chockes on the zero byte terminator that the vfat name
+necessarily contains.
+
+To spawn a process off of the sdcard, one needs to first copy the binary onto
+the sdcard, to make sure the binary is up to date, compatible with the current
+code state.
+The one needs to change \verb|INIT_EXECUTE_HELLO_SDCARD| macro in
+\verb|usr/init/main.c| must be set to 1.
+Also, the shell should be disabled for this (\verb|INIT_EXECUTE_SHELL|), as else
+there might to initialisations of the filesystem.
+We used the hello binary, if a different binary is to be spawned, the path
+under the should be changed appropriatly.
