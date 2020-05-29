@@ -54,8 +54,54 @@ It would be maybe possible to rewrite the driver to handle it differently, so th
 So we had to add at least one copy to send the data to the client. But we made sure it was minimal, by only copying the payload, but none of the protocol headers. Beacause we wanted to send some additional data like the ip address and port numbers, those were copied to the back of the memory, right after the payload. This can be safely done, because the memory reserved per ethernet frame by the driver is substentally bigger than an ethernet frame could be. The driver does this, so the ethernet frames are aligned to half the page size.
 
 \section{Ethernet}
+The ethernet handling was implemented in \verb|usr/drivers/enet/ethernet.c| and its interface defined in \verb|usr/drivers/enet/ethernet.h|.
+
+\subsection{Receiving Frames}
+Receiving frames was rather straight forward. The main event loop in \verb|usr/drivers/enet/enet_module.c| is constantly checking for incoming ethernet frames. When receiving an ethernet frame (over driver dequeue), it calls the ethernet handle function which is blocking. As soon as this function returns the memory slice in which the incoming ethernet frames resided in was released again by calling enqueue on the driver.
+
+The handle function would look at the ethernet frame and call the IP or ARP handle functions respectively. The ethernet frame would be discarded and not handled if the protocol was unknown or the destination ethernet address was invalid. The address would be considered invalid if it was not a broadcast address or the ethernet address of the Toradex board.
+
+\subsection{Sending Frames}
+The main difficulty for this part was managing the memory regions for sending ethernet frames correctly and efficiently. We decided to create a linked list with nodes for each ethernet frame sized memory slice. If the node was in the linked list, the slice was not currently in use. Because we already know the amount of slices in advance the nodes could be allocated all at once and the linked list created when initialising ethernet.
+
+What makes this approach performant is, that the list has never to be traversed but only ever the first element has to be touched in each operation: For reserving a slice that can later on be sent, the front element of the list has to be removed and its address remembered. To release the reserved slice again the remembered element had to be simply added back to the front of the list.
+
+\begin{figure}
+    \centering
+
+    \begin{sequencediagram}
+      \newthread{cli}{client}
+      \newinst{eth}{ethernet}
+      \newinst{drv}{driver}
+  
+      \begin{call}{cli}{start\_send()}{eth}{id, ptr}
+        \begin{sdblock}{loop}{}
+            \begin{call}{eth}{dequeue}{drv}{}
+            \end{call}
+        \end{sdblock}
+      \end{call}
+
+      \begin{call}{cli}{write\_payload(ptr)}{cli}{}
+      \end{call}
+
+      \begin{call}{cli}{send(id)}{eth}{}
+        \begin{call}{eth}{enqueue()}{drv}{}
+        \end{call}
+      \end{call}
+    \end{sequencediagram}
+
+    \caption{Sequence diagram for sending ethernet frames}
+    \label{fig:ethsend}
+\end{figure}
+
+
+The interface to send ethernet frames was built on that approach. Figure \ref{fig:ethsend} shows a sequence diagram of said interface. It consits of a function to start sending an ethernet frame, which returns an id and a pointer. The pointer can then be used to write the payload of the ethernet frame (e.g. an ip package). When done writing, the client calls the send function with the id. This id can directly be used by the ethernet protocol to enqueue the correct memory slice to the driver.
+
+Another important part is, that the memory is not immediately free to be used again, because the data has to be sent by the hardware before that. This is done in parallel and it would be a waste of performance to block on that. So we decided to keep the data reserved and return from the send function. How data is released again can be seen in the same sequence diagram \ref{fig:ethsend}. In the start send function, ethernet dequeues all slices that were done sending from the driver. To figure out which list nodes to add in the tracking of free memory slices we use some pointer arithmetic. By using the fact that all of the list nodes were allocated as one big chunk and the address of each list node therefore correspondes to the address of a memory slice, the address of the correct list node can be quickly calculated using the offset returned by dequeue.
 
 \section{ARP - Address Resolution Protocol}
+The ethernet handling was implemented in \verb|usr/drivers/enet/arp.c| and its interface defined in \verb|usr/drivers/enet/arp.h|.
+
 
 \section{IP - Internet Protocol}
 
