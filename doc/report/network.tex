@@ -194,8 +194,42 @@ When the ARP adds an entry for an IP address it notifies the IP layer. There all
 This system has still room for improvement: We never get rid of stored IP packages to a target that is not reachable and can therefore not respond to an ARP request. So to solve that we could for example stored and the IP package storage cleaned of old packages when it gets filled. Another weakness of the current implementation is, that ARP requests or not sent again unless new packages to the same unknown address are sent. To solve that a system that would regularly check the IP package storage and send additional ARP requests would have to be implemented.
 
 \section{ICMP - Internet Control Message Protocol}
+The ICMP handling was implemented in \verb|usr/drivers/enet/icmp.c| and its interface defined in \verb|usr/drivers/enet/icmp.h|.
+
+The ICMP implementation was straight forward. A handle function was exposed to be called by the IP layer to be called when the protocol type was ICMP. Because we did only have to handle echo request packages, all incoming packages of other types were discarded. Echo requests were answered with echo responses as defined by the ICMP protocol including checksum calculation.
+
+\subsection{Latency}
+After finishing the ICMP implementation the perfomence i.e. latency of the network stack so far could be tested. The following listing \ref{lst:ping5} shows a ping of the Toradex board with 5 requests. We see, that the first request takes a bit longer. This is because the board has to do ARP lookups of the sender first. But we see clearly that all the requests are handled in under 1ms, which we consider to be satisfying.
+
+\begin{lstlisting}[caption=Ping Toradex Board 5 times, label=lst:ping5]
+$ ping -c 5 10.0.0.2
+PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
+64 bytes from 10.0.0.2: icmp_seq=1 ttl=64 time=0.567 ms
+64 bytes from 10.0.0.2: icmp_seq=2 ttl=64 time=0.242 ms
+64 bytes from 10.0.0.2: icmp_seq=3 ttl=64 time=0.244 ms
+64 bytes from 10.0.0.2: icmp_seq=4 ttl=64 time=0.192 ms
+64 bytes from 10.0.0.2: icmp_seq=5 ttl=64 time=0.223 ms
+
+--- 10.0.0.2 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4058ms
+rtt min/avg/max/mdev = 0.192/0.293/0.567/0.137 ms
+\end{lstlisting}
+
+The following listing \ref{lst:ping1000} shows the statistics of sending 1000 ping packages. We can see that no package was lost and the time is consistently at around 0.225ms.
+
+\begin{lstlisting}[caption=Ping Toradex Board 1000 times, label=lst:ping1000]
+$ ping -c 1000 10.0.0.2
+[...]
+1000 packets transmitted, 1000 received, 0% packet loss, time 1012333ms
+rtt min/avg/max/mdev = 0.136/0.225/0.367/0.023 ms
+\end{lstlisting}
 
 \section{UDP - User Datagram Protocol}
+The UDP handling was implemented in \verb|usr/drivers/enet/udp.c| and its interface defined in \verb|usr/drivers/enet/udp.h|.
+
+The UDP implementation was also straight forward. We split the the sending again like we have done previously in the IP and ethernet layer. We completly rely on the IP layer to handle ARP lookups and temporarily storing of IP packages. When sending UDP datagrams we again rely on the client to allocate the storage needed to identify the datagram between the functions, as we did in the IP layer. This again reduces the amoung of mallocs.
+
+Reserving UDP ports and listening on them by other applications is done in the RPC layer described below. The RPC layer also exposes an interface for other applications to send UDP datagrams.
 
 \subsection{UDP Checksum}
 To calculate the UDP checksum we extended the checksum functionality in \verb|lib/netutil/checksum.c| with the function \verb|inet_checksum_IP_pseudo| which also takes the pointer to the start of the IP header. The UDP checksum requires additionally to the UDP header and payload also that a pseudo header containing source IP, destination IP, protocol (which should always be 17 for UDP in this case) and the length of UDP datagram (length of UDP header + length of UDP payload in bytes).
