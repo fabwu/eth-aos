@@ -1,6 +1,7 @@
 \chapter{Memory management and capabilities}
 
 %123 \cite{aos-book}
+\section{Memory Manager}
 
 The memory manager manages ranges of physical address space, we started to call
 them memory ranges.
@@ -21,7 +22,7 @@ One needs a ram cap to create cnodes to store capabilites.
 One needs ram caps to store the shadow paging tables.
 One needs ram caps to for allocators.
 
-\section{Access Control}
+\subsection{Access Control}
 
 From an access control point of view, the memory manager does the following thins:
 \begin{itemize}
@@ -31,7 +32,7 @@ From an access control point of view, the memory manager does the following thin
 		 		use RPC to get ram caps
 \end{itemize}
 
-\section{How}
+\subsection{How}
 
 The init process receives via the second argument (\verb|argv[1]|) the bootinfo
 structure.
@@ -72,12 +73,12 @@ the free memory ranges using \verb|lib/mm/mm.c:mm_add_to_free|.
 
 With all this done, the memory manager can now serve alloc and free requests.
 
-\section{Datastructures} \label{mem-data}
+\subsection{Datastructures} \label{mem-data}
 
 To understand how alloc and free requests are served we introduce the
 datastructures used in the memory manager.
 
-\subsection{History}
+\subsubsection{History}
 
 Originally, everything has been implemented using two double linked lists (can
 be seen on \verb|milestone2|).
@@ -107,7 +108,7 @@ Additionally, any external fragmentation isn't undone, even though the
 datastructures have been setup to make this easy, by having memory ranges in
 ascending order and using doubly linked list.
 
-\subsection{Current State}
+\subsubsection{Current State}
 
 The current state still hase a double linked list of all memory ranges in
 ascending order. This to allow for easy splitting (insertion) and fusing of
@@ -201,7 +202,7 @@ and one is set.
 % 	\item Fuses memory with adjacent free memory upon return
 % \end{itemize}
 
-\section{Fragmentation}
+\subsection{Fragmentation}
 
 Every allocation request is rounded up to BASE\_PAGE\_SIZE.
 This has multiple reasons.
@@ -244,7 +245,7 @@ We did not further investigate if this is detrimental to external fragmentation.
 % Memory server, deletes cap as soon as sent off, not requiring cap makes for lighter
 % free.
 
-\section{Reentrancy and Concurrency}\label{mem-con}
+\subsection{Reentrancy and Concurrency}\label{mem-con}
 
 The memory manager needs to be able to pull himself out of a ditch by it's own
 hair (see Münchhausen).
@@ -304,7 +305,7 @@ always be a deadlock condition.
 % If not, we get a deadlock, and have an early warning that our critical section
 % is not reentrancy free anymore.
 
-\section{Limitations}
+\subsection{Limitations}
 
 We only support for at most one memory region coming from the boot info.
 
