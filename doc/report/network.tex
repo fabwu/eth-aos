@@ -62,6 +62,7 @@ Receiving frames was rather straight forward. The main event loop in \verb|usr/d
 The handle function would look at the ethernet frame and call the IP or ARP handle functions respectively. The ethernet frame would be discarded and not handled if the protocol was unknown or the destination ethernet address was invalid. The address would be considered invalid if it was not a broadcast address or the ethernet address of the Toradex board.
 
 \subsection{Sending Frames}
+\label{sec:sendframe}
 The main difficulty for this part was managing the memory regions for sending ethernet frames correctly and efficiently. We decided to create a linked list with nodes for each ethernet frame sized memory slice. If the node was in the linked list, the slice was not currently in use. Because we already know the amount of slices in advance the nodes could be allocated all at once and the linked list created when initialising ethernet.
 
 What makes this approach performant is, that the list has never to be traversed but only ever the first element has to be touched in each operation: For reserving a slice that can later on be sent, the front element of the list has to be removed and its address remembered. To release the reserved slice again the remembered element had to be simply added back to the front of the list.
@@ -76,7 +77,7 @@ What makes this approach performant is, that the list has never to be traversed 
   
       \begin{call}{cli}{start\_send()}{eth}{id, ptr}
         \begin{sdblock}{loop}{}
-            \begin{call}{eth}{dequeue}{drv}{}
+            \begin{call}{eth}{dequeue()}{drv}{offset}
             \end{call}
         \end{sdblock}
       \end{call}
@@ -93,7 +94,6 @@ What makes this approach performant is, that the list has never to be traversed 
     \caption{Sequence diagram for sending ethernet frames}
     \label{fig:ethsend}
 \end{figure}
-
 
 The interface to send ethernet frames was built on that approach. Figure \ref{fig:ethsend} shows a sequence diagram of said interface. It consits of a function to start sending an ethernet frame, which returns an id and a pointer. The pointer can then be used to write the payload of the ethernet frame (e.g. an ip package). When done writing, the client calls the send function with the id. This id can directly be used by the ethernet protocol to enqueue the correct memory slice to the driver.
 
@@ -123,8 +123,75 @@ An ARP probe package is a request send out to the network to check if anyone use
 
 ARP anouncements are ARP request sent on ethernet broadcast addresses to tell other network members, that they are using the anounced IP address. By handling these anouncements, the ARP cache can be populated without having to send ARP requests to these targets. But more importantly handling them again reduces the risk of an IP address conflict.
 
-
 \section{IP - Internet Protocol}
+The IP handling was implemented in \verb|usr/drivers/enet/ip.c| and its interface defined in \verb|usr/drivers/enet/ip.h|.
+
+\subsection{Receiving Packages}
+Receiving IP packages is tightly coupled with the ehternet, ICMP and UDP layers. The ethernet layer calls the IP layer handle function when receiving an ethernet frame with the protocol bytes set to IP. The IP layer then looks at the package and sends it on to the ICMP or UDP layers depending on the specified protocol.
+
+The package is discarded in the IP layer if...
+\begin{itemize}
+    \item ...the version of the package was not 4 (for IPv4).
+    \item ...the package was part of a fragmented package. (We did not implement handling fragmented packages.)
+    \item ...the package was not sent to our static IP address and also not to one of the broadcast addresses.
+    \item ...the package was for a protocol other than ICMP or UDP.
+\end{itemize}
+
+The checksum of the IP package is checked and a message is printed if the checksum was incorrect but the package was not discarded in that case. It would be easy to also discard a package in that case, but we decided against doing so for now, because we did not want to discard packages if we misscalculated the checksum on our end (which happened multiple times in early development).
+
+\subsection{Sending Packages}
+Sending IP packages is tightly coupled with the ethernet, ICMP and UDP layers too. Because of how the interface of ethernet has split the sending functions in two (see \ref{sec:sendframe}), we decided to make this transparent to the client and implement IP package sending in the same style.
+
+So there are again two functions, one for start sending a package and one for actually sending it. The start sending function returns a pointer to which the package payload can be written. It is noteworthy that to reduce the amount of mallocs (which is one of the design goals) we make the client allocate the storage needed to identify the package between the two sending functions. This means that the client can allocate that on the stack.
+
+The start sending function takes (beside others) a parameter with the target IP address. Before it can call start send ethernet frame it needs to know the target ethernet address. For that the ARP lookup function is called to lookup the ethernet address given the target IP address.
+
+\begin{figure}
+    \centering
+
+    \begin{sequencediagram}
+      \newthread{cli}{client}
+      \newinst{ip}{IP}
+      \newinst{arp}{ARP}
+      \newthread{eth}{ethernet}
+  
+      \begin{call}{cli}{start\_send(ip)}{ip}{id, ptr}
+        \begin{call}{ip}{lookup\_ip(ip)}{arp}{not\_found}
+          \begin{call}{arp}{send\_arp\_req(ip)}{eth}{sent}
+          \end{call}
+        \end{call}
+
+        \begin{call}{ip}{alloc\_store(ip, id)}{ip}{ptr}
+        \end{call}
+      \end{call}
+
+      \begin{call}{cli}{write\_payload(ptr)}{cli}{}
+      \end{call}
+
+      \begin{call}{cli}{send(id)}{ip}{}
+        \begin{call}{ip}{store(id)}{ip}{}
+        \end{call}
+      \end{call}
+
+      \begin{call}{eth}{arp\_rep(ip, eth)}{arp}{}
+        \begin{call}{arp}{notify(ip, eth)}{ip}{}
+          \begin{sdblock}{loop}{}
+            \begin{call}{ip}{send\_ip()}{eth}{sent}
+            \end{call}
+          \end{sdblock}
+        \end{call}
+      \end{call}
+    \end{sequencediagram}
+
+    \caption{Sequence diagram for storing IP packages until ARP concludes}
+    \label{fig:ipsend}
+\end{figure}
+
+In case looking up the ethernet address failed, we did not just want to discard the package. So the following was decided: We store IP packages up to a maximal amount in memory until we learn their ethernet address. Figure \ref{fig:ipsend} shows how this works. After looking up the IP address and finding that we do not know the corresponding ethernet address we send an ARP request for the given IP address and use malloc to create a temporary storage for the IP package. The client can then write the payload without knowing, that the package can not be immediately sent. For the client both cases are the same.
+
+When the ARP adds an entry for an IP address it notifies the IP layer. There all packages that are stored for the given IP address are sent to the given ethernet address and the local buffer gets freed up.
+
+This system has still room for improvement: We never get rid of stored IP packages to a target that is not reachable and can therefore not respond to an ARP request. So to solve that we could for example stored and the IP package storage cleaned of old packages when it gets filled. Another weakness of the current implementation is, that ARP requests or not sent again unless new packages to the same unknown address are sent. To solve that a system that would regularly check the IP package storage and send additional ARP requests would have to be implemented.
 
 \section{ICMP - Internet Control Message Protocol}
 
