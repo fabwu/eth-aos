@@ -14,12 +14,21 @@ errval_t udp_init(void)
     return SYS_ERR_OK;
 }
 
-errval_t udp_handle_package(struct udp_hdr *udp, ip_addr_t src)
+errval_t udp_handle_package(struct udp_hdr *udp, struct ip_hdr *ip)
 {
     UDP_DEBUG("Handling udp datagram src=%d dest=%d len=%d chksum=%d\n", ntohs(udp->src),
               ntohs(udp->dest), ntohs(udp->len), ntohs(udp->chksum));
-    // FIXME: Check checksum
-    return enet_rpc_handle_udp(udp, src);
+
+    if (udp->chksum == 0) {
+        UDP_DEBUG("Datagram without checksum\n");
+    } else {
+        uint16_t checksum = inet_checksum_ip_pseudo(udp, ntohs(udp->len), ip);
+        if (checksum != 0) {
+            UDP_DEBUG("Checksum invalid 0x%x\n", checksum);
+        }
+    }
+
+    return enet_rpc_handle_udp(udp, ntohl(ip->src));
 }
 
 errval_t udp_start_send_datagram(ip_addr_t dest_ip, uint16_t dest_port, uint16_t src_port,
@@ -49,6 +58,13 @@ errval_t udp_send_datagram(struct udp_datagram_id *datagram, size_t size)
     datagram->udp->chksum = 0;
     datagram->udp->chksum = inet_checksum_ip_pseudo(datagram->udp, size,
                                                     datagram->package.ip);
+
+    // Checksum has to be set to 0xffff if it turns out to be 0,
+    // because 0 means the checksum is omitted.
+    // 0xffff and 0x0 are equivalent in one complement representation
+    if (datagram->udp->chksum == 0) {
+        datagram->udp->chksum = 0xffff;
+    }
 
     return ip_send_package(&datagram->package, size);
 }

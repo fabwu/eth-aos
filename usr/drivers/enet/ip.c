@@ -76,7 +76,7 @@ errval_t ip_handle_package(struct ip_hdr *ip)
         return err;
     case IP_PROTO_UDP:
         IP_DEBUG("UDP\n");
-        return udp_handle_package(data, ntohl(ip->src));
+        return udp_handle_package(data, ip);
     default:
         IP_DEBUG("Unkown ip protocol (type=0x%x)\n", ip->proto);
         return ENET_ERR_IP_DROPPING;
