@@ -29,18 +29,29 @@ With those arguments in mind, the decision to implement the protocols inside the
 
 One of the design goals in the networking project was to reduce copying of data and therefore passing a reference into the same ethernet frame between the network protocol. Another goal was to keep the number of mallocs low and allocate on the stack whenever possible. This should simplify resource management and reduce the amount of bugs.
 
-An important design decison was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed princIPle when e.g. adding a new protocol. The advantages are, that the
+An important design decison was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed principle when e.g. adding a new protocol. The advantages are, that the its faster to implement like this and there is no overhead caused from the abstraction.
 
 That beeing said, we made it a goal to separate the code for the different protocols: Each network protocol has its own files and a clearly defined interface for interacting with other protocols. For example the IP protocol has its own header and source file and all the IP code is inside those files. When calling functions to send IP packages, the code of the IP protocol will call functions of the ethernet implementation to send IP packages over ethernet frames.
 
-\section{Interface / API}
-
 \section{Driver}
 
-The driver to interact
+The driver to interact with the networking hardware was given in the handout. Because its functionality was not changed, the driver itself will not be covered in the report but only the interaction with it.
 
-second mapping
-nochache problem
+At startup the driver is handed two large frames: One to write incoming ethernet frames to and the other to read outgoing ethernet frames from. The driver uses slices that are half a page each per ethernet frame. So that a page is used for up to two ethernet frames.
+
+To interact with the driver enqueue and dequeue operations are used. To get access to received ethernet frames the dequeue operation is used. It gives an offset into one of the memory regions used and blocks that part of the memory until it is released back to the driver. To do so the enqueue operation is used. Transmiting outgoing ethernet frames works in a similar way. The client of the driver has to keep track on which frames can be written to. Ethernet frames can be handed to the driver with an enqueue operation. To get back access to the memory after the sending is done, the dequeue operation has to be called again.
+
+Because the enqueue and dequeue operations do not give a virtual address or pointer to work on, but only an offset to the base of the large frames passed to it, we decided to map those frames again a second time for use in the protocols. This we operate on different virtual addresses for the same physical memory in the same domain. The advantage of this was, that the queue interface used by the driver had not to be changed or rewritten.
+
+\subsection{Disabled Caching}
+A big problem early on was, that parts of the sent ethernet frames were sometimes not correct. On closer investigation the wrong parts were identical to earlier ethernet frames (e.g. sending an ICMP echo reply contained bytes from an earlier sent ARP request). After suspecting a caching problem, the memory used to interact with the driver was mapped with deactivated caches and this solved all of these problems. Later on we discovered that the same was suggested on the moodle forum to other groups, so we did not search for an alternative. But we suspect that this is currently the main bottleneck in the networking code.
+
+\subsection{Copy of Data}
+Earlier we said that a design goal was to keep the copying of data to a minimum. But after seeing how the ethernet driver worked we decided to not share to which the driver wrote. The main reason for this was a security concern: The minimal amount of memory that can be shared is one page. But one page holds two ethernet frames. Because two ethernet frames sharing a page might not belong to the same client it would be unsafe to share the memory, as then a client could get access to data that belongs to another client. This could even be forced by producing a lot of traffic.
+
+It would be maybe possible to rewrite the driver to handle it differently, so that the memory could safely be shared with clients. But we deemed this to be to big of a task for the limited time available.
+
+So we had to add at least one copy to send the data to the client. But we made sure it was minimal, by only copying the payload, but none of the protocol headers. Beacause we wanted to send some additional data like the ip address and port numbers, those were copied to the back of the memory, right after the payload. This can be safely done, because the memory reserved per ethernet frame by the driver is substentally bigger than an ethernet frame could be. The driver does this, so the ethernet frames are aligned to half the page size.
 
 \section{Ethernet}
 
@@ -57,5 +68,7 @@ nochache problem
 To calculate the UDP checksum we extended the checksum functionality in \verb|lib/netutil/checksum.c| with the function \verb|inet_checksum_IP_pseudo| which also takes the pointer to the start of the IP header. The UDP checksum requires additionaly to the UDP header and payload also that a pseudo header containing source IP, destination IP, protocol (which should always be 17 for UDP in this case) and the length of UDP datagram (length of UDP header + length of UDP payload in bytes).
 Because of how the IP package and UDP datagram are already written directly to the reserved network buffer to reduce the number of memory copies, the pseudo header is never actually constructed. Instead, a pointer to the IP header is passed to the checksum function along with the pointer to the UDP header and the length of the UDP datagram. Using the IP header, the UDP checksum can be calculated by taking the IP addresses and IP protocol directly from the IP header.
 The checksum function was designed to be also useable for calculating the TCP checksum. But this was not tested, as TCP was not implemented in the end due to time restrictions and other functionality having priority.
+
+\section{Interface / API}
 
 \section{Nameservice Interaction}
