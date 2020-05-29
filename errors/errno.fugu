@@ -1032,6 +1032,8 @@ errors fs FS_ERR_ {
     failure FULL                "The filesystem is full",
     
     failure READ                "Failure during file read",
+    failure TELL                "Failure during file tell",
+    failure SEEK                "Failure during file seek",
     failure WRITE               "Failure during writing the file",
     failure OPEN                "Failure during open",
     failure REMOVE              "Failure during remove",

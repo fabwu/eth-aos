@@ -611,10 +611,22 @@ static errval_t spawn_load_module_argv_sdcard(const char *dir, int argc, char *a
         return err_push(err, FS_ERR_OPEN);
     }
 
-    // FIXME: Make stat work, size should be large enough to allow for loading
-    // of a hello
+    err = fseek(f, 0, SEEK_END);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_SEEK);
+    }
+
     struct fs_fileinfo finfo;
-    finfo.size = 600000;
+    long size = ftell(f);
+    if (size < 0) {
+        return FS_ERR_TELL;
+    }
+    finfo.size = size;
+
+    err = fseek(f, 0, SEEK_SET);
+    if (err_is_fail(err)) {
+        return err_push(err, FS_ERR_SEEK);
+    }
 
     void *buf = malloc(finfo.size);
     if (buf == NULL) {
