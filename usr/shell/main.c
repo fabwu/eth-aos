@@ -323,6 +323,8 @@ static void run_command(void)
 
     if (!strcmp(argv[idx], "help")) {
         printf("Usage:\n");
+        printf("nslookup <name>    - look up a service\n");
+        printf("nslist             - list all services\n");
         printf("arp                - print arp table\n");
         printf("echo               - display a line of text\n");
         printf("led [on|off]       - turn the LED on/off\n");
