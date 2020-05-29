@@ -42,12 +42,12 @@ Now we are ready to allocate memory for the new core. For the kernel control blo
 we allocate a ram capability of size \verb|OBJSIZE_KCB| and retype it into a
 \verb|ObjType_KernelControlBlock| capability. The comments say that the KCB needs 16k
 alignment but in our case it also worked when the KCB is page aligned so that was maybe an
-artifact left by the Pandaboard code.
+artefact left by the Pandaboard code.
 
 The remaining memory can be allocated as simple frames.
 We could allocate each frame individually or calculate the required size and allocate one
 contiguous block of memory. As our paging system doesn't support arbitrary alignments we opted
-for the later. Later we realized that a contiguous block was indeed the right decision because
+for the later. Later we realised that a contiguous block was indeed the right decision because
 it makes clearing the cache and other cleanups in the end much easier.
 
 All the memory allocation happens in the \verb|allocate_memory()| function. The function takes
@@ -59,7 +59,7 @@ the region is mapped in the current address space and the physical address of th
 values are required later, when we load/relocate the ELF binaries and fill in the core data struct.
 
 In the \verb|allocate_memory()| function we first calculate the total size of the memory block and
-the offset of each memory region within this block. We have to fulfill certain alignment requirements
+the offset of each memory region within this block. We have to fulfil certain alignment requirements
 but as we are not depended on the paging system, we can set arbitrary alignments and hence meet
 every requirement. Once we laid out the address space, we know the size of the memory block and can
 simply allocate a frame. Then we use \verb|frame_identify()| to get the physical address of the frame
@@ -115,7 +115,7 @@ at this point.
 
 Now we had to pass the base address and the size of the reserved block to the second core. The easiest way of 
 doing this is to just hard-coding the addresses in the init function of the second core. That worked pretty well 
-to get started and later on we can easily transmit these values over UMP. As we tried to initialize the memory 
+to get started and later on we can easily transmit these values over UMP. As we tried to initialise the memory 
 allocator, we noticed that the second core lacks the following capabilities: 
 \begin{itemize}
     \item RAM capability for the previously reserved memory
@@ -150,7 +150,7 @@ a working UMP queue, which also handled ARMs weak memory model. The inner workin
 the next chapter.
 
 The queue needs a frame that is shared between the two cores in order to exchange messages. We use the already allocated
-URPC frame to initialize the queue on both sides and establish a communication channel. The first message that goes from
+URPC frame to initialise the queue on both sides and establish a communication channel. The first message that goes from
 the boot core to the app core is special and contains all the necessary information for the app core to do the remaining
 setup. The last step was to remove the hard-coded addresses and use the values from the initial message. Now we were at
 the same point as before when we hard-coded the values but with a working communication channel between the cores.

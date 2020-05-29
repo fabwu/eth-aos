@@ -4,7 +4,7 @@ The system, we have built up to the last group milestone, was not
 entirely ready to take full advantage of a nameserver. The core of our OS
 has basically one server domain, which is called not surprisingly \verb|init|, 
 and handle all services available to the other domains. Although there were
-many opportunities to split up the system, we always opted for a centralized 
+many opportunities to split up the system, we always opted for a centralised 
 solution due to time constraints and other implementation issues.
 
 As a consequence of these design choices, a domain was only able to send messages 
@@ -155,9 +155,9 @@ After this general overview over the nameserver design, the next sections descri
 A domain can register a service by providing a name, a function pointer and some state to the \verb|nameservice_register()| function.
 The service name can be any string but the length is limited to 192 characters because it has to fit into the three LMP words.
 
-When a domain calls \verb|nameservice_register()| for the first time, the function initializes a hashtable and register a closure
+When a domain calls \verb|nameservice_register()| for the first time, the function initialises a hashtable and register a closure
 on the \verb|ns_server_chan|. The closure is responsible for receiving incoming messages and calling the correct handler. After
-the initialization completed, a message is sent to the nameserver which contains the name of the service. The nameserver checks
+the initialisation completed, a message is sent to the nameserver which contains the name of the service. The nameserver checks
 if the name is free and stores the PID of the server together with the name in a hashtable. Then he reports the status of the 
 operation back to the server. The messages are passed over the client channel to \verb|init| and from init over the server channel
 to the nameserver and back over the same channels. If the requesting domain is on a different core, the message is routed over UMP.
@@ -263,7 +263,7 @@ The other aspect, which also affected the migration of the existing services (e.
 time in the end and had to focus on the report.
 
 In retrospective, I can say that not using direct channels between domains (at least for LMP), was definitely not a good design choice and
-made the implementation of the nameserver more complicated that it should have been. At the point were I realized the problem with freeing
+made the implementation of the nameserver more complicated that it should have been. At the point were I realised the problem with freeing
 the resources I have already spend to much time on this design and I couldn't work out a better solution in this limited time frame. 
 Nevertheless, I learned a lot while implementing the nameserver, because I touched many parts of the core system again and had to adapt them
 to the current design.

@@ -27,7 +27,7 @@ Enabling the driver was fairly straightforward. It consisted of the following st
         We mapped the device memory as read-write non-cacheable, to ensure that all character reads and writes would access the UART device immediately.
 
     \item
-        Call the UART driver's initialization function (\verb|lpuart_init|).
+        Call the UART driver's initialisation function (\verb|lpuart_init|).
 
 \end{itemize}
 
@@ -52,7 +52,7 @@ Enabling interrupt-driven character processing consisted of the following steps:
         Map the GIC device registers. This was similar to mapping the UART device registers (see above).
 
     \item
-        Initialize the GIC by calling the driver's \verb|gic_dist_init| function.
+        Initialise the GIC by calling the driver's \verb|gic_dist_init| function.
 
     \item
         Obtain an interrupt capability for the UART's interrupt line.

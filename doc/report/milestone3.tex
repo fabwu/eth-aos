@@ -1,6 +1,6 @@
 \chapter{(Lightweight) Message Passing}
 
-Documented here is how we designed and implemented the LMP (Lightweight Message Passing) during milestone 3 and some of the improvements we made later on. The changes made in the individual project nameserver are documented in their own chapter. The nameserver project made an overhaul on the LMP and the final code base might look substentially different than what is documented here.
+Documented here is how we designed and implemented the LMP (Lightweight Message Passing) during milestone 3 and some of the improvements we made later on. The changes made in the individual project nameserver are documented in their own chapter. The nameserver project made an overhaul on the LMP and the final code base might look substantially different than what is documented here.
 
 \section{Architecture / Design}
 
@@ -13,7 +13,7 @@ Disadvantages for a monolithic init:
     \item Complexity: Having all the services in init instead of separating them means more complexity. The interfaces between different services are not that well defined and it is harder to maintain and test a monolith.
 \end{itemize}
 
-Advanteges for a monolithic init:
+Advantages for a monolithic init:
 \begin{itemize}
     \item Performance: Having all the services run in the same domain and on the same thread means less context switches and when staying in init no context switches at all.
     \item Easier to develop: Adding the services to init meant we did not have to rewrite any of the working functionality inside of init but could just provide an interface for other applications.
@@ -78,11 +78,11 @@ bool success = err_is_ok(err);
 In the listing above the client gets the serial RPC channel (which in our case is pointing to init) and then sends the character 'c' over the blocking call \verb|aos_rpc_serial_putchar| and is able to tell if the transfer was successful by checking the returned \verb|errval_t| value.
 
 \subsection{Blocking RPC}
-Making the RPC calls blocking was not trivial and was deliberated quite a bit before comming to a conclusion on how we wanted to implement it. We knew that it was required to make the RPC calls blocking, but we had to still be able to dispatch waitset events, so that LMP reponses could actually be received while blocking. So we implemented a function \verb|aos_rpc_dispatch_until_set| in \verb|lib/aos/aos_rpc.c| which would take a pointer to a flag and then continuously dispatch on the waitset until this flag was set to true. Before calling this function we would register a closure to receive LMP messages from init on and set the bool flag to true when a message from init was received allowing \verb|aos_rpc_dispatch_until_set| to return.
+Making the RPC calls blocking was not trivial and was deliberated quite a bit before coming to a conclusion on how we wanted to implement it. We knew that it was required to make the RPC calls blocking, but we had to still be able to dispatch waitset events, so that LMP responses could actually be received while blocking. So we implemented a function \verb|aos_rpc_dispatch_until_set| in \verb|lib/aos/aos_rpc.c| which would take a pointer to a flag and then continuously dispatch on the waitset until this flag was set to true. Before calling this function we would register a closure to receive LMP messages from init on and set the bool flag to true when a message from init was received allowing \verb|aos_rpc_dispatch_until_set| to return.
 
 \section{Realisations and Improvements}
 
-When revising our work after finishing milestone 3 we realised that we had a lot of code duplication in the LMP channel handling. Having multiple functions of setting up a closure, registering receive closures, re-registering closures upon transient failure and so on only to set a flag seemed overcomplicated. So we wanted something to make it easier to write LMP code by abstracting away from the provided bare LMP channel functionality.
+When revising our work after finishing milestone 3 we realised that we had a lot of code duplication in the LMP channel handling. Having multiple functions of setting up a closure, registering receive closures, re-registering closures upon transient failure and so on only to set a flag seemed over complicated. So we wanted something to make it easier to write LMP code by abstracting away from the provided bare LMP channel functionality.
 
 We also noticed that we experienced a lot of stack ripping as it was described in the book. Following the logic of the communication was made harder as for each message that was sent or received a closure has to be built and registered. The logic of a single RPC call was in init spread over several functions and hard to track.
 
@@ -125,7 +125,7 @@ lmp_protocol_recv2(&rpc->chan,
     AOS_RPC_PROCESS_SPAWN, &ret_pid, &ret_success);
 \end{lstlisting}
 
-In the listing above we see a more complex communication than was previously implemented. We see that process spawning is initiated by sending a spawn request that consits only of the message type and 0 additional bytes. That is also what the 0 in \verb|lmp_protocol_send0| stands for. This is followed by sending a string containing the command line which should be used to spawn the process. At the end 2 integers are received which contain a success flag and if the spawning was successful the pid of the newly spawned process.
+In the listing above we see a more complex communication than was previously implemented. We see that process spawning is initiated by sending a spawn request that consist only of the message type and 0 additional bytes. That is also what the 0 in \verb|lmp_protocol_send0| stands for. This is followed by sending a string containing the command line which should be used to spawn the process. At the end 2 integers are received which contain a success flag and if the spawning was successful the pid of the newly spawned process.
 
 The code on the init side was adjusted accordingly to handle RPC calls with multiple LMP messages per call. The main entry point in \verb|usr/init/rpc.c| (function \verb|rpc_handler_recv_closure|) was left unchanged, but the service functions are now blocking functions, that also use the \verb|aos/lmp_protocol.h| interface.
 For example the following listing shows an extract of the spawn process service function:
@@ -142,7 +142,7 @@ lmp_protocol_send2(chan,
     AOS_RPC_PROCESS_SPAWN, pid, true);
 \end{lstlisting}
 
-The listing above was again substentially shortened. Leaving out all of the error handling and the declarations. But it should show, that it is a close parallel to the \verb|lmp_protocol| calls made on the client side, just swaping out receive and send in the respective functions.
+The listing above was again substantially shortened. Leaving out all of the error handling and the declarations. But it should show, that it is a close parallel to the \verb|lmp_protocol| calls made on the client side, just swapping out receive and send in the respective functions.
 Noteworthy is, that there is no call to receive the first empty LMP message on the service side. This is because the first LMP message is always received by \verb|rpc_handler_recv_closure|. To prevent that all RPC calls had to be sent using 2 LMP messages, relevant bytes from this first LMP message are always passed on to the service function by \verb|rpc_handler_recv_closure|.
 
 Another change introduced with the LMP protocol was, that now two bytes of the reserved 64 bytes of metadata per LMP message were used. Previously only one byte was used to send the message type. What changed is, that now one byte determines which RPC function the message belongs to and the other byte determines what kind of message is being sent. This allows each RPC call to have its own sub protocol for sending different kind of messages. For example in the listings above we can see that a different message type is used when sending the commandline.
@@ -154,7 +154,7 @@ Sending large messages was implemented by sending consecutive LMP messages. We d
 
 The disadvantage of using a frame is, that we considered it to be more complicated and time consuming to implement. Another disadvantage is that for messages that could be sent using a few LMP messages allocating a whole frame seemed to be a waste. It would be possible to create a system to reuse frames until the were filled up and then send new frames, but that would make the whole large message sending even more complicated.
 
-The large message sending was integrated into \verb|lmp_protocol| too with the functions \verb|lmp_protocol_send_bytes_cap|, \verb|lmp_protocol_recv_bytes_cap|, \verb|lmp_protocol_send_string_cap| and \verb|lmp_protocol_recv_string_cap|. The send bytes function takes a pointer to a byte array and a size and sends in a first message the size in the fisrt 64 bytes and the initial 2 * 64 bytes in the remaining payload. Each of the following LMP messages contains 3 * 64 bytes until size bytes have been sent.
+The large message sending was integrated into \verb|lmp_protocol| too with the functions \verb|lmp_protocol_send_bytes_cap|, \verb|lmp_protocol_recv_bytes_cap|, \verb|lmp_protocol_send_string_cap| and \verb|lmp_protocol_recv_string_cap|. The send bytes function takes a pointer to a byte array and a size and sends in a first message the size in the first 64 bytes and the initial 2 * 64 bytes in the remaining payload. Each of the following LMP messages contains 3 * 64 bytes until size bytes have been sent.
 
 The receive bytes function works as a parallel to send bytes by allocating a buffer of the size that is sent with the initial message and then filling this buffer as bytes are being received over LMP messages.
 The string sending and receiving works almost identical. The string send function takes a 0 terminated string and calculates the size of it and then proceeds to send the string by first sending the size and then all the bytes identically to how it was done for the send bytes function. Receiving the string works exactly the same as receiving the bytes, but the string receiving function does not return a size.

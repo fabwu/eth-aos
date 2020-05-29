@@ -6,12 +6,12 @@
 
 One of the earliest decision in the network project was, where the driver should run. One of the considered options was, to start an additional core that would be dedicated to run the network driver and handle the network protocols. The advantages of this approach would be:
 \begin{itemize}
-    \item Better performance and lower latency: The network could run uninterrupted and be preemted much less and only for the kernel. (This is an assumption, as we did not try to implement this approach and meassure it.)
+    \item Better performance and lower latency: The network could run uninterrupted and be preempted much less and only for the kernel. (This is an assumption, as we did not try to implement this approach and measure it.)
     \item Fast client applications that use networking: Because the networking would run on a different core than any other application, UMP could be used as the sole message passing system. This would not only make the interface simpler but also faster, as the book has already shown that UMP is faster than LMP.
 \end{itemize}
 The disadvantages would be:
 \begin{itemize}
-    \item Refactoring multi-core memory management: As detailed in previous chapters, we split the memory between the two already running cores. We agreed as a team, that it would not make much sense to split the memory threeways for the network and it is hard to predict which core would need how much memory. So for a networking core to be functional we would have to implement a way to pass memory to the netwroking core, which we previously decided not to do because we deemed it to be a lot of complicated work.
+    \item Refactoring multi-core memory management: As detailed in previous chapters, we split the memory between the two already running cores. We agreed as a team, that it would not make much sense to split the memory three ways for the network and it is hard to predict which core would need how much memory. So for a networking core to be functional we would have to implement a way to pass memory to the networking core, which we previously decided not to do because we deemed it to be a lot of complicated work.
     \item Unrealistic: If we were to continue work on this OS we would at some point want to start all the cores and use them for user applications. At this point we would not want a core dedicated to networking anymore. When looking at the bigger picture, it therefore does not seem to make sense to have a dedicated networking core and would also feel like cheating to be able to show better performance in the final report.
 \end{itemize}
 
@@ -29,9 +29,9 @@ With those arguments in mind, the decision to implement the protocols inside the
 
 One of the design goals in the networking project was to reduce copying of data and therefore passing a reference into the same ethernet frame between the network protocol. Another goal was to keep the number of mallocs low and allocate on the stack whenever possible. This should simplify resource management and reduce the amount of bugs.
 
-An important design decison was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed principle when e.g. adding a new protocol. The advantages are, that the its faster to implement like this and there is no overhead caused from the abstraction.
+An important design decision was to keep the interface between the network protocols simple, straight forward and without a lot of abstraction. This makes the network stack less extensible and violates the open-closed principle when e.g. adding a new protocol. The advantages are, that the its faster to implement like this and there is no overhead caused from the abstraction.
 
-That beeing said, we made it a goal to separate the code for the different protocols: Each network protocol has its own files and a clearly defined interface for interacting with other protocols. For example the IP protocol has its own header and source file and all the IP code is inside those files. When calling functions to send IP packages, the code of the IP protocol will call functions of the ethernet implementation to send IP packages over ethernet frames.
+That being said, we made it a goal to separate the code for the different protocols: Each network protocol has its own files and a clearly defined interface for interacting with other protocols. For example the IP protocol has its own header and source file and all the IP code is inside those files. When calling functions to send IP packages, the code of the IP protocol will call functions of the ethernet implementation to send IP packages over ethernet frames.
 
 \section{Driver}
 
@@ -39,7 +39,7 @@ The driver to interact with the networking hardware was given in the handout. Be
 
 At startup the driver is handed two large frames: One to write incoming ethernet frames to and the other to read outgoing ethernet frames from. The driver uses slices that are half a page each per ethernet frame. So that a page is used for up to two ethernet frames.
 
-To interact with the driver enqueue and dequeue operations are used. To get access to received ethernet frames the dequeue operation is used. It gives an offset into one of the memory regions used and blocks that part of the memory until it is released back to the driver. To do so the enqueue operation is used. Transmiting outgoing ethernet frames works in a similar way. The client of the driver has to keep track on which frames can be written to. Ethernet frames can be handed to the driver with an enqueue operation. To get back access to the memory after the sending is done, the dequeue operation has to be called again.
+To interact with the driver enqueue and dequeue operations are used. To get access to received ethernet frames the dequeue operation is used. It gives an offset into one of the memory regions used and blocks that part of the memory until it is released back to the driver. To do so the enqueue operation is used. Transmitting outgoing ethernet frames works in a similar way. The client of the driver has to keep track on which frames can be written to. Ethernet frames can be handed to the driver with an enqueue operation. To get back access to the memory after the sending is done, the dequeue operation has to be called again.
 
 Because the enqueue and dequeue operations do not give a virtual address or pointer to work on, but only an offset to the base of the large frames passed to it, we decided to map those frames again a second time for use in the protocols. This we operate on different virtual addresses for the same physical memory in the same domain. The advantage of this was, that the queue interface used by the driver had not to be changed or rewritten.
 
@@ -51,7 +51,7 @@ Earlier we said that a design goal was to keep the copying of data to a minimum.
 
 It would be maybe possible to rewrite the driver to handle it differently, so that the memory could safely be shared with clients. But we deemed this to be to big of a task for the limited time available.
 
-So we had to add at least one copy to send the data to the client. But we made sure it was minimal, by only copying the payload, but none of the protocol headers. Beacause we wanted to send some additional data like the ip address and port numbers, those were copied to the back of the memory, right after the payload. This can be safely done, because the memory reserved per ethernet frame by the driver is substentally bigger than an ethernet frame could be. The driver does this, so the ethernet frames are aligned to half the page size.
+So we had to add at least one copy to send the data to the client. But we made sure it was minimal, by only copying the payload, but none of the protocol headers. Because we wanted to send some additional data like the ip address and port numbers, those were copied to the back of the memory, right after the payload. This can be safely done, because the memory reserved per ethernet frame by the driver is substantially bigger than an ethernet frame could be. The driver does this, so the ethernet frames are aligned to half the page size.
 
 \section{Ethernet}
 The ethernet handling was implemented in \verb|usr/drivers/enet/ethernet.c| and its interface defined in \verb|usr/drivers/enet/ethernet.h|.
@@ -95,18 +95,18 @@ What makes this approach performant is, that the list has never to be traversed 
     \label{fig:ethsend}
 \end{figure}
 
-The interface to send ethernet frames was built on that approach. Figure \ref{fig:ethsend} shows a sequence diagram of said interface. It consits of a function to start sending an ethernet frame, which returns an id and a pointer. The pointer can then be used to write the payload of the ethernet frame (e.g. an ip package). When done writing, the client calls the send function with the id. This id can directly be used by the ethernet protocol to enqueue the correct memory slice to the driver.
+The interface to send ethernet frames was built on that approach. Figure \ref{fig:ethsend} shows a sequence diagram of said interface. It consist of a function to start sending an ethernet frame, which returns an id and a pointer. The pointer can then be used to write the payload of the ethernet frame (e.g. an ip package). When done writing, the client calls the send function with the id. This id can directly be used by the ethernet protocol to enqueue the correct memory slice to the driver.
 
-Another important part is, that the memory is not immediately free to be used again, because the data has to be sent by the hardware before that. This is done in parallel and it would be a waste of performance to block on that. So we decided to keep the data reserved and return from the send function. How data is released again can be seen in the same sequence diagram \ref{fig:ethsend}. In the start send function, ethernet dequeues all slices that were done sending from the driver. To figure out which list nodes to add in the tracking of free memory slices we use some pointer arithmetic. By using the fact that all of the list nodes were allocated as one big chunk and the address of each list node therefore correspondes to the address of a memory slice, the address of the correct list node can be quickly calculated using the offset returned by dequeue.
+Another important part is, that the memory is not immediately free to be used again, because the data has to be sent by the hardware before that. This is done in parallel and it would be a waste of performance to block on that. So we decided to keep the data reserved and return from the send function. How data is released again can be seen in the same sequence diagram \ref{fig:ethsend}. In the start send function, ethernet dequeues all slices that were done sending from the driver. To figure out which list nodes to add in the tracking of free memory slices we use some pointer arithmetic. By using the fact that all of the list nodes were allocated as one big chunk and the address of each list node therefore corresponds to the address of a memory slice, the address of the correct list node can be quickly calculated using the offset returned by dequeue.
 
 \section{ARP - Address Resolution Protocol}
 The ARP handling was implemented in \verb|usr/drivers/enet/arp.c| and its interface defined in \verb|usr/drivers/enet/arp.h|.
 
 \subsection{ARP Cache}
 \label{sec:arpcache}
-The ARP cache was saved using the provided hashtable in \verb|lib/collections|. The reasoning behind this was, that we need a datastructure that can do the lookup of an address as fast as possible but does not have to be as fast to insert or remove entries. Hashtables fulfill exactly these criteria. Only the IP address to ethernet address lookup had to be implemented, so a single hashtable was sufficient.
+The ARP cache was saved using the provided hashtable in \verb|lib/collections|. The reasoning behind this was, that we need a datastructure that can do the lookup of an address as fast as possible but does not have to be as fast to insert or remove entries. Hashtables fulfil exactly these criteria. Only the IP address to ethernet address lookup had to be implemented, so a single hashtable was sufficient.
 
-Another decision was in which byte order to store the addresses. We decided to store the ethernet addresses in network byte order. The main advantage of this is, that in the majority uf uses, the ethernet address was needed in network byte order anyways, and so the conversion did not have to be done for every IP package over and over again. Additionally ARP receives the ethernet addresses in network byte order anyways so conversion could be saved here too. The only place were the byte order conversion had to be done was in the cache printing.
+Another decision was in which byte order to store the addresses. We decided to store the ethernet addresses in network byte order. The main advantage of this is, that in the majority of uses, the ethernet address was needed in network byte order anyways, and so the conversion did not have to be done for every IP package over and over again. Additionally ARP receives the ethernet addresses in network byte order anyways so conversion could be saved here too. The only place were the byte order conversion had to be done was in the cache printing.
 
 \subsection{Interfaces}
 The ARP layer is strongly coupled with the ethernet layer, as it uses the ethernet sending functions to send ARP responses and requests and ethernet calls the ARP handling function if it received packages of the ARP protocol type.
@@ -117,17 +117,17 @@ The ARP layer is additionally strongly coupled with the IP layer: It offers a fu
 Another interface that the ARP layer offers is printing the ARP cache. We decided to not send a copy of the ARP cache to the shell and do the printing there, but to directly use printf functions inside the ARP layer to render the cache for the serial output. This was mainly done, because it seemed to be a simpler way of doing it in terms of how much effort it would take to implement. Sharing the memory of the ARP cache was not considered, because that sounds like a security nightmare. As mentioned before in \ref{sec:arpcache}, when printing we had to also convert from network byte order.
 
 \subsection{Additional Features}
-ARP was implemented to support the additional features of sendin ARP probe packages and handling ARP anouncements.
+ARP was implemented to support the additional features of sending ARP probe packages and handling ARP announcements.
 
-An ARP probe package is a request send out to the network to check if anyone uses the IP address that we would like to start using. After starting the ARP protocol an ARP probe is sent to the network, checking if our static IP (hardcoded 10.0.0.2) is already in use. If ARP ever gets an external entry for that static IP address, it stops the network driver. In the future this could be expanded to then request another IP address from DHCP or from the user.
+An ARP probe package is a request send out to the network to check if anyone uses the IP address that we would like to start using. After starting the ARP protocol an ARP probe is sent to the network, checking if our static IP (hard coded 10.0.0.2) is already in use. If ARP ever gets an external entry for that static IP address, it stops the network driver. In the future this could be expanded to then request another IP address from DHCP or from the user.
 
-ARP anouncements are ARP request sent on ethernet broadcast addresses to tell other network members, that they are using the anounced IP address. By handling these anouncements, the ARP cache can be populated without having to send ARP requests to these targets. But more importantly handling them again reduces the risk of an IP address conflict.
+ARP announcements are ARP request sent on ethernet broadcast addresses to tell other network members, that they are using the announced IP address. By handling these announcements, the ARP cache can be populated without having to send ARP requests to these targets. But more importantly handling them again reduces the risk of an IP address conflict.
 
 \section{IP - Internet Protocol}
 The IP handling was implemented in \verb|usr/drivers/enet/ip.c| and its interface defined in \verb|usr/drivers/enet/ip.h|.
 
 \subsection{Receiving Packages}
-Receiving IP packages is tightly coupled with the ehternet, ICMP and UDP layers. The ethernet layer calls the IP layer handle function when receiving an ethernet frame with the protocol bytes set to IP. The IP layer then looks at the package and sends it on to the ICMP or UDP layers depending on the specified protocol.
+Receiving IP packages is tightly coupled with the ethernet, ICMP and UDP layers. The ethernet layer calls the IP layer handle function when receiving an ethernet frame with the protocol bytes set to IP. The IP layer then looks at the package and sends it on to the ICMP or UDP layers depending on the specified protocol.
 
 The package is discarded in the IP layer if...
 \begin{itemize}
@@ -137,7 +137,7 @@ The package is discarded in the IP layer if...
     \item ...the package was for a protocol other than ICMP or UDP.
 \end{itemize}
 
-The checksum of the IP package is checked and a message is printed if the checksum was incorrect but the package was not discarded in that case. It would be easy to also discard a package in that case, but we decided against doing so for now, because we did not want to discard packages if we misscalculated the checksum on our end (which happened multiple times in early development).
+The checksum of the IP package is checked and a message is printed if the checksum was incorrect but the package was not discarded in that case. It would be easy to also discard a package in that case, but we decided against doing so for now, because we did not want to discard packages if we miscalculated the checksum on our end (which happened multiple times in early development).
 
 \subsection{Sending Packages}
 Sending IP packages is tightly coupled with the ethernet, ICMP and UDP layers too. Because of how the interface of ethernet has split the sending functions in two (see \ref{sec:sendframe}), we decided to make this transparent to the client and implement IP package sending in the same style.
@@ -199,7 +199,7 @@ The ICMP handling was implemented in \verb|usr/drivers/enet/icmp.c| and its inte
 The ICMP implementation was straight forward. A handle function was exposed to be called by the IP layer to be called when the protocol type was ICMP. Because we did only have to handle echo request packages, all incoming packages of other types were discarded. Echo requests were answered with echo responses as defined by the ICMP protocol including checksum calculation.
 
 \subsection{Latency}
-After finishing the ICMP implementation the perfomence i.e. latency of the network stack so far could be tested. The following listing \ref{lst:ping5} shows a ping of the Toradex board with 5 requests. We see, that the first request takes a bit longer. This is because the board has to do ARP lookups of the sender first. But we see clearly that all the requests are handled in under 1ms, which we consider to be satisfying.
+After finishing the ICMP implementation the performance i.e. latency of the network stack so far could be tested. The following listing \ref{lst:ping5} shows a ping of the Toradex board with 5 requests. We see, that the first request takes a bit longer. This is because the board has to do ARP lookups of the sender first. But we see clearly that all the requests are handled in under 1ms, which we consider to be satisfying.
 
 \begin{lstlisting}[caption=Ping Toradex Board 5 times, label=lst:ping5]
 $ ping -c 5 10.0.0.2
@@ -227,14 +227,14 @@ rtt min/avg/max/mdev = 0.136/0.225/0.367/0.023 ms
 \section{UDP - User Datagram Protocol}
 The UDP handling was implemented in \verb|usr/drivers/enet/udp.c| and its interface defined in \verb|usr/drivers/enet/udp.h|.
 
-The UDP implementation was also straight forward. We split the the sending again like we have done previously in the IP and ethernet layer. We completly rely on the IP layer to handle ARP lookups and temporarily storing of IP packages. When sending UDP datagrams we again rely on the client to allocate the storage needed to identify the datagram between the functions, as we did in the IP layer. This again reduces the amoung of mallocs.
+The UDP implementation was also straight forward. We split the the sending again like we have done previously in the IP and ethernet layer. We completely rely on the IP layer to handle ARP lookups and temporarily storing of IP packages. When sending UDP datagrams we again rely on the client to allocate the storage needed to identify the datagram between the functions, as we did in the IP layer. This again reduces the among of mallocs.
 
 Reserving UDP ports and listening on them by other applications is done in the RPC layer described below. The RPC layer also exposes an interface for other applications to send UDP datagrams.
 
 \subsection{UDP Checksum}
 To calculate the UDP checksum we extended the checksum functionality in \verb|lib/netutil/checksum.c| with the function \verb|inet_checksum_IP_pseudo| which also takes the pointer to the start of the IP header. The UDP checksum requires additionally to the UDP header and payload also that a pseudo header containing source IP, destination IP, protocol (which should always be 17 for UDP in this case) and the length of UDP datagram (length of UDP header + length of UDP payload in bytes).
 Because of how the IP package and UDP datagram are already written directly to the reserved network buffer to reduce the number of memory copies, the pseudo header is never actually constructed. Instead, a pointer to the IP header is passed to the checksum function along with the pointer to the UDP header and the length of the UDP datagram. Using the IP header, the UDP checksum can be calculated by taking the IP addresses and IP protocol directly from the IP header.
-The checksum function was designed to be also useable for calculating the TCP checksum. But this was not tested, as TCP was not implemented in the end due to time restrictions and other functionality having priority.
+The checksum function was designed to be also usable for calculating the TCP checksum. But this was not tested, as TCP was not implemented in the end due to time restrictions and other functionality having priority.
 
 \section{Interface / API}
 The server code for interfacing with other applications was implemented in \verb|usr/drivers/enet/rpc.c| and defined in \verb|usr/drivers/enet/rpc.h| (the RPC layer). The client API was implemented in \verb|lib/aos/netservice.c| and its interface defined in \verb|lib/aos/netservice.h|.
@@ -246,7 +246,7 @@ Sending a UDP datagram is done from any application using the \verb|netservice_u
 The response has only feedback in form of a flag that specifies if sending was successful or not. This could be improved upon by sending back result codes for different error cases.
 
 \subsection{UDP Listen}
-Listening on a port is a bit more complicated, as the nameservice interface only allows the blocking \verb|nameservice_rpc| function for communication. But because there are potentially indevinitely many UDP messages that have to be received this was not ideal. There were multiple possibilities how to solve the problem:
+Listening on a port is a bit more complicated, as the nameservice interface only allows the blocking \verb|nameservice_rpc| function for communication. But because there are potentially indefinitely many UDP messages that have to be received this was not ideal. There were multiple possibilities how to solve the problem:
 \begin{enumerate}
   \item Bypass: Use the nameservice to connect the UDP service with a client and then setup the communication between service and client over other means (e.g. over a URPC frame).
   \item Polling: Repeatedly poll from the client on the UPD service for new UDP datagrams.
@@ -276,7 +276,7 @@ What happens inside the function is, that the client registers a anonymous servi
 When sending UDP datagrams to the client we use a trick that was described earlier in the chapter that makes sure the data is only copied once: When sending a datagram to the client we do not want to send all the header information, but we need to send some auxiliary data (like IP address and port numbers) and some connection information. This data is just added to the back of the buffer after the end of the datagram payload. We are sure that there are enough bytes for that in the buffer, because the buffer has more bytes than needed, because it allocates more bytes than could be possibly received on an ethernet frame.
 
 \subsection{UDP Close}
-Because we choose the more difficult setup for UDP listen, closing becomes naturally more difficult as well. There was another important design decision made for closing the UDP ports: Should we allow any application to close just any port or do we want to only allow the client that started listening to be able to close the port. The advantage of the former was, that it is simpler to implement and allows for other applications to reclaim a port, if it was left open by another application. But we see a big disadvantage in beeing able to close ports of other clients, in that we do not want to allow hijacking of a connection between different applications. Also we want to give the client more stable guarantees, that their connection is not suddenly closed by other applications.
+Because we choose the more difficult setup for UDP listen, closing becomes naturally more difficult as well. There was another important design decision made for closing the UDP ports: Should we allow any application to close just any port or do we want to only allow the client that started listening to be able to close the port. The advantage of the former was, that it is simpler to implement and allows for other applications to reclaim a port, if it was left open by another application. But we see a big disadvantage in being able to close ports of other clients, in that we do not want to allow hijacking of a connection between different applications. Also we want to give the client more stable guarantees, that their connection is not suddenly closed by other applications.
 
 \begin{figure}
   \centering
@@ -310,7 +310,7 @@ Because we choose the more difficult setup for UDP listen, closing becomes natur
   \label{fig:udpclose}
 \end{figure}
 
-We decided to setup a protocol, that would get the confirmation of the client before closing the port. This confirmation process was completly hidden from the client by the netservice API. The listing \ref{lst:udpclose} shows the API that the client is exposed to. The only thing the client observes is, that if he closes his own connections it works, but if he tries to close foreign connections it is going to fail. The following figure \ref{fig:udpclose} shows how this was achieved.
+We decided to setup a protocol, that would get the confirmation of the client before closing the port. This confirmation process was completely hidden from the client by the netservice API. The listing \ref{lst:udpclose} shows the API that the client is exposed to. The only thing the client observes is, that if he closes his own connections it works, but if he tries to close foreign connections it is going to fail. The following figure \ref{fig:udpclose} shows how this was achieved.
 
 \begin{lstlisting}[language=c, caption=Interface for UDP close, label=lst:udpclose]
 errval_t netservice_udp_close(uint16_t port);
