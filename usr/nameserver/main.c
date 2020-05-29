@@ -30,7 +30,7 @@
 #endif
 
 struct srv_entry {
-    const char *name;
+    char name[MAX_SERVICE_NAME_LENGTH];
     domainid_t did;
 };
 
@@ -56,7 +56,7 @@ static errval_t handle_register(char *name, domainid_t server_did)
     }
 
     struct srv_entry *entry = (struct srv_entry *)malloc(sizeof(struct srv_entry));
-    entry->name = name;
+    strcpy(entry->name, name);
     entry->did = server_did;
     err = ht->d.put_word(&ht->d, entry->name, strlen(entry->name), (uintptr_t)entry);
     if (err_is_fail(err)) {
@@ -160,6 +160,24 @@ static errval_t handle_lookup(char *name, domainid_t server_did)
     return SYS_ERR_OK;
 }
 
+static errval_t handle_nslist(void) {
+    printf("AVAIL. SERVICES\n");
+    printf("\n");
+    printf("PID\t\tNAME\n");
+
+    for(int i = 0; i < ht->table_length; ++i) {
+        struct _ht_entry *entry = ht->entries[i];
+
+        while(entry != NULL) {
+            struct srv_entry *srv = (struct srv_entry *)entry->value;
+            printf("%p\t\t%s\n", srv->did, srv->name);
+            entry = entry->next;
+        }
+    }
+
+    return SYS_ERR_OK;
+}
+
 static void handler(void *arg)
 {
     assert(arg == NULL);
@@ -201,7 +219,13 @@ static void handler(void *arg)
                 DEBUG_ERR(err, "Failed to handle AOS_RPC_MSG_NS_LOOKUP\n");
             }
             break;
-        default:
+        case AOS_RPC_MSG_NS_LIST:
+            err = handle_nslist();
+            if (err_is_fail(err)) {
+                DEBUG_ERR(err, "Failed to handle AOS_RPC_MSG_NS_LIST\n");
+            }
+            break;
+         default:
             USER_PANIC("Nameserver received unknown msg\n");
         }
 

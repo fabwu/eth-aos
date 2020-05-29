@@ -550,12 +550,19 @@ errval_t nameservice_lookup_did(const char *name, domainid_t *did)
 
 /**
  * @brief enumerates all entries that match an query (prefix match)
- *
- * @param query     the query
- * @param num 		number of entries in the result array
- * @param result	an array of entries
+ * 
+ * Queries not supported, sorry :(
  */
-errval_t nameservice_enumerate(char *query, size_t *num, char **result)
+errval_t nameservice_enumerate(void)
 {
-    return LIB_ERR_NOT_IMPLEMENTED;
+    errval_t err;
+
+    // send list request to NS
+    uintptr_t header = AOS_RPC_HEADER(disp_get_domain_id(), NS_DID, AOS_RPC_MSG_NS_LIST);
+    err = lmp_protocol_send0(get_init_client_chan(), header);
+    if (err_is_fail(err)) {
+        return err_push(err, LIB_ERR_LMP_PROTOCOL_SEND3);
+    }
+
+    return SYS_ERR_OK;
 }

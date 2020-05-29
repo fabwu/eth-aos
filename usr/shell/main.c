@@ -358,6 +358,8 @@ static void run_command(void)
         if (err_is_fail(err)) {
             printf("Failed to print arp table\n");
         }
+    } else if (!strcmp(argv[idx], "nslist")) {
+        nameservice_enumerate();
     } else if (!strcmp(argv[idx], "nslookup") && argc == 2) {
         nslookup(argv[idx + 1]);
     } else if (!strcmp(argv[idx], "ls") && argc == 2) {

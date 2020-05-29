@@ -8,6 +8,8 @@
 
 #include <aos/aos.h>
 
+#define MAX_SERVICE_NAME_LENGTH (AOS_RPC_BUFFER_SIZE - 1)
+
 typedef void* nameservice_chan_t;
 
 ///< handler which is called when a message is received over the registered channel
@@ -80,12 +82,8 @@ errval_t nameservice_lookup_did(const char *name, domainid_t *did);
 
 /**
  * @brief enumerates all entries that match an query (prefix match)
- * 
- * @param query     the query
- * @param num 		number of entries in the result array
- * @param result	an array of entries
  */
-errval_t nameservice_enumerate(char *query, size_t *num, char **result );
+errval_t nameservice_enumerate(void);
 
 
 #endif /* INCLUDE_AOS_AOS_NAMESERVICE_H_ */

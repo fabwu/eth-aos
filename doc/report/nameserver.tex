@@ -1,9 +1,184 @@
 \chapter{Nameserver}
 
+The system, we have built up to the last group milestone, was not 
+entirely ready to take full advantage of a nameserver. The core of our OS
+has basically one server domain, which is called not surprisingly \verb|init|, 
+and handle all services available to the other domains. Although there were
+many opportunities to split up the system, we always opted for a centralized 
+solution due to time constraints and other implementation issues.
+
+As a consequence of these design choices, a domain was only able to send messages 
+to init but not to other domains. So before implementing the nameserver, I had to
+extend the existing RPC infrastructure. These changes uncovered more issues with
+the existing code (process management), which also had to be addressed.
+
+After that, I used the existing messaging functionality to implement a nameserver
+with a separate RPC call using frames for transmitting the payload. All changes
+to the core system and the design decisions I made, when I was implementing the
+nameserver, are described in this chapter.
+
+\section{Changes to Existing RPC Infrastructure}
+
+In our core system all RPC requests are served by \verb|init| and there are no separate
+domains for e.g. a memory server. Every domain has one LMP channel to \verb|init|, which
+is used to send a request. After sending a request the domain registers a closure on the
+channel, which get called when the response from \verb|init| arrives. Chapter 3 has more
+details about how a domain communicates with \verb|init|.
+
+For this section the details of the existing RPC system are not important, but I want to
+point out two aspects, which have driven most of the design decisions in this chapter. 
+First, there was no existing functionality to setup direct channels between two domains.
+While channel setup is relatively straight forward with LMP, it is quite a challenge to
+setup UMP channels (as we cannot transfer capabilities between cores).
+The second aspect is that the existing RPC calls must work until the nameserver is fully
+implemented and some calls might be never replaced.
+
+Considering the points above a multi-hop protocol over \verb|init| seems to be easier
+to implement in the setting of this course. In the initial design each domain has a
+LMP channel to \verb|init| and the first word of a message is used for metadata (message
+type, sender, receiver). Figure TODO shows the basic components. 
+
+
+If a domain wants to send a message to another domain, it has to create the correct header 
+using an identification for the receiver (e.g. PID). The sending domain forwards the 
+message over the LMP channel to \verb|init|. \verb|init| receives the message and checks
+if the receiver is one the same core. If the receiver is on a different core, \verb|init|
+forwards the message over UMP to the \verb|init| process on the other core (UMP channel 
+already exists). If \verb|init| is the receiver, the sender used the RPC calls from 
+the core system to send the message. \verb|init| handles the message and sends the 
+response back. If the receiver is not \verb|init| but on the same core, \verb|init| looks
+up the LMP channel of the receiver and forwards the message.
+
+The advantages of this multi-hop protocol are that it requires no direct channel setup and
+communication with the second core over UMP is also straightforward. Furthermore, \verb|init|
+could enforce certain security policies (e.g. sender is correct, block certain messages) and
+the RPC calls from the core system still work. However, this approach has also its drawbacks. 
+As all messages are routed over one domain, performance could suffer as \verb|init| becomes 
+a bottleneck. Another issue shows up on the receiver side, because several messages from different
+clients arrive over one channel. If we want to support requests which are split into several message,
+the receiver needs a demultiplexer and a message buffer. Section \ref{ns-service-call} describes
+how this problem was solved for the nameserver.
+
+The existing RPC system already encodes the message type into the first word of a LMP message (8-bit for
+message type, 8-bit for message sub type). For the multi-hop protocol the first word has to include additional
+information required for routing. First, we need an ID to identify the sender and receiver of a message.
+The PID of each domain is the perfect candidate for this ID, because our spawn code already encodes the 
+core id into the PID. On Barrelfish the PID uses 32-bits but we have only 64-bits for the header available.
+This is enough for the sender and the receiver, but we couldn't encode any additional meta-data required for
+the existing RPC system. Thus, I decided to limit the PID to 16-bits and use the first 4-bits (msb) to encode
+the core id. This limits the number of concurrently running processes to 4096, which is obviously insufficient 
+for a real-world OS. Furthermore, we don't reassign PIDs from terminated domains but this could be easily 
+implemented with a free-list for the PIDs. Nevertheless, this limitation shouldn't affect the small system 
+we build for this course. Figure TODO shows how the complete header is specified. 
+
+Now \verb|init| can easily extract the receiver of a message from the header using macros. In order to forward
+message \verb|init| has to lookup the LMP channel of the receiver. The LMP channel from init to each domain is
+stored in the \verb|spawninfo| struct, which gets created when we spawn a domain. Unfortunately, the struct is
+discarded after the domain was spawned so there is no way for \verb|init| to lookup a channel based on the PID.
+Additionally, a process manager was running on each core so we didn't have a complete view of all processes
+running on the system. I introduced a spawn manager per core which holds the state of the domains (e.g. LMP channel)
+which were spawned locally. Then there is one process manager on the boot core, which maintains a list of all
+processes running on the board. After these changes \verb|init| can lookup the LMP channels of the domains that
+were spawned on the same core or forward the message over UMP to the other core. At this point a domain can send
+a message to another domain, which receives the message using a closure.
+
+While testing the message passing it quickly turned out that one channel to \verb|init| is not sufficient. The receiver
+has to register a closure on the channel to get messages from other domains. But this creates a conflict with the 
+existing RPC implementation, which also registers a closure when waiting for the response from \verb|init|. It became
+apparent that several channels to init are required, so I simplified the creation of channels from init to its child
+domains. After this change I had all the necessary functionality to proceed with the implementation of the nameserver.
+
+\section{Architecture}
+\label{ns-architecture}
+
+The nameserver is running in a separate process and is the first process that get started after \verb|init| is ready. This makes
+sure that the nameserver always get PID \texttt{0x1}. If a newly spawned process wants to contact the nameserver, he can just
+set PID \texttt{0x1} in the receiver header field, which makes bootstrapping the initial connection to the nameserver trivial.
+
+If a service isn't available when a domain starts up, it just sends lookup requests in a loop until the service is ready.
+
+I decided relatively early in the design phase against direct channels between domains. In retrospect, this turned out too make
+the implementation way more complicated than it would be with direct channels between domains. The initial RPC system split up large
+messages at the sender side and then \verb|init| reassembles them in a closure. Now if a domain wants to offer a service, it registers
+a closure on the channel to \verb|init| and \verb|init| will forward all incoming messages for this service to the domain. If different
+clients split up large messages, they don't arrive in the correct order at the server. This requires buffering and demultiplexing
+on the server side, which was something I wanted to avoid. I took another shortcut (which I should avoid in the future) and restricted
+the protocol in a way such that a request to a server fits into one LMP message (i.e. 3 machine words) and the response also has to 
+fit into one message. Large message can then be transferred using a frame and the LMP message contains just the address and size of
+the frame. This protocol avoids multiplexing but allocating and especially freeing a frame adds additional complexity to the 
+implementation. Another drawback is that allocating a frame is relatively slow and the smallest granularity for our buffer is 4KB,
+which is probably too large for most messages. We noticed this performance penalty, when we tried to implement the shell, which
+sends a message (and allocating a frame) for each character that is printed to the console. We could avoid this performance issue
+by not allocating a frame if the message payload fits into the LMP words, but there were other problems coming up, so the shell
+still uses the old RPC calls and this performance improvement was not implemented.
+
+As mentioned before, one channel to \verb|init| wasn't sufficient so the final design ended up with three channels to \verb|init|:
+
 \begin{itemize}
-    \item implemented multi hop over init (URPC was not mature enough + is extra challenge)
-    \item Init route messages based on did and channels (if msg comes from client chan it gets rerouted to server chan of other domain)
-    \item every domain has two channels (only one handler per channel per domain)
-    \item one channel is used if domain acts as client (can block)
-    \item the other channel is used if domain acts as server (handler was registered)  
+    \item \verb|aos_rpc_chan|: This channel is used for RPC calls from the core system (\verb|aos_rpc.c|)
+    \item \verb|ns_client_chan|: This channel is used if the domain acts as client, requesting a service from another domain using 
+        \verb|nameservice_rpc|
+    \item \verb|ns_server_chan|: This channel is used to register a handler, if a domain wants to offer a service using 
+        \verb|nameservice_register|
 \end{itemize}
+
+With this setup a domain can do blocking calls to the existing RPC handler running on \verb|init|. Additionally, a domain can act
+as server and do blocking calls to other services i.e. acting as a client. At the moment the nameserver is implemented using low 
+level LMP functions, but with this channel setup the nameserver could register his own services (e.g. return list of services)
+using the same API (in \verb|nameservice.h|) as the other domains.
+
+The router running on \verb|init| registered different handlers on each channel. The handler on the \verb|aos_rpc_chan| is the
+same as in the core system. He does a check that the message receiver is \verb|init| and then executes the existing protocol.
+The handler registered on the \verb|ns_client_chan| checks if the receiver is on the same core. If not he forwards the message
+over UMP to the other \verb|init| process. If the receiver is on the same core he looks up the \verb|ns_server_chan| for the
+receiver domain and forwards the message over this channel. The handler listening on the \verb|ns_server_chan| forwards the
+message to the \verb|ns_client_chan|.
+
+After this general overview over the nameserver design, the next sections describe the actual protocol in more depth.
+
+\section{Service Registration}
+
+A domain can register a service by providing a name, a function pointer and some state to the \verb|nameservice_register()| function.
+The service name can be any string but the length is limited to 192 characters because it has to fit into the three LMP words.
+
+When a domain calls \verb|nameservice_register()| for the first time, the function initializes a hashtable and register a closure
+on the \verb|ns_server_chan|. The closure is responsible for receiving incoming messages and calling the correct handler. After
+the initialization completed, a message is sent to the nameserver which contains the name of the service. The nameserver checks
+if the name is free and stores the PID of the server together with the name in a hashtable. Then he reports the status of the 
+operation back to the server. The messages are passed over the client channel to \verb|init| and from init over the server channel
+to the nameserver and back over the same channels. If the requesting domain is on a different core, the message is routed over UMP.
+
+If the name is available the requesting domain adds an entry with the callback and state to the local hashtable. The service is now
+ready for receiving messages.
+
+Removing a service follows a similar protocol, but the nameservice also checks if the request comes from the correct PID. As a malicious
+domain cannot forge the sender PID (init takes care of that), this simple check ensures that only the domain who registered the service
+can actually deregister it (considering that the PID was not reassigned to a different process in the mean time).
+
+\section{Service Lookup}
+
+Now if a domain wants to use a service, it first has to get a channel with \verb|nameservice_lookup()|. The protocol is similar to
+service registration. The name of the required service is sent to the nameserver, which performs some checks and sends a response back.
+If the lookup was successful the nameserver returns the PID of the domain that offers the service. Then the library allocates a 
+\verb|struct nameservice_chan|, which holds the PID and the service name. The caller gets an opaque pointer to this struct back, which
+he can pass to \verb|nameservice_rpc()| to make a request.
+
+The function \verb|nameservice_lookup_did()| is a wrapper around \verb|nameservice_lookup| and returns the PID instead of the channel pointer.
+This function is used by the shell command \verb|nslookup|.
+
+Now that the client obtained a channel to the service, he is ready to issue a request.
+
+\section{Service Call}
+\label{ns-service-call}
+
+As mentioned in section \ref{ns-architecture}
+
+no caps, clean up messy
+
+
+
+\section{Shell Integration}
+
+nslist not implemented
+
+\section{Migration}

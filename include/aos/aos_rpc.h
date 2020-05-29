@@ -67,6 +67,7 @@ typedef uint8_t  aos_rpc_msg_t;
 #define AOS_RPC_MSG_NS_LOOKUP            0x11
 #define AOS_RPC_MSG_NS_RPC               0x12
 #define AOS_RPC_MSG_NS_DEREGISTER        0x13
+#define AOS_RPC_MSG_NS_LIST              0x14
 
 #define AOS_RPC_TERMINAL_READY           0xfe
 #define AOS_RPC_SETUP                    0xff
