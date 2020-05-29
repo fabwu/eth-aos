@@ -1,0 +1,354 @@
+\section{Address manager}
+
+\subsection{How/Datastructures}
+
+The addr manager does what the memory manager does for physical addresses for
+virtual addresses.
+
+It is initialised by giving it a minimal addr, and a max addr.
+This means that it doens't need to handle physical representation (ram
+capabilities), so the bi linked list and origin references are not needed anymore.
+
+But it needs to additionally allow for requesting specific virtual addresses
+(\verb|addr_mgr_alloc_fixed|).
+To allow for this, we not only need have an avl tree for free ranges indexed by
+size, but additionally another avl tree with the same free ranges indexed by
+their base address.
+For that wee need to find the range with largest base address, which is smaller
+or equal to the requested range base address.
+We then need to check if the range from the requested base address onwards is
+large enough, and carve out the desired range by splitting it to two times into
+smaller ranges.
+
+To allow for checking if a virtual address is really in use, or this is just
+dereferencing a stray pointer, we also allow to query if there exists an
+allocated range for an address (\verb|addr_mgr_is_addr_allocated|).
+
+With that, we have all the functionalities needed by paging.
+
+\subsection{Limitations}
+
+As should be obvious by now, the code of the address manager and memory manager
+is mostly duplicate, it should be possible to roll it into some general
+abstraction used by both paging and memory manager.
+
+\section{Paging}
+
+% The memory manager manages ranges of physical address space, we started to call
+% them memory ranges.
+% If one compares with paging, there there is a manager of ranges of virtual
+% address space, called addr\_mgr.
+% What both have in common is the invariant that ranges are to be disjunct, and
+% that a certain range should only be given out once, from the managers view there
+% exists only one owner of a certain range.
+% That's why both have quite similiar code, and one might have found a common
+% abstraction to refactor out, get the memory manager to use the addr\_mgr.
+% But the memory manager must also cope with the fact that there exists a physical
+% representation of it's ranges, the ram capabilites. And it needs to split them
+% according to a given request.
+% 
+% Ram capabilities are the foundation on which everything else (except device
+% frame), is built upon in the barrelfish world.
+% One needs a ram cap to create cnodes to store capabilites.
+% One needs ram caps to store the shadow paging tables.
+% One needs ram caps to for allocators.
+% 
+% \subsection{Access Control}
+% 
+% From an access control point of view, the memory manager does the following thins:
+% \begin{itemize}
+% 	\item Propagation, in that it copies capabilities to send over lmp
+% 	\item Restriciton, it splits the capabilities received from the boot info
+% 	\item Amplification, ordinary processes don't have the boot info capabilities
+% 		 		use RPC to get ram caps
+% \end{itemize}
+% 
+% \subsection{How}
+% 
+% The init process receives via the second argument (\verb|argv[1]|) the bootinfo
+% structure.
+% This structure contains information about the memory regions at \verb|regions|.
+% 
+% We iterate through this array of memory regions, and search for a memory region
+% of type \verb|RegionType_Empty| (which signifies its a ram cap).
+% We pass this to \verb|usr/init/mem_alloc.c:initialize_ram_alloc|.
+% 
+% This initialises the memory manager (\verb|lib/mm/mm.c:mm_init|).
+% An overview over the datastructures initialised is given in \ref{mem-data}.
+% We need to initialiase the three slab allocator used in the memory manager.
+% Also it zero initalises the member of \verb|struct mm|, so that we would catch
+% errors early.
+% Additionally, we initialise a mutex (\verb|alloc_mutex|), which is needed later
+% on when guarding against concurrency bugs.
+% 
+% After that, we grow each slab with statically allocated arrays (with space for
+% 32 \verb|bi_node|'s, 64 \verb|mm_node|'s, and 64 \verb|aos_avl_node|'s).
+% This should be enough to satisfy to potentially add upto 32 memory regions,
+% and then also allow for refilling when serving alloc requests ($64-32=32$).
+% Why a reserve of 32 is needed is explained later in \ref{mem-con}.
+% 
+% The memory manager is now initialised to a point where we can pass it memory
+% regions via \verb|lib/mm/mm.c:mm_add|.
+% Compared to free, there two additionally thing to be considered when adding the
+% memory regions to the memory manager compared to a normal free of a memory
+% range.
+% They are not yet part of the \verb|all| double linked list.
+% This list contains all memory range in ascending order of their base address.
+% When adding memory regions them to it, we need to consider that the memory
+% ranges are not necessarily added in ascending order of their base address.
+% Additionally, from memory regions are the origin nodes (\verb|bi_node|) created
+% and added it to the \verb|bi| double linked list.
+% After having done that, the ram cap from the boot info has been transformed into
+% an ordinary memory range, which references the origin node, and can be added to
+% the free memory ranges using \verb|lib/mm/mm.c:mm_add_to_free|.
+% 
+% With all this done, the memory manager can now serve alloc and free requests.
+% 
+% \subsection{Datastructures} \label{mem-data}
+% 
+% To understand how alloc and free requests are served we introduce the
+% datastructures used in the memory manager.
+% 
+% \subsubsection{History}
+% 
+% Originally, everything has been implemented using two double linked lists (can
+% be seen on \verb|milestone2|).
+% One for \verb|struct capnode|, which stored the origin ram capabilities.
+% And one for \verb|struct mmnode|, which stored the memory ranges.
+% The memory ranges are stored in ascending order, and all of them, irrespective
+% if free or allocated.
+% Every memory range has a reference to a capnode.
+% 
+% When now \verb|lib/mm/mm.c:mm_alloc_aligned| is called, we would search the
+% mmnode linked list from the beginning, until we found a free node which is
+% greater than the size requested.
+% We split the mmnode from the left.
+% As free mmnode don't have a capability yet created for them, we don't need to
+% call \verb|cap_destroy|, but can go right for \verb|cap_retype|.
+% For this we use the reference to the capnode, because the capnode has the
+% original base, and so the \verb|cap_retype| is quite easy to do, as there are
+% no indirections, all ram capabilities handed out are direct descendants.
+% 
+% For \verb|lib/mm/mm.c:mm_free|, we again search the mmnode linked list, and we
+% expect to find an allocated mmnode with the base address given to free.
+% We mark this node simply as free.
+% 
+% Both of these operations have a cost of $\mathcal{O}(n)$, so this way of
+% implementing it is quite expensive.
+% Additionally, any external fragmentation isn't undone, even though the
+% datastructures have been setup to make this easy, by having memory ranges in
+% ascending order and using doubly linked list.
+% 
+% \subsubsection{Current State}
+% 
+% The current state still hase a double linked list of all memory ranges in
+% ascending order. This to allow for easy splitting (insertion) and fusing of
+% memory ranges (deletion), which are both $\mathcal{O}(1)$ operations on a doubly
+% linked list.
+% 
+% For allocation, we change from using the first memory range that's larger than
+% the requested size, to using the memory range with least size, which is greater
+% than the requested size.
+% 
+% As in \verb|lib/collections| the is no datastructure with allows for this
+% request to be fulfilled (hash table only allows for lookup of known keys), we
+% implemented an avl tree.
+% We chose the avl tree because we know it from the lectures, and didn't find
+% convincing literature that for example a red black tree is significantly better.
+% % TODO: Potentially add Performance Analysis of BSTs in System Software as
+% % source
+% The implementation of the avl tree is done so it doesn't allocate memory itself
+% (important later on, \ref{mem-con}).
+% If using slab allocator per avl tree, the avl nodes shouldn't be too dispersed
+% in memory, in theory making the pointer chasing somewhat cache friendly.
+% Also, it's versatile, in that it just stores opaque pointers (\verb|void *|),
+% allowing for reuse later on.
+% Additionally, when we have a reference to the specific avl node, we save one
+% lookup, making things a bit faster but the implementation also more complicated,
+% because we need to swap nodes under the hood (easy to get wrong).
+% 
+% So for allocation we have an avl tree that is indexed by the size of a memory
+% range, and as nodes double linked lists of memory ranges of that size (as it
+% can be that multiple free memory ranges have the same size).
+% Potentially the memory range is still to large, so we split it and add back to
+% the free avl tree ($\mathcal{O}(log(n))$), and insert into the all doubly linked
+% list ($\mathcal{O}(1)$).
+% As any of these memory range is ok, removing from this list is $\mathcal{0}(1)$.
+% With this, allocation is now an $\mathcal{O}(log(n))$ operation, which for worst
+% case performance is the theoretical optimum (comparison based search).
+% 
+% For freeing we need another avl tree indexed by the base address, the allocated
+% avl tree.
+% There is only ever one memory range with a certain base address, so here we
+% don't need a list as node.
+% We remove the memory range from the allocated tree.
+% Having a doubly linked list of memory ranges in ascending orders, and references
+% to the capnodes comes in handy now.
+% We can just check if the left neighbour is also free, and has same origin, and
+% fuse them together in $\mathcal{O}(log(n))$ (we need to reinsert into avl free
+% tree).
+% Vice versa for the right neighbour.
+% 
+% To note in all of this is that we do only one
+% \verb|cap_retype|/\verb|cap_destroy| per alloc/free, minimizing context
+% switches.
+% E.g. free memory ranges don't have their ram capabilites eagerly, because they
+% might be fused later on.
+% And additionally there is no hierarchy of ram capabilities to keep track of,
+% making \verb|cap_retype| simple to implement, just subtract the base of capnode
+% and one is set.
+% 
+% % TODO: Potentially more material
+% % 
+% % Datastructures of memory manager:
+% % \begin{itemize}
+% % 	\item Linked list of boot info ram chunks, provides the capabilities off which
+% % 				everything else is split, not intermediaries
+% % 	\item Linked list of all memory ranges, in ascending order of adderss
+% % 	\item Avl tree of free memory ranges, indexed by their size
+% % 	\item Avl tree of allocated memory ranges, indexed by their address
+% % \end{itemize}
+% % 
+% % The linked list of all nodes in ascending order of address can be managed with
+% % O(1) operations, and allows for easy fusing of memory ranges, if for example an
+% % allocated memory range gets freed, and there is an adjacent free on.
+% % 
+% % The avl tree of allocatee memory ranges, indexed by their address, is need
+% % because we only get the adress to free, but not the size, so thats for
+% % remembering the size of a certain memory range.
+% % 
+% % The avl tree of free memory ranges, indexed by ther size, allows for fast
+% % lookup when allocating memory, one just for the least element that's greater or
+% % euqal to the size requested.
+% % 
+% % Steps taken in implementation:
+% % \begin{itemize}
+% % 	\item Used multiple linked list initially to manage memory.
+% % 				Which was actually not too bad, because if memory is not freed, we can
+% % 				just chop off of the large object, having allocation in O(1), better than
+% % 				with trees (But only if the threes are badly done, as in this case the
+% % 				free avl tree also only contains one node, is basically also O(1)).
+% % 				Freeing is whole other story, as searching for the address to free is O(n).
+% % 	\item Changed later on to avl tree, when paging became too slow, memory was first to switch
+% % 	\item Fuses memory with adjacent free memory upon return
+% % \end{itemize}
+% 
+% \subsection{Fragmentation}
+% 
+% Every allocation request is rounded up to BASE\_PAGE\_SIZE.
+% This has multiple reasons.
+% Most ram will get mapped, and for it be able to be mapped, it must be multiple
+% of BASE\_PAGE\_SIZE.
+% So that's why we don't expect many requests that are note a multiple of
+% BASE\_PAGE\_SIZE, and therefore not having too much internal fragmentation.
+% Also, we observed that we only get \verb|lib/mm/mm.c:alloc_aligned| requests for
+% aligments smaller or equal to \verb|BASE_PAGE_SIZE|.
+% By having allocations being a mulitple of \verb|BASSE_PAGE_SIZE|, we don't
+% need to concern us further with alignment restrictions, as these are
+% automatically fulfilled.
+% 
+% For external fragmentation, we try to undo it by fusing adjacent free memory
+% ranges.
+% We try to use the smallest memory range that is large enough to fulfill the
+% memory request, and splitting off from the left, leaving as much of the free
+% memory rang intact.
+% This makes answering if there is a large enough memory range simple, as what
+% can be fused is fused.
+% We did not further investigate if this is detrimental to external fragmentation.
+% 
+% % TODO: Potentially more material
+% % 
+% % Fragmentation:
+% % \begin{itemize}
+% % 	\item Allocations always multiples of BASE\_PAGE\_SIZE
+% % 	\begin{itemize}
+% % 		\item Easy to fulfill requests with alignment <= BASE\_PAGE\_SIZE
+% % 		\item Reduces number of differen size held in avl tree of free memory ranges
+% % 		\item Should also reduce the amount of external fragmentation into the system
+% % 	\end{itemize}
+% % \end{itemize}
+% % 
+% % % We painted us a bit in a corner by not requiring to have capability as an
+% % % argument to mm_free
+% % Problems with lib/aos/capabilites.c:frame\_create, because it destroys the ram\_cap
+% % immediately. Not really, we could just as well have passed through frame cap.
+% % 
+% % Memory server, deletes cap as soon as sent off, not requiring cap makes for lighter
+% % free.
+% 
+% \subsection{Reentrancy and Concurrency}\label{mem-con}
+% 
+% The memory manager needs to be able to pull himself out of a ditch by it's own
+% hair (see Münchhausen).
+% To do that, it needs to always have enough ressources in reserve to build out
+% its datastructures without needing to build out its datastructures.
+% 
+% That's we use separate \verb|slab_allocator|'s, which we refill when we reach a
+% certain watermark.
+% A watermark of 32 nodes each for the tree and all list has so far proven to be
+% enough.
+% We werent able to verify this reserve staticly because of the complexity of the
+% \verb|lib/aos/slot_alloc| construct, especially with it's
+% \verb|twolevel_slot_alloc.c|.
+% That's also the reason why we only use the global slot\_allocator, not like with
+% the slabs, where we have separate slabs for the memory manager.
+% via \verb|lib/mm/mm.c:mm_add|.
+% Also that watermark refilling needs to be locked, and needs to be less or equal,
+% or else the refilling might not trigger early enough, or multiple times.
+% For the \verb|slot_allocator|, we assume it itself keeps enough reserves to build
+% itself, as it doesn't provide any method to check it's free slots, allows for
+% explicit refill.
+% 
+% Also, to build out it's datastructures, it needs to call \verb|ram_alloc| while
+% it's still in a ram alloc.
+% E.g. the code needs to handle reentrancy, a form of concurrency, correctly.
+% 
+% For that we need to identify sections of code, so called critical sections, that
+% can't handle being preemted, another request running through concurrently, then
+% resuming.
+% This is for example the case when we for alloc have a suiting avl node, then
+% would get preemted, get that suiting avl node snatched away, but we being
+% oblivious to that, stil continue with that avl node, corrupting the
+% datastructures.
+% 
+% Having identified the critical sections, we move out all calls that might to
+% reentrancy, for an isr that would be equivalent to disable interrupts.
+% That's why having avl trees not manage their own memory is so critical,
+% otherwise we wouldn't be able to write correct code.
+% To make sure we didn't miss a call, and to explicitly state this invariant, the
+% critical sections are guarded by the \verb|alloc_mutex|.
+% We call this type of not explicitly needed mutexes a canary mutex, and like a
+% canary in a mine, it would warn us if something changed in the system that we
+% did not anticipate, by leading to a deadlock, locking up the system.
+% It would also have been nice if lib/aos/thread\_sync.c:thread\_mutex\_lock would
+% have an assert checking if the same thread id retakes the lock, which would
+% always be a deadlock condition.
+% 
+% % --- End ---
+% % 
+% % A reserve of 32 has so far deemed to be large enough to serve every
+% % slab/slot\_allocator refill recursion loop we have encountered
+% % 
+% % Slab\_alloc can't trigger reentrancy, because it is explicitly filled. Slot\_alloc
+% % in contrast can trigger unwanted reentrancy.
+% % 
+% % Have lock which guarantees invariant that critical sections are reentrancy free.
+% % If not, we get a deadlock, and have an early warning that our critical section
+% % is not reentrancy free anymore.
+% 
+% \subsection{Limitations}
+% 
+% We only support for at most one memory region coming from the boot info.
+% 
+% In case of an error, we might not fully clean up after us.
+% This shouldn't invalidate our invariants, but might reduce the amount of memory
+% effectively usable.
+% 
+% We do not get a ram cap when freeing, which was already so in the original hand
+% out.
+% So we are not sure when freeing ram if the one freeing is really owner of the
+% freed memory range.
+% 
+% The implementation should work correctly until \verb|slab_default_refill| errors,
+% because the code assumes \verb|slab_alloc| always works, this would trigger an
+% assert on a later alloc.
