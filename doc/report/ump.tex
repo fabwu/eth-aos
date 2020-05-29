@@ -3,7 +3,7 @@
 \section{UMP}
 
 UMP is shared memory message passing construct.
-From users point of view, it provides one queue in each direction, e.g. each
+From the users point of view, it provides one queue in each direction, e.g. each
 user can send and receive.
 
 For a receiver it's easy to know when a slot is ready to be read, he just needs
@@ -14,18 +14,18 @@ But this would lead to increased cache coherency traffic.
 That's why acknowledgement messages are used to signal that slots are ready
 again to be used for sending.
 
-If data and acknowledgements whould share a queue, that would constrain the
+If data and acknowledgements would share a queue, that would constrain the
 communication behaviour.
 For example, acks might get stuck behind data messages, and a process might need
 to send multiple messages back for each message it receives, leading to a
 potential deadlock, if the receive side is not expensively compacted by moving
 the ack messages in front of data messages.
 
-That's way under the hood, For each queue the user sees, there two seperate
+That's way under the hood, For each queue the user sees, there two separate
 queues.
 One is for data messages, and one is for acknowledgement messages.
 We look that acks don't induce a large overhead, that's way when acknowledging
-data messages, we coalesque acks and send multiple acks with one acknowledgement
+data messages, we coalesce acks and send multiple acks with one acknowledgement
 message.
 When we send data, we potentially ack acks by using
 the byte used to signal that the slot is ready to contain the slot to be acked.

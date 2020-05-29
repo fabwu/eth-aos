@@ -7,18 +7,18 @@ The memory manager manages ranges of physical address space, we started to call
 them memory ranges.
 If one compares with paging, there there is a manager of ranges of virtual
 address space, called addr\_mgr.
-What both have in common is the invariant that ranges are to be disjunct, and
+What both have in common is the invariant that ranges are to be disjoint, and
 that a certain range should only be given out once, from the managers view there
 exists only one owner of a certain range.
-That's why both have quite similiar code, and one might have found a common
+That's why both have quite similar code, and one might have found a common
 abstraction to refactor out, get the memory manager to use the addr\_mgr.
 But the memory manager must also cope with the fact that there exists a physical
-representation of it's ranges, the ram capabilites. And it needs to split them
+representation of it's ranges, the ram capabilities. And it needs to split them
 according to a given request.
 
 Ram capabilities are the foundation on which everything else (except device
 frame), is built upon in the barrelfish world.
-One needs a ram cap to create cnodes to store capabilites.
+One needs a ram cap to create cnodes to store capabilities.
 One needs ram caps to store the shadow paging tables.
 One needs ram caps to for allocators.
 
@@ -27,7 +27,7 @@ One needs ram caps to for allocators.
 From an access control point of view, the memory manager does the following thins:
 \begin{itemize}
 	\item Propagation, in that it copies capabilities to send over lmp
-	\item Restriciton, it splits the capabilities received from the boot info
+	\item Restriction, it splits the capabilities received from the boot info
 	\item Amplification, ordinary processes don't have the boot info capabilities
 		 		use RPC to get ram caps
 \end{itemize}
@@ -44,15 +44,15 @@ We pass this to \verb|usr/init/mem_alloc.c:initialize_ram_alloc|.
 
 This initialises the memory manager (\verb|lib/mm/mm.c:mm_init|).
 An overview over the datastructures initialised is given in \ref{mem-data}.
-We need to initialiase the three slab allocator used in the memory manager.
-Also it zero initalises the member of \verb|struct mm|, so that we would catch
+We need to initialise the three slab allocator used in the memory manager.
+Also it zero initialises the member of \verb|struct mm|, so that we would catch
 errors early.
 Additionally, we initialise a mutex (\verb|alloc_mutex|), which is needed later
 on when guarding against concurrency bugs.
 
 After that, we grow each slab with statically allocated arrays (with space for
 32 \verb|bi_node|'s, 64 \verb|mm_node|'s, and 64 \verb|aos_avl_node|'s).
-This should be enough to satisfy to potentially add upto 32 memory regions,
+This should be enough to satisfy to potentially add up to 32 memory regions,
 and then also allow for refilling when serving alloc requests ($64-32=32$).
 Why a reserve of 32 is needed is explained later in \ref{mem-con}.
 
@@ -96,7 +96,7 @@ As free mmnode don't have a capability yet created for them, we don't need to
 call \verb|cap_destroy|, but can go right for \verb|cap_retype|.
 For this we use the reference to the capnode, because the capnode has the
 original base, and so the \verb|cap_retype| is quite easy to do, as there are
-no indirections, all ram capabilities handed out are direct descendants.
+no indirection's, all ram capabilities handed out are direct descendants.
 
 For \verb|lib/mm/mm.c:mm_free|, we again search the mmnode linked list, and we
 expect to find an allocated mmnode with the base address given to free.
@@ -110,7 +110,7 @@ ascending order and using doubly linked list.
 
 \subsubsection{Current State}
 
-The current state still hase a double linked list of all memory ranges in
+The current state still has a double linked list of all memory ranges in
 ascending order. This to allow for easy splitting (insertion) and fusing of
 memory ranges (deletion), which are both $\mathcal{O}(1)$ operations on a doubly
 linked list.
@@ -159,9 +159,9 @@ tree).
 Vice versa for the right neighbour.
 
 To note in all of this is that we do only one
-\verb|cap_retype|/\verb|cap_destroy| per alloc/free, minimizing context
+\verb|cap_retype|/\verb|cap_destroy| per alloc/free, minimising context
 switches.
-E.g. free memory ranges don't have their ram capabilites eagerly, because they
+E.g. free memory ranges don't have their ram capabilities eagerly, because they
 might be fused later on.
 And additionally there is no hierarchy of ram capabilities to keep track of,
 making \verb|cap_retype| simple to implement, just subtract the base of capnode
@@ -211,14 +211,14 @@ of BASE\_PAGE\_SIZE.
 So that's why we don't expect many requests that are note a multiple of
 BASE\_PAGE\_SIZE, and therefore not having too much internal fragmentation.
 Also, we observed that we only get \verb|lib/mm/mm.c:alloc_aligned| requests for
-aligments smaller or equal to \verb|BASE_PAGE_SIZE|.
-By having allocations being a mulitple of \verb|BASSE_PAGE_SIZE|, we don't
+alignments smaller or equal to \verb|BASE_PAGE_SIZE|.
+By having allocations being a multiple of \verb|BASE_PAGE_SIZE|, we don't
 need to concern us further with alignment restrictions, as these are
 automatically fulfilled.
 
 For external fragmentation, we try to undo it by fusing adjacent free memory
 ranges.
-We try to use the smallest memory range that is large enough to fulfill the
+We try to use the smallest memory range that is large enough to fulfil the
 memory request, and splitting off from the left, leaving as much of the free
 memory rang intact.
 This makes answering if there is a large enough memory range simple, as what
@@ -251,14 +251,14 @@ We did not further investigate if this is detrimental to external fragmentation.
 Pull himself out of a mire by his own hair
 \end{displayquote}
 
-The memory manager needs to always have enough ressources in reserve to build out
+The memory manager needs to always have enough resources in reserve to build out
 its datastructures without needing to build out its datastructures.
 
 That's we use separate \verb|slab_allocator|'s, which we refill when we reach a
 certain watermark.
 A watermark of 32 nodes each for the tree and all list has so far proven to be
 enough.
-We werent able to verify this reserve staticly because of the complexity of the
+We weren't able to verify this reserve statically because of the complexity of the
 \verb|lib/aos/slot_alloc| construct, especially with it's
 \verb|twolevel_slot_alloc.c|.
 That's also the reason why we only use the global slot\_allocator, not like with
@@ -275,11 +275,11 @@ it's still in a ram alloc.
 E.g. the code needs to handle reentrancy, a form of concurrency, correctly.
 
 For that we need to identify sections of code, so called critical sections, that
-can't handle being preemted, another request running through concurrently, then
+can't handle being preempted, another request running through concurrently, then
 resuming.
 This is for example the case when we for alloc have a suiting avl node, then
-would get preemted, get that suiting avl node snatched away, but we being
-oblivious to that, stil continue with that avl node, corrupting the
+would get preempted, get that suiting avl node snatched away, but we being
+oblivious to that, still continue with that avl node, corrupting the
 datastructures.
 
 Having identified the critical sections, we move out all calls that might to

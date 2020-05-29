@@ -6,7 +6,7 @@ exiting \verb|filesystem_unmount|, to flush all cached data to the sdcard.
 \section{SDCard}
 
 To initialise the SDCard, we first need it's device frame.
-We can get that either by directly refering to the device frame capability put
+We can get that either by directly referring to the device frame capability put
 into our cspace on startup, which works when we run as init.
 Or we use an rpc call (\verb|aos_rpc_get_device_cap|) to request the device
 frame from init.
@@ -24,8 +24,8 @@ These are to be found at \verb|lib/fs/fs_internal.h|.
 We have \verb|fs_mount|, which bundles the common function pointers, and an
 opaque state.
 When forwarding an invocation, one just prepends the opaque state to the
-argmuments, and passes them to the matching function pointer.
-Additionally, we need a \verb|fs_handle|, which capsulate the state of an open
+arguments, and passes them to the matching function pointer.
+Additionally, we need a \verb|fs_handle|, which encapsulate the state of an open
 file/directory.
 It has a member an \verb|fs_mount|.
 So when dispatching for an open file/directory, on just prepends first the state
@@ -62,7 +62,7 @@ This deparsing is specific to FAT32.
 For the metadata and sd blocks, there is the \verb|struct fat32_fs|.
 It also holds the sdhc driver state.
 
-There are two sd blocks, one for the fat datastructre, and one for the data
+There are two sd blocks, one for the fat datastructures, and one for the data
 itself.
 This works, because all the methods concerning these area of data don't overlap,
 so that was easy to introduce.
@@ -181,15 +181,15 @@ More importantly, this would prevent clients from spoofing their fd, e.g. they
 would only able to use their own file descriptors that are in the translation
 table, others wouldn't translate.
 
-We don't honor if the fat is mirrored, e.g. we update at most one fat.
+We don't honour if the fat is mirrored, e.g. we update at most one fat.
 
-Needing to zero initialise a full cluster everytime a directory is created,
+Needing to zero initialise a full cluster every time a directory is created,
 which is unnecessary but specified as such.
 One could just keep the entry after the last zero, and if the cluster is full,
 just look if our fat entry is eof.
 
 If staying with the zero initialisation, it might have made sense to have a zero
-buffer and directly write it, instead of zeoring out one sector after the other
+buffer and directly write it, instead of zeroing out one sector after the other
 (reading, then zeroing).
 Zeroing a cluster is also a perfect case for having dma requests of multiple
 sectors, which then could also be used for the normal reading and writing.
@@ -202,9 +202,9 @@ The 3 blocks would be for the fat cluster chain, the dir entry, and finally the
 content of the file.
 This would alleviate the problem that while writing, the current data block is
 contended for updating the file size and file content, which are different
-sectory, leading to unecessary reads and writes of blocks.
+sector, leading to unnecessary reads and writes of blocks.
 Especially the path resolution should be factored out of the specific
-filesystems and aggresively cache results.
+filesystems and aggressively cache results.
 Filesystem wouldn't then not need to bother anymore with mounts and delegating
 invocations, except for handling the mounts as a special file type, so as to
 signal this to the path resolution, which then would do the delegation.
@@ -215,5 +215,5 @@ Seek of FAT32 doesn't allow for expansion of files, as FAT32 doesn't support
 file holes.
 
 Except for that, the filesystem should work correctly, even when there are no
-more ressources (only sdcard, we exclude ram etc.) to serve, it should continue
+more resources (only sdcard, we exclude ram etc.) to serve, it should continue
 to report error conditions accordingly, but not thrash itself.
