@@ -1,4 +1,4 @@
-\chapter{Milestone 3 - (Lightweight) Message Passing}
+\chapter{(Lightweight) Message Passing}
 
 Documented here is how we designed and implemented the LMP (Lightweight Message Passing) during milestone 3 and some of the improvements we made later on. The changes made in the individual project nameserver are documented in their own chapter. The nameserver project made an overhaul on the LMP and the final code base might look substentially different than what is documented here.
 
@@ -91,7 +91,7 @@ In the child (in \verb|lib/aos/aos_rpc.c|) some effort was already made in that 
 Based on this idea a general LMP interface was developed, which hides all the underlying work with closure and provides a simple blocking interface which was then used by the child (in \verb|lib/aos/aos_rpc.c|) and in init (\verb|usr/init/rpc.c|). The following section describes this new abstraction layer in more detail:
 
 \subsection{LMP Protocol}
-
+\label{sec:lmp-protocol}
 The abstraction was defined in the header (\verb|aos/lmp_protocol.h|) and implemented in the source file (\verb|lib/aos/lmp_protocol.c|). There functions for sending and receiving LMP messages were provided which had an interface like the following:
 \begin{itemize}
     \item Simple send

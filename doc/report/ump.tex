@@ -1,5 +1,9 @@
 \chapter{User-level message passing}
 
+In this milestone we had to setup a efficient communication channel between
+the two cores and extend our RPC infrastructure with UMP, so we can send messages
+between domains on different cores.
+
 \section{UMP}
 
 UMP is shared memory message passing construct.
@@ -31,3 +35,24 @@ When we send data, we potentially ack acks by using
 the byte used to signal that the slot is ready to contain the slot to be acked.
 As we have so little acknowledgement messages compared to data messages, there
 won't be any imbalance from this.
+
+\section{Inter-Core Communication Protocol}
+
+In order to integrate UMP in our existing RPC infrastructure, we introduced a separate
+library called AOS protocol. The library implements a similar interface as the LMP protocol
+described in chapter \ref{sec:lmp-protocol}. The library is defined in the header 
+\verb|aos/aos_protocol.h| and implemented in the file \verb|lib/aos/aos_protocol.c|. The semantics
+of the functions are the same as in LMP protocol, but the message passing is transparent to the user
+i.e. he doesn't know if he is talking to a service on the same or a remote core. A client can create
+a channel using either \verb|make_aos_chan_lmp| or \verb|make_chan_ump|. This channel is then passed
+to the specific function e.g. to send a message. The library decides then internally if the message
+should be forwarded over LMP or if the UMP queue should be used.
+
+For the \verb|init| dispatch loop, we used a new function called \verb|aos_protocol_wait_for()|. This
+function uses \verb|event_dispatch_non_block()| to dispatch LMP messages and \verb|aos_ump_dequeue()|
+to get messages over UMP. This function could potentially never dispatch LMP messages, if a lot of UMP
+messages arrive over a channel, but this event seems unlikely.
+
+The final step was replacing all LMP protocol function calls in \verb|aos_rpc.c| with functions from
+AOS protocol. This enables inter-core communication between any service on the system.
+
