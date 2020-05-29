@@ -21,7 +21,7 @@ The idea of running the driver in the main process was quickly discarded as we a
 
 \subsection{Running the Network Protocols}
 
-The next decision was where to run the code for the different network protocols and how they would interact with the driver and each other. The book already suggests adding the protocol specific code to the driver application. This comes at a cost of flexibility and modularity, but is way simpler and faster to implement. Additionaly the nameservice project was not started at this point, so the communication between protocols would have to be improvised and be rewritten later on.
+The next decision was where to run the code for the different network protocols and how they would interact with the driver and each other. The book already suggests adding the protocol specific code to the driver application. This comes at a cost of flexibility and modularity, but is way simpler and faster to implement. additionally the nameservice project was not started at this point, so the communication between protocols would have to be improvised and be rewritten later on.
 
 With those arguments in mind, the decision to implement the protocols inside the driver application. This also allowed to defer the implementation of the communication with other applications until nameservice made some progress, which was in retrospect a great time saver.
 
@@ -100,7 +100,28 @@ The interface to send ethernet frames was built on that approach. Figure \ref{fi
 Another important part is, that the memory is not immediately free to be used again, because the data has to be sent by the hardware before that. This is done in parallel and it would be a waste of performance to block on that. So we decided to keep the data reserved and return from the send function. How data is released again can be seen in the same sequence diagram \ref{fig:ethsend}. In the start send function, ethernet dequeues all slices that were done sending from the driver. To figure out which list nodes to add in the tracking of free memory slices we use some pointer arithmetic. By using the fact that all of the list nodes were allocated as one big chunk and the address of each list node therefore correspondes to the address of a memory slice, the address of the correct list node can be quickly calculated using the offset returned by dequeue.
 
 \section{ARP - Address Resolution Protocol}
-The ethernet handling was implemented in \verb|usr/drivers/enet/arp.c| and its interface defined in \verb|usr/drivers/enet/arp.h|.
+The ARP handling was implemented in \verb|usr/drivers/enet/arp.c| and its interface defined in \verb|usr/drivers/enet/arp.h|.
+
+\subsection{ARP Cache}
+\label{sec:arpcache}
+The ARP cache was saved using the provided hashtable in \verb|lib/collections|. The reasoning behind this was, that we need a datastructure that can do the lookup of an address as fast as possible but does not have to be as fast to insert or remove entries. Hashtables fulfill exactly these criteria. Only the IP address to ethernet address lookup had to be implemented, so a single hashtable was sufficient.
+
+Another decision was in which byte order to store the addresses. We decided to store the ethernet addresses in network byte order. The main advantage of this is, that in the majority uf uses, the ethernet address was needed in network byte order anyways, and so the conversion did not have to be done for every IP package over and over again. Additionally ARP receives the ethernet addresses in network byte order anyways so conversion could be saved here too. The only place were the byte order conversion had to be done was in the cache printing.
+
+\subsection{Interfaces}
+The ARP layer is strongly coupled with the ethernet layer, as it uses the ethernet sending functions to send ARP responses and requests and ethernet calls the ARP handling function if it received packages of the ARP protocol type.
+
+The ARP layer is additionally strongly coupled with the IP layer: It offers a function that allows sending ARP requests to the given IP address and it notifies the IP layer when a new entry for an IP address is added to the ARP cache. This notification is done, so ip packages that are waiting for an address resolution can be sent (more on that in the IP part below).
+
+\subsection{Printing ARP Cache}
+Another interface that the ARP layer offers is printing the ARP cache. We decided to not send a copy of the ARP cache to the shell and do the printing there, but to directly use printf functions inside the ARP layer to render the cache for the serial output. This was mainly done, because it seemed to be a simpler way of doing it in terms of how much effort it would take to implement. Sharing the memory of the ARP cache was not considered, because that sounds like a security nightmare. As mentioned before in \ref{sec:arpcache}, when printing we had to also convert from network byte order.
+
+\subsection{Additional Features}
+ARP was implemented to support the additional features of sendin ARP probe packages and handling ARP anouncements.
+
+An ARP probe package is a request send out to the network to check if anyone uses the IP address that we would like to start using. After starting the ARP protocol an ARP probe is sent to the network, checking if our static IP (hardcoded 10.0.0.2) is already in use. If ARP ever gets an external entry for that static IP address, it stops the network driver. In the future this could be expanded to then request another IP address from DHCP or from the user.
+
+ARP anouncements are ARP request sent on ethernet broadcast addresses to tell other network members, that they are using the anounced IP address. By handling these anouncements, the ARP cache can be populated without having to send ARP requests to these targets. But more importantly handling them again reduces the risk of an IP address conflict.
 
 
 \section{IP - Internet Protocol}
@@ -110,8 +131,7 @@ The ethernet handling was implemented in \verb|usr/drivers/enet/arp.c| and its i
 \section{UDP - User Datagram Protocol}
 
 \subsection{UDP Checksum}
-
-To calculate the UDP checksum we extended the checksum functionality in \verb|lib/netutil/checksum.c| with the function \verb|inet_checksum_IP_pseudo| which also takes the pointer to the start of the IP header. The UDP checksum requires additionaly to the UDP header and payload also that a pseudo header containing source IP, destination IP, protocol (which should always be 17 for UDP in this case) and the length of UDP datagram (length of UDP header + length of UDP payload in bytes).
+To calculate the UDP checksum we extended the checksum functionality in \verb|lib/netutil/checksum.c| with the function \verb|inet_checksum_IP_pseudo| which also takes the pointer to the start of the IP header. The UDP checksum requires additionally to the UDP header and payload also that a pseudo header containing source IP, destination IP, protocol (which should always be 17 for UDP in this case) and the length of UDP datagram (length of UDP header + length of UDP payload in bytes).
 Because of how the IP package and UDP datagram are already written directly to the reserved network buffer to reduce the number of memory copies, the pseudo header is never actually constructed. Instead, a pointer to the IP header is passed to the checksum function along with the pointer to the UDP header and the length of the UDP datagram. Using the IP header, the UDP checksum can be calculated by taking the IP addresses and IP protocol directly from the IP header.
 The checksum function was designed to be also useable for calculating the TCP checksum. But this was not tested, as TCP was not implemented in the end due to time restrictions and other functionality having priority.
 
