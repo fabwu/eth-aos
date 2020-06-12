@@ -1,0 +1,6 @@
+# USB OTG
+SUBSYSTEM=="usb", ATTR{idVendor}=="0525", ATTR{idProduct}=="4026", MODE="0666"
+# Serial USB device
+SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", MODE="0666"
+# Serial TTY device
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE="0666"

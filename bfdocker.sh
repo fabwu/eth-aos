@@ -12,16 +12,13 @@
 # configuragion. Note BF_SOURCE and BF_BUILD must be absolute paths!
 BF_SOURCE=$(readlink -f `dirname $0`)
 BF_BUILD=$BF_SOURCE/build
-BF_DOCKER=achreto/barrelfish-ci
+BF_DOCKER=bf-gitlab-ci-runner
+#BF_DOCKER=achreto/barrelfish-ci
 BF_CMD="$@"
-PODMAN_CMD="${PODMAN_CMD:-podman}"
 
 echo "bfdocker: $BF_DOCKER"
 echo "bfsrc: $BF_SOURCE  build: $BF_BUILD"
 echo "bfcmd: $BF_CMD"
-
-# pull the docker image
-# podman pull $BF_DOCKER
 
 # create the build directory
 mkdir -p $BF_BUILD
@@ -31,7 +28,7 @@ if [ $# == 0 ]; then
 fi
 
 # run the command in the docker image
-"$PODMAN_CMD" run --rm --privileged -i -t \
+docker run --rm --privileged -i -t \
     -v $BF_SOURCE:/source \
     -v $BF_BUILD:/source/build \
     $BF_DOCKER /bin/bash -c "(cd /source/build && $BF_CMD)"
